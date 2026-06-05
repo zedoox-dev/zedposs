@@ -1,0 +1,12 @@
+{
+  "posBilling": true,
+  "inventorySystem": true,
+  "crmLoyalty": true,
+  "kitchenDisplay": true,
+  "qrOrdering": true,
+  "accountingTally": true,
+  "franchiseModule": true,
+  "whatsappAlerts": true,
+  "zomatoSwiggySync": true,
+  "offlineMode": true
+}

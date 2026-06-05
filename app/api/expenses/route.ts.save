@@ -1,0 +1,57 @@
+       amount: parseFloat(String(amount)),
+        paidTo: String(paidTo || "N/A"),
+        narration: String(narration || "N/A"),
+        doar: String(doar || "Admin"),
+      }
+    });
+
+    return NextResponse.json({ success: true, expense });
+  } catch (error: any) {
+    console.error("DETAILED PETTY CASH SAVE ERROR:", error);
+    return NextResponse.json({ 
+      success: false, 
+      error: "Database integrity error!", 
+      details: error.message 
+    }, { status: 500 });
+  }
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const outletId = searchParams.get("outletId");
+  const dateFilter = searchParams.get("date") || "today"; 
+  const startDate = searchParams.get("startDate");
+  const endDate = searchParams.get("endDate");
+
+  if (!outletId) return NextResponse.json({ error: "Outlet ID required" }, { status: 400 });
+
+  let dateQuery: any = {};
+  const now = new Date();
+
+  if (dateFilter === "today") {
+    const start = new Date(now.setHours(0, 0, 0, 0));
+    const end = new Date(now.setHours(23, 59, 59, 999));
+    dateQuery = { gte: start, lte: end };
+  } else if (dateFilter === "yesterday") {
+    const start = new Date(now);
+    start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+    dateQuery = { gte: start, lte: end };
+  } else if (dateFilter === "custom" && startDate && endDate) {
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    dateQuery = { gte: new Date(startDate), lte: end };
+  }
+
+  try {
+    const expenses = await prisma.expense.findMany({
+      where: { outletId, createdAt: dateQuery },
+      orderBy: { createdAt: 'desc' }
+    });
+    return NextResponse.json(expenses);
+  } catch (error) {
+    return NextResponse.json({ error: "Fetch failed" }, { status: 500 });
+  }
+}

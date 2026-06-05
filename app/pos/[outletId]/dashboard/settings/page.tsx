@@ -1,0 +1,674 @@
+"use client";
+import { useState, useEffect } from "react";
+import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff } from "lucide-react";
+import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+
+// Strict Default Configs to prevent undefined/uncontrolled input errors
+const defaultPrinterConfig = {
+  printerSize: "80mm", 
+  headerName: "RAMKESAR POS",
+  headerSize: "text-lg",
+  subHeader: "Premium Quality Snacks",
+  subHeaderSize: "text-[10px]",
+  gstNo: "",
+  gstSize: "text-[9px]",
+  footerMsg: "Thank You! Visit Again.",
+  footerSize: "text-[10px]",
+  
+  kotDineIn: true,
+  kotDelivery: true,
+  kotPickUp: false,
+  
+  enableWhatsapp: false,
+  whatsappNumber: "",
+  whatsappApiKey: "",
+  
+  enableSms: false,
+  smsGatewayUrl: "",
+  smsApiKey: "",
+  smsSenderId: "",
+
+  // System-wide triggers
+  triggerBilling: true,
+  triggerCrmWelcome: true,
+  triggerCrmPoints: true,
+  triggerCrmMarketing: true,
+};
+
+// 🔥 UPDATED: Added Enterprise Level General Configs
+const defaultGeneralConfig = {
+  outletName: "Ramkesar Foods",
+  address: "Lajpat Nagar, New Delhi",
+  phone: "",
+  fssai: "",
+  taxRate: "5",
+  currency: "₹",
+  
+  // High-Level POS Workflow
+  autoRoundOff: true,
+  lowStockAlerts: true,
+  
+  // High-Level Security Logic
+  requirePinForCancel: true,
+  requirePinForDiscount: true,
+  autoLogoutMins: "30"
+};
+
+export default function SettingsPage() {
+  const params = useParams();
+  const outletId = params.outletId as string;
+  const { data: session } = useSession();
+
+  const [isMounted, setIsMounted] = useState(false);
+  const [activeTab, setActiveTab] = useState("general"); 
+  const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
+  
+  // ALL Filter Toggle Logic (Device specific, so kept in LocalStorage)
+  const [showAllFilter, setShowAllFilter] = useState(true);
+  
+  // General State
+  const [generalSettings, setGeneralSettings] = useState(defaultGeneralConfig);
+  const [isSavingGeneral, setIsSavingGeneral] = useState(false);
+
+  // Staff State
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [isSavingStaff, setIsSavingStaff] = useState(false);
+  const [formData, setFormData] = useState({ id: "", name: "", pin: "", role: "CASHIER" });
+  
+  // Printer & API State
+  const [printerSettings, setPrinterSettings] = useState(defaultPrinterConfig);
+  const [isSavingPrinter, setIsSavingPrinter] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    // Load ALL Filter (Kept Local as it's a UI preference per device)
+    const savedToggle = localStorage.getItem(`zapped_show_all_filter_${outletId}`);
+    if (savedToggle !== null) setShowAllFilter(savedToggle === "true");
+
+    setIsMounted(true); 
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [outletId]);
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchSettingsFromDB();
+    }
+  }, [session, isOnline]);
+
+  const fetchSettingsFromDB = async () => {
+    if (!session?.user) return;
+    const tenantId = (session.user as any).tenantId;
+
+    if (!navigator.onLine) {
+      // Offline Fallback
+      const savedGeneral = localStorage.getItem(`zapped_general_config_${outletId}`);
+      if (savedGeneral) setGeneralSettings({ ...defaultGeneralConfig, ...JSON.parse(savedGeneral) });
+
+      const savedPrinter = localStorage.getItem(`zapped_printer_config_${outletId}`);
+      if (savedPrinter) setPrinterSettings({ ...defaultPrinterConfig, ...JSON.parse(savedPrinter) });
+
+      const savedStaff = localStorage.getItem(`zapped_staff_list_${outletId}`);
+      if (savedStaff) setStaffList(JSON.parse(savedStaff));
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/settings?outletId=${outletId}&tenantId=${tenantId}`);
+      const data = await res.json();
+      
+      if (data.success) {
+        if (data.generalSettings) {
+          setGeneralSettings({ ...defaultGeneralConfig, ...data.generalSettings });
+          localStorage.setItem(`zapped_general_config_${outletId}`, JSON.stringify(data.generalSettings));
+        }
+        if (data.printerSettings) {
+          setPrinterSettings({ ...defaultPrinterConfig, ...data.printerSettings });
+          localStorage.setItem(`zapped_printer_config_${outletId}`, JSON.stringify(data.printerSettings));
+        }
+        if (data.staffList && data.staffList.length > 0) {
+          setStaffList(data.staffList);
+          localStorage.setItem(`zapped_staff_list_${outletId}`, JSON.stringify(data.staffList));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load settings.");
+    }
+  };
+
+  const handleToggleAllFilter = () => {
+    const newValue = !showAllFilter;
+    setShowAllFilter(newValue);
+    localStorage.setItem(`zapped_show_all_filter_${outletId}`, String(newValue));
+  };
+
+  const handleSaveGeneralSettings = async () => {
+    setIsSavingGeneral(true);
+    localStorage.setItem(`zapped_general_config_${outletId}`, JSON.stringify(generalSettings));
+    
+    if (!navigator.onLine) {
+      setTimeout(() => {
+        setIsSavingGeneral(false);
+        alert("Offline Mode: General Configurations saved locally.");
+      }, 400);
+      return;
+    }
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "SAVE_GENERAL", outletId, tenantId: (session?.user as any)?.tenantId, payload: generalSettings })
+      });
+      alert("Enterprise General Configurations & Workflows Locked Successfully!");
+    } catch(e) {
+      alert("Failed to sync with cloud.");
+    } finally {
+      setIsSavingGeneral(false);
+    }
+  };
+
+  const handleSavePrinterSettings = async () => {
+    setIsSavingPrinter(true);
+    localStorage.setItem(`zapped_printer_config_${outletId}`, JSON.stringify(printerSettings));
+    
+    if (!navigator.onLine) {
+      setTimeout(() => {
+        setIsSavingPrinter(false);
+        alert("Offline Mode: Hardware Settings saved locally.");
+      }, 400);
+      return;
+    }
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "SAVE_PRINTER", outletId, tenantId: (session?.user as any)?.tenantId, payload: printerSettings })
+      });
+      alert("Hardware & API Gateways Locked Successfully!");
+    } catch(e) {
+      alert("Failed to sync with cloud.");
+    } finally {
+      setIsSavingPrinter(false);
+    }
+  };
+
+  const handleSaveStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (formData.pin.length !== 4) {
+      return alert("PIN must be exactly 4 digits.");
+    }
+
+    if (!navigator.onLine) return alert("You must be online to register new staff.");
+
+    setIsSavingStaff(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ADD_STAFF", outletId, tenantId: (session?.user as any)?.tenantId, payload: formData })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        const updatedList = [...staffList, data.staff];
+        setStaffList(updatedList);
+        localStorage.setItem(`zapped_staff_list_${outletId}`, JSON.stringify(updatedList));
+        
+        setFormData({ id: "", name: "", pin: "", role: "CASHIER" });
+        setShowAddModal(false);
+        alert("Staff Member Added Successfully! They can now login using this PIN.");
+      } else {
+        alert("Failed to add staff.");
+      }
+    } catch (e) {
+      alert("Network Error.");
+    } finally {
+      setIsSavingStaff(false);
+    }
+  };
+
+  const handleDeleteStaff = async (id: string) => {
+    if (!confirm("Are you sure you want to revoke access for this staff member?")) return;
+    
+    if (!navigator.onLine) return alert("You must be online to revoke staff access.");
+
+    try {
+      const updatedList = staffList.filter(s => s.id !== id);
+      if (updatedList.length === 0) return alert("You cannot delete all users. Keep at least one Admin.");
+      
+      const res = await fetch(`/api/settings?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setStaffList(updatedList);
+        localStorage.setItem(`zapped_staff_list_${outletId}`, JSON.stringify(updatedList));
+      }
+    } catch(e) {
+      alert("Network Error.");
+    }
+  };
+
+  if (!isMounted) {
+    return <div className="flex h-full items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
+  }
+
+  return (
+    <div className="p-6 h-full flex flex-col bg-slate-50 overflow-y-auto custom-scrollbar">
+      <div className="mb-6 flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">System Settings</h1>
+          <p className="text-slate-500 text-sm">Manage enterprise hardware, advanced workflows, and API security</p>
+        </div>
+        {!isOnline && <span className="bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-black uppercase flex items-center shadow-sm"><WifiOff size={14} className="mr-1.5"/> OFFLINE MODE</span>}
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* TABS */}
+        <div className="w-full lg:w-64 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 h-fit shrink-0">
+          <nav className="space-y-2">
+            <button onClick={() => setActiveTab("general")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'general' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Settings2 size={20} /> <span>General & Options</span></button>
+            <button onClick={() => setActiveTab("printer")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'printer' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Printer size={20} /> <span>Printer Layout</span></button>
+            <button onClick={() => setActiveTab("ebill")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'ebill' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><MessageSquare size={20} /> <span>E-Bill & Comm.</span></button>
+            <button onClick={() => setActiveTab("staff")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'staff' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><ShieldCheck size={20} /> <span>Staff & Security</span></button>
+          </nav>
+        </div>
+
+        {/* CONTENT */}
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 min-h-[600px]">
+          
+          {/* 1. GENERAL OPTIONS & ADVANCED POS WORKFLOW TAB */}
+          {activeTab === "general" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h2 className="text-xl font-bold text-slate-800 flex items-center"><Store className="mr-2 text-orange-500" /> Identity & Operational Flow</h2>
+                <button onClick={handleSaveGeneralSettings} disabled={isSavingGeneral} className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center shadow-md active:scale-95 transition-all">
+                  {isSavingGeneral ? <Loader2 size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />} Save Settings
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Identity Module */}
+                <div className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                  <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs">Business Profile</h3>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Outlet / Brand Name</label>
+                    <input type="text" value={generalSettings.outletName} onChange={(e) => setGeneralSettings({...generalSettings, outletName: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-900 focus:border-orange-500 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Complete Address</label>
+                    <textarea value={generalSettings.address} onChange={(e) => setGeneralSettings({...generalSettings, address: e.target.value})} rows={3} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-900 focus:border-orange-500 bg-white resize-none" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Official Contact Number</label>
+                    <input type="text" value={generalSettings.phone} onChange={(e) => setGeneralSettings({...generalSettings, phone: e.target.value.replace(/\D/g, '')})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-mono text-sm text-slate-900 focus:border-orange-500 bg-white" />
+                  </div>
+                </div>
+
+                {/* Financial Module */}
+                <div className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                  <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs">Financial & Legal Configurations</h3>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">FSSAI License Number</label>
+                    <input type="text" value={generalSettings.fssai} onChange={(e) => setGeneralSettings({...generalSettings, fssai: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-900 focus:border-orange-500 bg-white uppercase" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Currency Symbol</label>
+                      <input type="text" value={generalSettings.currency} onChange={(e) => setGeneralSettings({...generalSettings, currency: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-black text-center text-sm text-slate-900 focus:border-orange-500 bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Default GST Rate (%)</label>
+                      <input type="number" value={generalSettings.taxRate} onChange={(e) => setGeneralSettings({...generalSettings, taxRate: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-mono font-bold text-center text-sm text-slate-900 focus:border-orange-500 bg-white" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 🔥 NEW: High-Level Workflow Engine */}
+                <div className="col-span-1 md:col-span-2 space-y-4 bg-orange-50/50 p-5 rounded-2xl border border-orange-100">
+                  <h3 className="font-black text-orange-800 uppercase tracking-wider text-xs flex items-center"><MonitorSmartphone size={16} className="mr-2 text-orange-500"/> Advanced POS Workflow Engine</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* ALL CATEGORY FILTER TOGGLE */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800">'ALL' Menu Filter</h4>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Show "ALL" category button in billing screen.</p>
+                      </div>
+                      <button onClick={handleToggleAllFilter}>
+                        {showAllFilter ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                      </button>
+                    </div>
+
+                    {/* Auto Round Off */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800">Auto Round-off</h4>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Round grand total to nearest ₹1.</p>
+                      </div>
+                      <button onClick={() => setGeneralSettings({...generalSettings, autoRoundOff: !generalSettings.autoRoundOff})}>
+                        {generalSettings.autoRoundOff ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                      </button>
+                    </div>
+
+                    {/* Inventory Alerts */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800 flex items-center"><AlertTriangle size={12} className="mr-1 text-red-500"/> Stock Alerts</h4>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">Warn if item hits minimum threshold.</p>
+                      </div>
+                      <button onClick={() => setGeneralSettings({...generalSettings, lowStockAlerts: !generalSettings.lowStockAlerts})}>
+                        {generalSettings.lowStockAlerts ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* 2. PRINTER & KOT TAB */}
+          {activeTab === "printer" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h2 className="text-xl font-bold text-slate-800 flex items-center"><Printer className="mr-2 text-orange-500" /> Hardware & Print Customization</h2>
+                <button onClick={handleSavePrinterSettings} disabled={isSavingPrinter} className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center shadow-md active:scale-95 transition-all">
+                  {isSavingPrinter ? <Loader2 size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />} Save Layout
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                {/* Hardware */}
+                <div className="space-y-5">
+                  <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600">1. Physical Hardware Routing</h3>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Terminal Printer Roll Size</label>
+                    <select value={printerSettings.printerSize} onChange={(e) => setPrinterSettings({...printerSettings, printerSize: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white outline-none font-bold text-slate-800 focus:border-orange-500 text-sm">
+                      <option value="58mm">2-Inch (58mm) Mini Thermal</option><option value="80mm">3-Inch (80mm) Standard POS</option><option value="100mm">4-Inch (100mm) Label Roll</option><option value="125mm">5-Inch (125mm) Wide Format</option>
+                    </select>
+                  </div>
+
+                  <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600 pt-2">2. Dynamic KOT Routing Engine</h3>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex justify-between items-center"><div><h4 className="font-bold text-slate-800 text-xs">DINE IN KOT</h4><p className="text-[10px] text-slate-500">Table orders token.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDineIn: !printerSettings.kotDineIn})}>{printerSettings.kotDineIn ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">DELIVERY KOT</h4><p className="text-[10px] text-slate-500">Zomato/Swiggy slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDelivery: !printerSettings.kotDelivery})}>{printerSettings.kotDelivery ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                  </div>
+                </div>
+
+                {/* Custom Receipt Text & Font Size Editors */}
+                <div className="space-y-4">
+                  <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
+                  
+                  {/* Header Row */}
+                  <div className="flex space-x-2">
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label>
+                      <input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" />
+                    </div>
+                    <div className="w-1/3">
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label>
+                      <select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold">
+                        <option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option>
+                        <option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex space-x-2">
+                    <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Sub-Header</label><input type="text" value={printerSettings.subHeader} onChange={(e) => setPrinterSettings({...printerSettings, subHeader: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
+                    <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.subHeaderSize} onChange={(e) => setPrinterSettings({...printerSettings, subHeaderSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
+                  </div>
+
+                  <div className="flex space-x-2">
+                    <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">GSTIN</label><input type="text" value={printerSettings.gstNo} onChange={(e) => setPrinterSettings({...printerSettings, gstNo: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold uppercase focus:border-orange-500" /></div>
+                    <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.gstSize} onChange={(e) => setPrinterSettings({...printerSettings, gstSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[9px]">Small</option><option value="text-[10px]">Normal</option><option value="text-xs">Large</option></select></div>
+                  </div>
+
+                  <div className="flex space-x-2">
+                    <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Footer Message</label><input type="text" value={printerSettings.footerMsg} onChange={(e) => setPrinterSettings({...printerSettings, footerMsg: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
+                    <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.footerSize} onChange={(e) => setPrinterSettings({...printerSettings, footerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. E-BILL MESSAGING TAB */}
+          {activeTab === "ebill" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800 flex items-center"><MessageSquare className="mr-2 text-orange-500" /> Enterprise E-Bill API Gateways</h2>
+                  <p className="text-[10px] text-slate-500 font-bold mt-1">Configure your providers and select where messages should automatically dispatch.</p>
+                </div>
+                <button onClick={handleSavePrinterSettings} disabled={isSavingPrinter} className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center shadow-md active:scale-95 transition-all">
+                  {isSavingPrinter ? <Loader2 size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />} Save Setup
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* APIs Column */}
+                <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* PROFESSIONAL SMS API PANEL */}
+                  <div className={`p-5 rounded-2xl border transition-all ${printerSettings.enableSms ? 'bg-blue-50/40 border-blue-200 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-80'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="font-black text-slate-800 flex items-center"><Smartphone size={16} className={`mr-2 ${printerSettings.enableSms ? 'text-blue-500' : 'text-slate-400'}`}/> SMS Gateway</h3>
+                        <p className="text-[9px] text-slate-500 font-bold mt-1">Msg91, Twilio, Gupshup etc.</p>
+                      </div>
+                      <button onClick={() => setPrinterSettings({...printerSettings, enableSms: !printerSettings.enableSms})}>{printerSettings.enableSms ? <ToggleRight className="text-blue-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button>
+                    </div>
+                    <div className={`space-y-3 ${printerSettings.enableSms ? 'opacity-100 pointer-events-auto' : 'opacity-40 pointer-events-none'}`}>
+                      <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Gateway URL Endpoint</label><input type="text" placeholder="https://api.msg91.com/api/v5/sendsms" value={printerSettings.smsGatewayUrl || ""} onChange={(e) => setPrinterSettings({...printerSettings, smsGatewayUrl: e.target.value})} className="w-full p-2 border border-blue-200 rounded-lg outline-none font-mono text-[10px] text-slate-800 bg-white shadow-sm" /></div>
+                      <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">API Auth Key</label><input type="password" placeholder="API Key / Token" value={printerSettings.smsApiKey || ""} onChange={(e) => setPrinterSettings({...printerSettings, smsApiKey: e.target.value})} className="w-full p-2 border border-blue-200 rounded-lg outline-none font-mono text-[10px] text-slate-800 bg-white shadow-sm" /></div>
+                      <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Sender ID (6 Chars)</label><input type="text" maxLength={6} placeholder="ZAPPED" value={printerSettings.smsSenderId || ""} onChange={(e) => setPrinterSettings({...printerSettings, smsSenderId: e.target.value.toUpperCase()})} className="w-full p-2 border border-blue-200 rounded-lg outline-none font-bold text-xs text-slate-800 bg-white uppercase shadow-sm" /></div>
+                    </div>
+                  </div>
+
+                  {/* WHATSAPP API PANEL */}
+                  <div className={`p-5 rounded-2xl border transition-all ${printerSettings.enableWhatsapp ? 'bg-green-50/40 border-green-200 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-80'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="font-black text-slate-800 flex items-center"><MessageSquare size={16} className={`mr-2 ${printerSettings.enableWhatsapp ? 'text-green-500' : 'text-slate-400'}`}/> Meta WhatsApp</h3>
+                        <p className="text-[9px] text-slate-500 font-bold mt-1">Official WA Cloud API integration.</p>
+                      </div>
+                      <button onClick={() => setPrinterSettings({...printerSettings, enableWhatsapp: !printerSettings.enableWhatsapp})}>{printerSettings.enableWhatsapp ? <ToggleRight className="text-green-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button>
+                    </div>
+                    <div className={`space-y-3 ${printerSettings.enableWhatsapp ? 'opacity-100 pointer-events-auto' : 'opacity-40 pointer-events-none'}`}>
+                      <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Phone Number ID</label><input type="tel" placeholder="e.g. 104928274..." value={printerSettings.whatsappNumber || ""} onChange={(e) => setPrinterSettings({...printerSettings, whatsappNumber: e.target.value.replace(/\D/g, '')})} className="w-full p-2 border border-green-200 rounded-lg outline-none font-mono text-[10px] text-slate-800 bg-white shadow-sm" /></div>
+                      <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Bearer Token</label><input type="password" placeholder="EAABwzX0..." value={printerSettings.whatsappApiKey || ""} onChange={(e) => setPrinterSettings({...printerSettings, whatsappApiKey: e.target.value})} className="w-full p-2 border border-green-200 rounded-lg outline-none font-mono text-[10px] text-slate-800 bg-white shadow-sm" /></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Triggers Column */}
+                <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg text-white">
+                  <h3 className="font-black flex items-center uppercase text-xs tracking-wider text-orange-400 mb-4 pb-2 border-b border-slate-700">
+                    <ToggleRight className="mr-2" size={18}/> Automation Triggers
+                  </h3>
+                  
+                  <div className={`space-y-4 ${(printerSettings.enableSms || printerSettings.enableWhatsapp) ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+                    <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                      <div><h4 className="font-bold text-sm text-slate-200">Billing E-Receipts</h4><p className="text-[9px] text-slate-400 mt-0.5">Send links when order saves.</p></div>
+                      <button onClick={() => setPrinterSettings({...printerSettings, triggerBilling: !printerSettings.triggerBilling})}>{printerSettings.triggerBilling ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                      <div><h4 className="font-bold text-sm text-slate-200">CRM VIP Welcome</h4><p className="text-[9px] text-slate-400 mt-0.5">Auto-greet new registrations.</p></div>
+                      <button onClick={() => setPrinterSettings({...printerSettings, triggerCrmWelcome: !printerSettings.triggerCrmWelcome})}>{printerSettings.triggerCrmWelcome ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                      <div><h4 className="font-bold text-sm text-slate-200">Points & Coupons</h4><p className="text-[9px] text-slate-400 mt-0.5">Updates on redeem/earning.</p></div>
+                      <button onClick={() => setPrinterSettings({...printerSettings, triggerCrmPoints: !printerSettings.triggerCrmPoints})}>{printerSettings.triggerCrmPoints ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                      <div><h4 className="font-bold text-sm text-slate-200">Ad Campaigns</h4><p className="text-[9px] text-slate-400 mt-0.5">Allow Bulk Marketing send.</p></div>
+                      <button onClick={() => setPrinterSettings({...printerSettings, triggerCrmMarketing: !printerSettings.triggerCrmMarketing})}>{printerSettings.triggerCrmMarketing ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
+                    </div>
+                    
+                    {!(printerSettings.enableSms || printerSettings.enableWhatsapp) && (
+                      <p className="text-[9px] text-center text-red-400 font-bold uppercase mt-2">Enable at least 1 provider to unlock triggers.</p>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* 4. STAFF & SECURITY ACCESS TAB */}
+          {activeTab === "staff" && (
+            <div className="animate-in fade-in duration-200 flex flex-col h-full">
+               
+               <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
+                 <div>
+                   <h2 className="text-xl font-bold text-slate-800 flex items-center"><ShieldCheck className="mr-2 text-orange-500" /> Role-Based Access Control</h2>
+                   <p className="text-[10px] text-slate-500 font-bold mt-1">Manage PINs for system login and restricted permissions.</p>
+                 </div>
+                 <div className="flex items-center space-x-3">
+                   {/* Saving button for security policies */}
+                   <button onClick={handleSaveGeneralSettings} disabled={isSavingGeneral} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 flex items-center transition-all border border-slate-200">
+                     {isSavingGeneral ? <Loader2 size={16} className="animate-spin mr-2" /> : <Save size={16} className="mr-2" />} Save Policies
+                   </button>
+                   <button onClick={() => setShowAddModal(true)} className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider active:scale-95 shadow-md flex items-center">
+                     <UserCircle2 size={16} className="mr-2"/> Add Staff
+                   </button>
+                 </div>
+               </div>
+
+               <div className="flex-1 overflow-y-auto pr-2 mt-6 space-y-8">
+                 
+                 {/* Staff Table */}
+                 <div>
+                   <table className="w-full text-left border-collapse">
+                     <thead className="bg-slate-50 sticky top-0">
+                       <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                         <th className="p-4 rounded-tl-xl">Staff Name</th>
+                         <th className="p-4 text-center">Auth PIN</th>
+                         <th className="p-4 text-center">Role / Access</th>
+                         <th className="p-4 text-right rounded-tr-xl">Action</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
+                       {staffList.map((staff) => (
+                         <tr key={staff.id} className="hover:bg-slate-50/50">
+                           <td className="p-4">
+                             <div className="flex items-center">
+                               <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs mr-3 uppercase">{staff.name.substring(0, 2)}</div>
+                               <span className="uppercase text-slate-900">{staff.name}</span>
+                             </div>
+                           </td>
+                           <td className="p-4 text-center">
+                             <span className="font-mono tracking-widest bg-slate-100 px-3 py-1 rounded-lg text-slate-600">••••</span>
+                             <span className="text-[9px] text-slate-400 block mt-1">({staff.pin})</span> 
+                           </td>
+                           <td className="p-4 text-center">
+                             <span className={`text-[9px] px-3 py-1 rounded-full uppercase tracking-widest border ${staff.role === 'ADMIN' ? 'bg-amber-100 border-amber-300 text-amber-700' : staff.role === 'MANAGER' ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-slate-100 border-slate-300 text-slate-600'}`}>
+                               {staff.role}
+                             </span>
+                           </td>
+                           <td className="p-4 text-right">
+                             <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                               <Trash2 size={16}/>
+                             </button>
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
+
+                 {/* 🔥 NEW: Advanced Security Policies Engine */}
+                 <div className="bg-red-50/30 p-5 rounded-2xl border border-red-100">
+                    <h3 className="font-black text-red-800 uppercase tracking-wider text-xs flex items-center mb-4"><Lock size={16} className="mr-2 text-red-500"/> Security & Authorization Policies</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-800 flex items-center"><Trash2 size={12} className="mr-1 text-slate-400"/> Void/Cancel Checks</h4>
+                          <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN to cancel bills.</p>
+                        </div>
+                        <button onClick={() => setGeneralSettings({...generalSettings, requirePinForCancel: !generalSettings.requirePinForCancel})}>
+                          {generalSettings.requirePinForCancel ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                        </button>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                        <div>
+                          <h4 className="font-bold text-sm text-slate-800 flex items-center"><Percent size={12} className="mr-1 text-slate-400"/> Manual Discounts</h4>
+                          <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN for discounts.</p>
+                        </div>
+                        <button onClick={() => setGeneralSettings({...generalSettings, requirePinForDiscount: !generalSettings.requirePinForDiscount})}>
+                          {generalSettings.requirePinForDiscount ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                        </button>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
+                        <div className="flex-1">
+                          <h4 className="font-bold text-sm text-slate-800 flex items-center"><Clock size={12} className="mr-1 text-slate-400"/> Session Timeout</h4>
+                          <p className="text-[9px] font-bold text-slate-400 mt-0.5">Auto-lock POS after inactivity.</p>
+                        </div>
+                        <div className="w-16">
+                          <select value={generalSettings.autoLogoutMins} onChange={(e) => setGeneralSettings({...generalSettings, autoLogoutMins: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white font-black text-slate-800 text-center">
+                            <option value="15">15m</option><option value="30">30m</option><option value="60">1Hr</option><option value="OFF">OFF</option>
+                          </select>
+                        </div>
+                      </div>
+
+                    </div>
+                 </div>
+
+               </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* STAFF ADD MODAL */}
+      {showAddModal && (
+        <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-t-8 border-slate-900">
+            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-3">
+              <h2 className="text-base font-black text-slate-800 uppercase tracking-tight flex items-center"><KeyRound size={18} className="mr-1.5 text-orange-500"/> Grant Access</h2>
+              <button onClick={() => {setShowAddModal(false); setFormData({ id: "", name: "", pin: "", role: "CASHIER" });}} className="text-slate-400 p-1.5 bg-slate-100 rounded-full transition-all hover:bg-slate-200"><X size={16}/></button>
+            </div>
+            <form onSubmit={handleSaveStaff} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Full Name</label>
+                <input required type="text" placeholder="e.g., Deepak" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-sm font-bold uppercase focus:border-orange-500 bg-slate-50 focus:bg-white transition-all" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Login PIN (4 Digits)</label>
+                <input required type="text" maxLength={4} pattern="[0-9]{4}" placeholder="0000" value={formData.pin} onChange={(e) => setFormData({...formData, pin: e.target.value.replace(/\D/g, '')})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xl font-mono text-center font-black focus:border-orange-500 bg-slate-50 focus:bg-white transition-all tracking-[0.5em]" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Permission Level</label>
+                <select value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-bold text-slate-800 focus:border-orange-500 bg-slate-50 focus:bg-white transition-all">
+                  <option value="CASHIER">Cashier (Billing Only)</option>
+                  <option value="MANAGER">Manager (Billing, Orders & CRM)</option>
+                  <option value="ADMIN">System Admin (Full Access)</option>
+                </select>
+              </div>
+
+              <button disabled={isSavingStaff} type="submit" className="w-full mt-4 bg-slate-900 hover:bg-slate-800 text-white font-black uppercase tracking-widest py-3.5 rounded-xl text-xs shadow-lg flex justify-center items-center active:scale-95 transition-all">
+                {isSavingStaff ? <Loader2 className="animate-spin" size={18} /> : "Create Staff Profile"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

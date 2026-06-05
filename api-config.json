@@ -1,0 +1,15 @@
+{
+  "webhooks": {
+    "slackAlertsUrl": "",
+    "zapierIntegrationUrl": "",
+    "razorpayWebhookSecret": ""
+  },
+  "apiKeys": [
+    {
+      "id": "9c2347a3-4192-4745-8ae3-c195ad16f3bf",
+      "name": "Google sheet",
+      "key": "zed_live_cbc4dcb79c483ddf26cbf957ab2df95d",
+      "createdAt": "2026-06-04T22:26:53.798Z"
+    }
+  ]
+}

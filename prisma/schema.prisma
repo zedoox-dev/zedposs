@@ -1,0 +1,537 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 0. SAAS SUBSCRIPTION PLANS
+// ==========================================
+model SubscriptionPlan {
+  id           String   @id @default(uuid())
+  name         String
+  price        Float
+  billingCycle String   @default("MONTHLY")
+  maxOutlets   Int      @default(1)
+  maxUsers     Int      @default(3)
+  features     Json     @default("[]")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  isDeleted    Boolean  @default(false)
+
+  tenants      Tenant[] 
+}
+
+// ==========================================
+// 1. TENANT (Business/Brand Level)
+// ==========================================
+model Tenant {
+  id              String    @id @default(uuid())
+  businessName    String
+  ownerEmail      String    @unique 
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  isDeleted       Boolean   @default(false)
+
+  planId          String?
+  plan            SubscriptionPlan? @relation(fields: [planId], references: [id])
+
+  users           User[]
+  outlets         Outlet[]
+  vendors         Vendor[]
+  customers       Customer[]
+  menuItems       MenuItem[]
+  
+  // Super Admin Tracking Relations
+  paymentLogs     PaymentLog[]
+  supportTickets  SupportTicket[]
+  auditLogs       AuditLog[]
+  whiteLabelConfig WhiteLabel?
+
+  // ENTERPRISE EXTENSIONS
+  roles           Role[]
+  regions         Region[]
+}
+
+// ==========================================
+// 2. REGIONS / AREAS (For Area Managers) -> NEW
+// ==========================================
+model Region {
+  id          String   @id @default(uuid())
+  name        String   // e.g., "North Delhi", "South Zone"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isDeleted   Boolean  @default(false)
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  outlets     Outlet[]
+}
+
+// ==========================================
+// 3. OUTLETS
+// ==========================================
+model Outlet {
+  id                  String            @id @default(uuid())
+  name                String
+  address             String
+  email               String?           
+  password            String?           
+  
+  generalSettings     Json?             
+  printerSettings     Json?             
+  integrationSettings Json?             
+
+  isActive            Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  isDeleted           Boolean           @default(false)
+  
+  tenantId            String
+  tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  regionId            String?           // Link outlet to a specific region/area
+  region              Region?           @relation(fields: [regionId], references: [id])
+
+  users               User[]            // Primary Users mapping
+  userAccessMappings  UserOutletAccess[] // Multi-Outlet Access Mapping
+  
+  orders              Order[]
+  inventory           Inventory[]
+  expenses            Expense[]
+  purchases           PurchaseOrder[]
+  productions         ProductionBatch[]
+}
+
+// ==========================================
+// 4. CUSTOM ROLES & PERMISSIONS -> NEW
+// ==========================================
+model Role {
+  id          String   @id @default(uuid())
+  name        String   // "Area Manager", "Kitchen Manager", "Brand Owner"
+  description String?
+  isSystem    Boolean  @default(false) // If true, cannot be deleted (e.g. Brand Owner)
+  
+  // JSON Structure: { "inventory": ["view", "add", "edit", "approve"], "sales": ["view", "export"] }
+  permissions Json     @default("{}") 
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isDeleted   Boolean  @default(false)
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  users       User[]
+}
+
+// ==========================================
+// 5. USERS & RBAC
+// ==========================================
+model User {
+  id              String            @id @default(uuid())
+  name            String
+  email           String            @unique
+  password        String            
+  pin             String?  
+  
+  // REPLACED ENUM WITH DYNAMIC ROLE RELATION
+  roleId          String?
+  role            Role?             @relation(fields: [roleId], references: [id])
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Base Branch (Primary Working Location)
+  outletId        String?
+  outlet          Outlet?           @relation(fields: [outletId], references: [id])
+  
+  // Multi-Outlet Access (For Owners/Area Managers) -> NEW
+  accessibleOutlets UserOutletAccess[]
+
+  expensesLogged  Expense[]
+  productionsMade ProductionBatch[]
+  ticketsCreated  SupportTicket[]
+}
+
+// ==========================================
+// 6. USER-OUTLET MULTI ACCESS -> NEW
+// ==========================================
+model UserOutletAccess {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outletId  String
+  outlet    Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, outletId]) // Prevents duplicate access mapping
+}
+
+// ==========================================
+// 7. VENDORS (Suppliers)
+// ==========================================
+model Vendor {
+  id              String            @id @default(uuid())
+  name            String   
+  contactPerson   String?
+  phone           String
+  address         String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  purchases       PurchaseOrder[]
+}
+
+// ==========================================
+// 8. INVENTORY 
+// ==========================================
+model Inventory {
+  id              String            @id @default(uuid())
+  itemName        String   
+  type            ItemType 
+  unit            String   
+  stockLevel      Float             @default(0)
+  minStock        Float  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  outletId        String
+  outlet          Outlet            @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  
+  recipeItems     RecipeItem[]
+  purchaseItems   PurchaseItem[]
+  producedItems   ProductionBatch[]
+}
+
+enum ItemType {
+  RAW_MATERIAL
+  PACKAGING
+  FINISHED_GOOD
+}
+
+// ==========================================
+// 9. RECIPE / BOM
+// ==========================================
+model RecipeItem {
+  id              String            @id @default(uuid())
+  finishedGoodId  String    
+  
+  rawMaterialId   String
+  rawMaterial     Inventory         @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  
+  quantityUsed    Float     
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+}
+
+// ==========================================
+// 10. PRODUCTION (Kitchen Batch)
+// ==========================================
+model ProductionBatch {
+  id              String            @id @default(uuid())
+  batchNumber     String            @unique
+  date            DateTime          @default(now())
+  quantityProduced Float    
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  finishedGoodId  String
+  finishedGood    Inventory         @relation(fields: [finishedGoodId], references: [id])
+  
+  outletId        String
+  outlet          Outlet            @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  
+  createdByUserId String
+  createdByUser   User              @relation(fields: [createdByUserId], references: [id])
+}
+
+// ==========================================
+// 11. PURCHASE ORDERS
+// ==========================================
+model PurchaseOrder {
+  id              String            @id @default(uuid())
+  invoiceNumber   String?
+  date            DateTime          @default(now())
+  totalAmount     Float
+  status          String            @default("RECEIVED") 
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  vendorId        String
+  vendor          Vendor            @relation(fields: [vendorId], references: [id])
+  
+  outletId        String
+  outlet          Outlet            @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  
+  items           PurchaseItem[]
+}
+
+model PurchaseItem {
+  id              String            @id @default(uuid())
+  quantity        Float
+  costPrice       Float
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder     @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  
+  inventoryId     String
+  inventory       Inventory         @relation(fields: [inventoryId], references: [id])
+}
+
+// ==========================================
+// 12. EXPENSES
+// ==========================================
+model Expense {
+  id              String            @id @default(uuid())
+  category        String   
+  amount          Float
+  description     String?
+  date            DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  outletId        String
+  outlet          Outlet            @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  
+  loggedByUserId  String
+  loggedByUser    User              @relation(fields: [loggedByUserId], references: [id])
+}
+
+// ==========================================
+// 13. CUSTOMERS
+// ==========================================
+model Customer {
+  id              String            @id @default(uuid())
+  phone           String            
+  name            String?
+  loyaltyPoints   Int               @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  orders          Order[]
+
+  @@unique([phone, tenantId])
+}
+
+// ==========================================
+// 14. MENU ITEMS
+// ==========================================
+model MenuItem {
+  id              String            @id @default(uuid())
+  ItemId          Int?              
+  name            String   
+  price           Float
+  category        String   
+  image           String?
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  orderItems      OrderItem[]
+}
+
+// ==========================================
+// 15. ORDERS (Billing)
+// ==========================================
+model Order {
+  id              String            @id @default(cuid())
+  billNumber      Int               
+  outletId        String
+  outlet          Outlet            @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  customerId      String?
+  totalAmount     Float
+
+  paymentMode     String            @default("CASH")
+  orderType       String            @default("DINE_IN")
+  tableNo         String?
+  partCash        Float?            @default(0)
+  partCard        Float?            @default(0)
+  isComplementary Boolean           @default(false)
+  compReason      String?
+
+  discount        Float             @default(0)
+  packingCharges  Float             @default(0)
+  deliveryCharges Float             @default(0)
+  cgst            Float             @default(0)
+  sgst            Float             @default(0)
+
+  platform        String            @default("POS")
+  status          String            @default("COMPLETED")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  items           OrderItem[]
+  customer        Customer?         @relation(fields: [customerId], references: [id])
+
+  @@unique([billNumber, outletId])
+}
+
+// ==========================================
+// 16. ORDER ITEMS
+// ==========================================
+model OrderItem {
+  id              String            @id @default(uuid())
+  quantity        Int
+  price           Float   
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isDeleted       Boolean           @default(false)
+  
+  orderId         String
+  order           Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  menuItemId      String
+  menuItem        MenuItem          @relation(fields: [menuItemId], references: [id])
+}
+
+// ==========================================
+// 17. LEADS (Sales CRM)
+// ==========================================
+model Lead {
+  id          String   @id @default(uuid())
+  name        String
+  company     String
+  email       String?
+  phone       String
+  source      String   @default("WEBSITE")
+  status      String   @default("NEW") 
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isDeleted   Boolean  @default(false)
+}
+
+// ==========================================
+// 18. SAAS PAYMENT LOGS
+// ==========================================
+model PaymentLog {
+  id          String   @id @default(uuid()) 
+  amount      Float
+  gateway     String   @default("RAZORPAY")
+  status      String   @default("PENDING")
+  planName    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isDeleted   Boolean  @default(false)
+
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 19. SUPPORT TICKETS
+// ==========================================
+model SupportTicket {
+  id           String   @id @default(uuid())
+  ticketNumber Int      @unique @default(autoincrement())
+  subject      String
+  description  String
+  status       String   @default("OPEN")
+  priority     String   @default("MEDIUM")
+  category     String   @default("GENERAL")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  isDeleted    Boolean  @default(false)
+
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdBy    String
+  user         User     @relation(fields: [createdBy], references: [id])
+}
+
+// ==========================================
+// 20. MARKETING CAMPAIGNS
+// ==========================================
+model MarketingCampaign {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   @default("EMAIL")
+  status      String   @default("DRAFT")
+  targetTier  String   @default("ALL")
+  messageBody String
+  sentCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isDeleted   Boolean  @default(false)
+}
+
+// ==========================================
+// 21. AUDIT LOGS
+// ==========================================
+model AuditLog {
+  id          String   @id @default(uuid())
+  action      String   
+  module      String   
+  description String
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+  
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 22. WHITE LABEL CONFIGURATION
+// ==========================================
+model WhiteLabel {
+  id           String   @id @default(uuid())
+  customDomain String?  @unique
+  logoUrl      String?
+  themeColor   String   @default("#000000")
+  appName      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenantId     String   @unique
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 23. TRIAL ACCOUNTS TRACKER
+// ==========================================
+model TrialAccount {
+  id          String   @id @default(uuid())
+  companyName String
+  email       String   @unique
+  phone       String
+  startDate   DateTime @default(now())
+  endDate     DateTime
+  isConverted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isDeleted   Boolean  @default(false)
+}

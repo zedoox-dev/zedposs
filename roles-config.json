@@ -1,0 +1,29 @@
+{
+  "SUPER_ADMIN": {
+    "viewAnalytics": true,
+    "manageBilling": true,
+    "editMenu": true,
+    "manageInventory": true,
+    "issueRefunds": true,
+    "viewAuditLogs": true,
+    "manageStaff": true
+  },
+  "MANAGER": {
+    "viewAnalytics": true,
+    "manageBilling": false,
+    "editMenu": true,
+    "manageInventory": true,
+    "issueRefunds": false,
+    "viewAuditLogs": false,
+    "manageStaff": true
+  },
+  "STAFF": {
+    "viewAnalytics": false,
+    "manageBilling": true,
+    "editMenu": false,
+    "manageInventory": false,
+    "issueRefunds": false,
+    "viewAuditLogs": false,
+    "manageStaff": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "platformName": "ZedPoss",
+  "supportEmail": "info.zedposs@gmail.com",
+  "supportPhone": "9990787533",
+  "smtpHost": "smtp.gmail.com",
+  "smtpPort": "587",
+  "smtpUser": "",
+  "smtpPass": "",
+  "razorpayKey": "",
+  "razorpaySecret": "",
+  "stripeKey": "",
+  "whatsappApiToken": "",
+  "msg91Key": "",
+  "masterEmail": "admin@zedposs.com",
+  "masterPassword": "admin"
+}

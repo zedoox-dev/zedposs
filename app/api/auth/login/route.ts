@@ -1,0 +1,40 @@
+import { NextResponse } from "next/server";
+import { prisma } from "../../../../lib/prisma";
+
+export async function POST(req: Request) {
+  try {
+    const { pin, outletId } = await req.json();
+
+    // 1. Database checking agar koi bhi user registered nahi hai
+    const userCount = await prisma.user.count();
+    if (userCount === 0) {
+      await prisma.user.create({
+        data: {
+          name: "Deepak (Manager)",
+          email: "manager@ramkesar.com",
+          password: "securepassword123",
+          pin: "1234",
+          role: "MANAGER"
+        }
+      });
+    }
+
+    // 2. PIN match logic
+    const user = await prisma.user.findFirst({
+      where: { pin: pin }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "Invalid PIN" }, { status: 401 });
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      user: { name: user.name, role: user.role } 
+    });
+
+  } catch (error: any) {
+    console.error("Login Error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}

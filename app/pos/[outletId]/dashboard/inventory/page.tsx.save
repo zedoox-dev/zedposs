@@ -1,0 +1,161 @@
+       </div>
+      </div>
+
+      <div className="flex-1 p-6 overflow-hidden flex flex-col print:hidden">
+        
+        {/* SEARCH & FILTERS */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-4 shrink-0">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+            <input type="text" placeholder="Search ingredient or asset name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl outline-none font-bold text-sm focus:border-blue-500 transition-colors shadow-sm" />
+          </div>
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="pl-10 pr-8 py-2.5 border border-slate-200 rounded-xl font-bold text-sm outline-none bg-white min-w-[200px] uppercase text-slate-700 shadow-sm focus:border-blue-500">
+              <option value="ALL">All Categories</option>
+              <option value="RAW_MATERIAL">Raw Materials</option>
+              <option value="PACKAGING">Packaging</option>
+              <option value="FINISHED_GOOD">Finished Goods</option>
+            </select>
+          </div>
+        </div>
+
+        {/* HIGH-TECH INVENTORY TABLE */}
+        <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+          {loading ? (
+            <div className="flex-1 flex justify-center items-center"><Loader2 className="animate-spin text-blue-600" size={40} /></div>
+          ) : filteredInventory.length === 0 ? (
+            <div className="flex-1 flex flex-col justify-center items-center text-slate-400">
+              <Package size={60} className="mb-4 opacity-20" />
+              <p className="font-black text-xl text-slate-500 uppercase tracking-tight">No Items Found</p>
+              <p className="text-xs font-bold mt-1">Adjust filters or click 'Add New SKU' to stock up.</p>
+            </div>
+          ) : (
+            <div className="overflow-y-auto custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-[900px]">
+                <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200">
+                  <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="p-4 w-12">#</th>
+                    <th className="p-4">SKU / Item Name</th>
+                    <th className="p-4">Classification</th>
+                    <th className="p-4 text-center">Alert At</th>
+                    <th className="p-4 text-center bg-blue-50/50 text-blue-800 border-x border-slate-200">Live Stock</th>
+                    <th className="p-4 text-center">Health Status</th>
+                    <th className="p-4 text-center w-28">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {filteredInventory.map((item, idx) => {
+                    const isOutOfStock = item.stockLevel <= 0;
+                    const isLowStock = item.stockLevel > 0 && item.stockLevel <= item.minStock;
+                    
+                    let statusNode = <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] px-2 py-1 rounded uppercase tracking-wider font-black flex items-center justify-center w-28 mx-auto"><CheckCircle2 size={12} className="mr-1"/> Healthy</span>;
+                    if (isOutOfStock) statusNode = <span className="bg-red-100 text-red-700 border border-red-200 text-[9px] px-2 py-1 rounded uppercase tracking-wider font-black flex items-center justify-center w-28 mx-auto animate-pulse"><AlertTriangle size={12} className="mr-1"/> Critical</span>;
+                    else if (isLowStock) statusNode = <span className="bg-orange-100 text-orange-700 border border-orange-200 text-[9px] px-2 py-1 rounded uppercase tracking-wider font-black flex items-center justify-center w-28 mx-auto"><AlertCircle size={12} className="mr-1"/> Low Stock</span>;
+
+                    return (
+                      <tr key={item.id} className={`hover:bg-slate-50/80 transition-colors ${isOutOfStock ? 'bg-red-50/20' : isLowStock ? 'bg-orange-50/20' : ''}`}>
+                        <td className="p-4 text-center font-black text-slate-400 text-xs">{idx + 1}</td>
+                        <td className="p-4 font-black text-slate-800 uppercase">{item.itemName}</td>
+                        <td className="p-4"><span className="text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded bg-slate-100 text-slate-600">{item.type.replace('_', ' ')}</span></td>
+                        <td className="p-4 text-center font-mono font-bold text-slate-500">{item.minStock} {item.unit}</td>
+                        <td className={`p-4 text-center font-mono font-black text-lg border-x border-slate-100 ${isOutOfStock ? 'text-red-600' : isLowStock ? 'text-orange-600' : 'text-blue-600'}`}>
+                          {parseFloat(item.stockLevel).toFixed(2)} <span className="text-[10px] uppercase font-bold text-slate-400 ml-0.5">{item.unit}</span>
+                        </td>
+                        <td className="p-4 text-center">{statusNode}</td>
+                        <td className="p-4 text-center">
+                          <button className="text-[10px] font-black text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded uppercase transition-colors">
+                            Adjust
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ------------------- ADD NEW SKU MODAL ------------------- */}
+      {showAddModal && (
+        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center"><Plus size={20} className="mr-2 text-blue-600"/> Add Inventory SKU</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 p-1.5 bg-slate-100 rounded-full transition-colors"><X size={20}/></button>
+            </div>
+
+            <form onSubmit={handleAddItem} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">SKU / Item Name</label>
+                <input required type="text" placeholder="e.g., Maida, Samosa Box" value={formData.itemName} onChange={(e) => setFormData({...formData, itemName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:border-blue-500 outline-none text-sm font-bold uppercase" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">Classification Type</label>
+                  <select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:border-blue-500 outline-none text-xs font-bold bg-white uppercase">
+                    <option value="RAW_MATERIAL">Raw Material</option>
+                    <option value="PACKAGING">Packaging Asset</option>
+                    <option value="FINISHED_GOOD">Finished Good</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">Unit of Measurement</label>
+                  <select value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:border-blue-500 outline-none text-xs font-bold bg-white uppercase">
+                    <option value="KG">Kilograms (KG)</option>
+                    <option value="LITRE">Litres (L)</option>
+                    <option value="PIECES">Pieces (Pcs)</option>
+                    <option value="GRAMS">Grams (g)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">Opening Stock</label>
+                  <input required type="number" step="any" min="0" placeholder="0.00" value={formData.stockLevel} onChange={(e) => setFormData({...formData, stockLevel: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg focus:border-blue-500 outline-none font-mono font-black text-blue-600 text-lg" />
+                </div>
+                <div className="bg-orange-50 p-3 rounded-xl border border-orange-100">
+                  <label className="block text-[10px] font-black uppercase text-orange-600 tracking-wider mb-1.5">Low Alert Trigger</label>
+                  <input required type="number" step="any" min="0" placeholder="e.g., 5.0" value={formData.minStock} onChange={(e) => setFormData({...formData, minStock: e.target.value})} className="w-full p-2 border border-orange-200 rounded-lg focus:border-orange-500 outline-none font-mono font-black text-orange-700 text-lg bg-orange-50/50" />
+                </div>
+              </div>
+
+              <button disabled={isSaving} type="submit" className="w-full mt-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black uppercase tracking-wider py-4 rounded-xl transition-all shadow-lg active:scale-95 flex justify-center items-center text-xs">
+                {isSaving ? <Loader2 className="animate-spin" size={18} /> : "Lock New Inventory SKU"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------- ENTERPRISE HARDWARE STOCK LEDGER PRINT LAYER ------------------- */}
+      <div id="enterprise-receipt-print-area" className="hidden text-black font-mono p-4 w-full">
+        <div className="text-center pb-2 border-b-2 border-black">
+          <h2 className="font-black text-xl uppercase tracking-tight">{printerConfig.headerName || "RAMKESAR POS"}</h2>
+          <p className="text-[12px] font-black tracking-widest text-center w-full mt-1">** MASTER INVENTORY PHYSICAL AUDIT SHEET **</p>
+          <div className="flex justify-between text-[10px] mt-2 font-bold px-1 border-t border-solid border-black pt-1">
+            <span>Terminal Outlet: {outletId}</span>
+            <span>Date: {new Date().toLocaleDateString('en-IN')}</span>
+          </div>
+          <div className="flex justify-between text-[10px] font-bold mb-1 px-1">
+            <span>Generated By: System Administrator</span>
+            <span>Time: {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        </div>
+
+        <div className="my-4">
+          <h3 className="text-xs font-black uppercase bg-gray-100 p-1 tracking-wider border-b border-black text-center mb-2">RECORDED SYSTEM STOCK (FOR PHYSICAL RECONCILIATION)</h3>
+          <table className="w-full text-[11px] mt-2 border-collapse">
+            <thead>
+              <tr className="border-b-2 border-black text-left">
+                <th className="pb-1 w-10">S.NO</th>
+                <th className="pb-1">SKU DESCRIPTION</th>
+                <th className="pb-1 text-center">SYSTEM QTY</th>
+                <th className="pb-1 text-right">PHYSICAL COUNT</th>
+              </tr>
+            </thead>
+            <

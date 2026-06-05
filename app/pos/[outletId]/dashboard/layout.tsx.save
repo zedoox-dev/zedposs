@@ -1,0 +1,91 @@
+"use client";
+import { useState, useEffect } from "react";
+import { LayoutDashboard, ReceiptIndianRupee, PackageOpen, Settings, LogOut, ChefHat, BarChart3, Users, UtensilsCrossed, WalletCards, Menu, X, ArrowRight, PauseCircle } from "lucide-react";
+import Link from "next/link";
+import { useParams, usePathname, useRouter } from "next/navigation";
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const params = useParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const outletId = params.outletId;
+  
+  const [showNavOverlay, setShowNavOverlay] = useState(false);
+  const [holdCount, setHoldCount] = useState(0);
+
+  // Interval to update hold count badge from localStorage
+  useEffect(() => {
+    const updateCount = () => {
+      const saved = localStorage.getItem("zapped_held_orders");
+      if (saved) setHoldCount(JSON.parse(saved).length);
+      else setHoldCount(0);
+    };
+    updateCount();
+    const interval = setInterval(updateCount, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const modules = [
+    { name: "Billing Dashboard", path: "", icon: <LayoutDashboard size={28} />, desc: "Create bills & checkout", color: "bg-orange-500" },
+    { name: "Kitchen (KOT)", path: "/kitchen", icon: <ChefHat size={28} />, desc: "Live kitchen display cards", color: "bg-amber-500" },
+    { name: "Petty Cash", path: "/expenses", icon: <WalletCards size={28} />, desc: "Daily kharcha registry", color: "bg-red-500" },
+    { name: "Menu Creator", path: "/menu-manage", icon: <UtensilsCrossed size={28} />, desc: "Add items & GST settings", color: "bg-pink-500" },
+    { name: "Reports & Z-Bill", path: "/reports", icon: <BarChart3 size={28} />, desc: "Day closing accounts", color: "bg-violet-500" },
+    { name: "Outlet Settings", path: "/settings", icon: <Settings size={28} />, desc: "Configuration panels", color: "bg-slate-600" },
+  ];
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden relative">
+      <header className="h-16 bg-slate-900 px-6 flex items-center justify-between border-b border-slate-800 shadow-lg z-40">
+       <div className="flex items-center space-x-4">
+          <button onClick={() => setShowNavOverlay(true)} className="p-2 text-slate-400 hover:text-white bg-slate-800 rounded-xl border border-slate-700"><Menu size={22} /></button>
+          <div className="flex items-center space-x-2">
+            <span className="text-orange-500 font-black text-xl tracking-wider">ZAPPED POS</span>
+            <span className="text-slate-700 font-bold hidden sm:inline">|</span>
+            <span className="text-slate-300 font-bold text-sm hidden sm:inline uppercase">RamKesar - ({outletId})</span>
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-4">
+          {/* 🔥 HOLD BILLS ICON IN HEADER WITH BADGE */}
+          <div className="relative group cursor-pointer" onClick={() => router.push(`/pos/${outletId}/dashboard`)}>
+            <PauseCircle size={26} className="text-amber-500" />
+            {holdCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-900 animate-bounce">
+                {holdCount}
+              </span>
+            )}
+          </div>
+
+          <Link href="/" className="text-red-400 hover:text-red-500 font-bold flex items-center space-x-1 text-sm bg-red-500/10 px-3 py-1.5 rounded-xl transition-colors">
+            <LogOut size={16} /> <span className="hidden sm:inline">Logout</span>
+          </Link>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-hidden relative">{children}</div>
+
+      {showNavOverlay && (
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md z-50 p-6 overflow-y-auto flex flex-col justify-center items-center">
+          <div className="w-full max-w-5xl">
+            <div className="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
+              <div><h2 className="text-3xl font-black text-white tracking-tight">OPERATIONS HUB</h2></div>
+              <button onClick={() => setShowNavOverlay(false)} className="p-3 text-slate-400 hover:text-white bg-slate-800 rounded-full border border-slate-700"><X size={24} /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {modules.map((m) => (
+                <button key={m.name} onClick={() => { router.push(`/pos/${outletId}/dashboard${m.path}`); setShowNavOverlay(false); }} className="p-5 rounded-2xl border text-left flex items-start space-x-4 bg-slate-900/90 border-slate-800 hover:border-orange-500 transition-all group">
+                  <div className={`p-3 rounded-xl text-white ${m.color}`}>{m.icon}</div>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-white text-lg group-hover:text-orange-400 transition-colors">{m.name}</h3>
+                    <p className="text-slate-400 text-xs mt-1">{m.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
