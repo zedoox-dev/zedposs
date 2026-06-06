@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useOutlet } from "../context/OutletContext";
+// YAHAN PATH FIX KIYA HAI (../ ki jagah ../../ kiya hai taaki wo sahi folder me jaye)
+import { useOutlet } from "../../context/OutletContext";
 import { 
   Package, AlertTriangle, Plus, ArrowDownToLine, ArrowUpFromLine, 
   Search, Filter, Loader2, X, CheckCircle2 
@@ -266,7 +267,7 @@ export default function InventoryMatrixPage() {
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Assign Branch</label>
                   <select disabled={selectedOutlet !== "ALL"} value={newItem.outletId} onChange={(e) => setNewItem({...newItem, outletId: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50 disabled:opacity-60">
-                    {outlets.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                    {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
                   </select>
                 </div>
               </div>

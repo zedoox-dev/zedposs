@@ -15,9 +15,12 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [masterEmail, setMasterEmail] = useState<string | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  
+  // 🔥 NEW: DB Connected State for Tenants
+  const [tenantCount, setTenantCount] = useState<number>(0);
 
   // ==========================================
-  // LOCAL STORAGE SECURITY PROTOCOL
+  // LOCAL STORAGE SECURITY PROTOCOL & DB SYNC
   // ==========================================
   useEffect(() => {
     const sessionEmail = localStorage.getItem("zed_master_session");
@@ -28,9 +31,25 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
     } else {
       setMasterEmail(sessionEmail);
       setIsCheckingAuth(false);
+      // Fetch Live Tenants Count from DB
+      fetchTenantStats();
     }
   }, [router]);
   // ==========================================
+
+  // 🔥 NEW: Fetch total connected businesses from our API
+  const fetchTenantStats = async () => {
+    try {
+      // We are reusing the tenants API we built in the previous step
+      const res = await fetch("/api/super-admin/tenants");
+      const data = await res.json();
+      if (data.success && data.tenants) {
+        setTenantCount(data.tenants.length);
+      }
+    } catch (error) {
+      console.error("Failed to sync tenant stats");
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("zed_master_session");
@@ -42,7 +61,8 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
       title: "Core Operations",
       items: [
         { name: "Dashboard", path: "/super-admin", icon: <LayoutDashboard size={18} /> },
-        { name: "Businesses", path: "/super-admin/businesses", icon: <Building2 size={18} /> },
+        // Updated path to match our previously created page
+        { name: "Businesses", path: "/super-admin/tenants", icon: <Building2 size={18} /> },
         { name: "Subscriptions", path: "/super-admin/subscriptions", icon: <RefreshCw size={18} /> },
         { name: "Payments & Billing", path: "/super-admin/payments", icon: <CreditCard size={18} /> },
       ]
@@ -114,9 +134,17 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                   const isActive = pathname === item.path;
                   return (
                     <li key={idx}>
-                      <button onClick={() => router.push(item.path)} className={`w-full flex items-center px-3 py-2 rounded-lg text-xs font-bold transition-all ${isActive ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-slate-100'}`}>
-                        <span className="mr-3 opacity-80">{item.icon}</span>
-                        {item.name}
+                      <button onClick={() => router.push(item.path)} className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all ${isActive ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-slate-100'}`}>
+                        <div className="flex items-center">
+                          <span className="mr-3 opacity-80">{item.icon}</span>
+                          {item.name}
+                        </div>
+                        {/* 🔥 DB Connected Live Badge for Businesses */}
+                        {item.name === "Businesses" && tenantCount > 0 && (
+                          <span className="bg-emerald-500 text-white text-[9px] font-black px-2 py-0.5 rounded-md border border-emerald-400 shadow-sm">
+                            {tenantCount}
+                          </span>
+                        )}
                       </button>
                     </li>
                   );
