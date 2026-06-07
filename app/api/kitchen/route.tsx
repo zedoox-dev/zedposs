@@ -1,4 +1,4 @@
-app/api/kitchen/route.tsximport { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 
 // 1. GET: Kitchen me live orders dikhane ke liye
