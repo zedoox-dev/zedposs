@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Building2, CreditCard, ReceiptIndianRupee, Users, 
   UserCircle, Settings, ShieldCheck, Database, HeadphonesIcon, Megaphone, 
   Activity, BarChart3, CloudCog, Menu, X, Bell, Search, LogOut, Code, 
-  Zap, LifeBuoy, FileCheck2, Paintbrush, RefreshCw, TerminalSquare, Loader2
+  Zap, LifeBuoy, FileCheck2, Paintbrush, RefreshCw, TerminalSquare, Loader2,
+  Store // 🔥 NEW: Added Store icon for Outlets
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -61,8 +62,9 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
       title: "Core Operations",
       items: [
         { name: "Dashboard", path: "/super-admin", icon: <LayoutDashboard size={18} /> },
-        // Updated path to match our previously created page
         { name: "Businesses", path: "/super-admin/tenants", icon: <Building2 size={18} /> },
+        // 🔥 NEW: Outlets Page Added Here
+        { name: "Outlets", path: "/super-admin/outlets", icon: <Store size={18} /> },
         { name: "Subscriptions", path: "/super-admin/subscriptions", icon: <RefreshCw size={18} /> },
         { name: "Payments & Billing", path: "/super-admin/payments", icon: <CreditCard size={18} /> },
       ]

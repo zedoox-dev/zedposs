@@ -5,23 +5,15 @@ export async function POST(req: Request) {
   try {
     const { pin, outletId } = await req.json();
 
-    // 1. Database checking agar koi bhi user registered nahi hai
-    const userCount = await prisma.user.count();
-    if (userCount === 0) {
-      await prisma.user.create({
-        data: {
-          name: "Deepak (Manager)",
-          email: "manager@ramkesar.com",
-          password: "securepassword123",
-          pin: "1234",
-          role: "MANAGER"
-        }
-      });
-    }
-
-    // 2. PIN match logic
+    // 2. PIN match logic with new Schema mapping
     const user = await prisma.user.findFirst({
-      where: { pin: pin }
+      where: { 
+        pin: pin, 
+        isDeleted: false 
+      },
+      include: {
+        role: true // Include relation to get role name dynamically
+      }
     });
 
     if (!user) {
@@ -30,7 +22,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      user: { name: user.name, role: user.role } 
+      user: { 
+        name: user.name, 
+        role: user.role?.name || "STAFF",
+        outletId: user.outletId 
+      } 
     });
 
   } catch (error: any) {

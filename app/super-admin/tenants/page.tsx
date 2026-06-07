@@ -2,24 +2,25 @@
 import { useState, useEffect } from "react";
 import { 
   Building2, Plus, Search, Loader2, X, Crown, 
-  Store, Users, Globe, ShieldAlert, CheckCircle2, IndianRupee
+  Store, Users, Globe, ShieldAlert, Hash, Calendar, ChevronDown, ChevronUp
 } from "lucide-react";
 
 export default function SuperAdminTenantsPage() {
   const [tenants, setTenants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Track which tenant row is expanded to show its outlets
+  const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
 
-  // Modal & Form State
+  // Modal Form State (Removed Subscription Dropdown)
   const [showAddModal, setShowAddModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  
   const [onboardForm, setOnboardForm] = useState({
     brandName: "",
     ownerName: "",
     ownerEmail: "",
-    ownerPassword: "",
-    subscriptionPlan: "PRO"
+    ownerPassword: ""
   });
 
   useEffect(() => {
@@ -52,9 +53,9 @@ export default function SuperAdminTenantsPage() {
       
       if (res.ok && json.success) {
         setShowAddModal(false);
-        setOnboardForm({ brandName: "", ownerName: "", ownerEmail: "", ownerPassword: "", subscriptionPlan: "PRO" });
+        setOnboardForm({ brandName: "", ownerName: "", ownerEmail: "", ownerPassword: "" });
         fetchTenants();
-        alert(`✅ ${json.data.tenant.name} has been successfully onboarded! The owner can now log in.`);
+        alert(`✅ ${json.data.tenant.businessName} created with ID: ${json.data.tenant.id} ! You can now assign outlets to this ID.`);
       } else {
         alert("Error: " + json.error);
       }
@@ -65,18 +66,34 @@ export default function SuperAdminTenantsPage() {
     }
   };
 
+  // Utility to calculate days left (Dynamic calculation until Outlet Plan Schema is fully integrated)
+  const getValidityDetails = (createdAt: string) => {
+    const createdDate = new Date(createdAt);
+    const validTill = new Date(createdDate.setDate(createdDate.getDate() + 30)); // Assuming 30 days basic validity for UI
+    const today = new Date();
+    const diffTime = validTill.getTime() - today.getTime();
+    const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return {
+      validTill: validTill.toLocaleDateString('en-GB'),
+      daysLeft: daysLeft > 0 ? daysLeft : 0,
+      isActive: daysLeft > 0
+    };
+  };
+
   const filteredTenants = tenants.filter(t => 
-    t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (t.users[0]?.email || "").toLowerCase().includes(searchQuery.toLowerCase())
+    (t.businessName || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (t.users[0]?.email || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (t.id || "").includes(searchQuery)
   );
 
-  const totalOutlets = tenants.reduce((sum, t) => sum + t._count.outlets, 0);
+  const totalOutlets = tenants.reduce((sum, t) => sum + (t._count?.outlets || 0), 0);
 
   if (loading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-950 text-white">
         <Loader2 className="animate-spin text-indigo-500 mb-4" size={50} />
-        <h2 className="text-sm font-black uppercase tracking-widest text-slate-400">Accessing Master SaaS Database...</h2>
+        <h2 className="text-sm font-black uppercase tracking-widest text-slate-400">Syncing Multi-Tenant DB...</h2>
       </div>
     );
   }
@@ -96,12 +113,12 @@ export default function SuperAdminTenantsPage() {
             </h1>
           </div>
           <button onClick={() => setShowAddModal(true)} className="bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-lg shadow-indigo-500/30 transition-all active:scale-95">
-            <Plus className="mr-1.5" size={16} /> Onboard New Client
+            <Plus className="mr-1.5" size={16} /> Onboard New Tenant
           </button>
         </div>
 
         {/* System Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 shrink-0">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 shrink-0">
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Brands Registered</span>
@@ -112,18 +129,10 @@ export default function SuperAdminTenantsPage() {
 
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Live Outlets Worldwide</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Outlets Powered</span>
               <p className="text-4xl font-mono font-black text-indigo-600 mt-1">{totalOutlets}</p>
             </div>
             <Store size={40} className="text-indigo-50" />
-          </div>
-
-          <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Active Subscriptions</span>
-              <p className="text-4xl font-mono font-black text-emerald-700 mt-1">{tenants.length}</p>
-            </div>
-            <CheckCircle2 size={40} className="text-emerald-200" />
           </div>
         </div>
 
@@ -134,75 +143,99 @@ export default function SuperAdminTenantsPage() {
             <div className="relative w-80">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
               <input 
-                type="text" placeholder="Search Brand or Owner Email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                type="text" placeholder="Search Brand, 5-Digit ID or Email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 bg-white shadow-sm" 
               />
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <table className="w-full text-left">
-              <thead className="bg-white sticky top-0 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400 z-10 shadow-sm">
-                <tr>
-                  <th className="p-5">Registered Brand</th>
-                  <th className="p-5">Owner Credentials</th>
-                  <th className="p-5 text-center">Network Size</th>
-                  <th className="p-5 text-right">System Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50 text-sm font-bold text-slate-700">
-                {filteredTenants.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="p-10 text-center">
-                      <Building2 size={50} className="mx-auto text-slate-200 mb-4" />
-                      <p className="text-xs font-black uppercase tracking-widest text-slate-400">No SaaS Clients Found</p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTenants.map((tenant: any) => (
-                    <tr key={tenant.id} className="hover:bg-slate-50 transition-colors group">
-                      <td className="p-5">
-                        <div className="font-black text-base text-slate-900 uppercase flex items-center">
-                          <div className="w-8 h-8 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center mr-3">
-                            <Building2 size={14} />
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+            <div className="space-y-4">
+              {filteredTenants.length === 0 ? (
+                <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-2xl">
+                  <Building2 size={50} className="mx-auto text-slate-200 mb-4" />
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">No Brands Found</p>
+                </div>
+              ) : (
+                filteredTenants.map((tenant: any) => (
+                  <div key={tenant.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm transition-all hover:border-indigo-300">
+                    
+                    {/* Primary Tenant Row */}
+                    <div 
+                      className="p-5 flex items-center justify-between cursor-pointer bg-white hover:bg-slate-50 transition-colors"
+                      onClick={() => setExpandedTenantId(expandedTenantId === tenant.id ? null : tenant.id)}
+                    >
+                      <div className="flex items-center gap-6 w-1/3">
+                        <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                          <Building2 size={20} />
+                        </div>
+                        <div>
+                          <div className="font-black text-base text-slate-900 uppercase">
+                            {tenant.businessName || "Unnamed Brand"}
                           </div>
-                          {tenant.name}
+                          <div className="text-[10px] text-slate-500 mt-1 uppercase tracking-widest font-black flex items-center">
+                            <Hash size={12} className="mr-1 text-indigo-400"/> ID: <span className="text-indigo-600 ml-1">{tenant.id}</span> 
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest ml-11 font-black">
-                          Joined: {new Date(tenant.createdAt).toLocaleDateString('en-GB')}
-                        </div>
-                      </td>
-                      
-                      <td className="p-5">
+                      </div>
+
+                      <div className="w-1/3 flex flex-col justify-center">
                         <div className="flex items-center text-xs font-black text-slate-800 uppercase">
-                          <Crown size={12} className="mr-1.5 text-amber-500"/> {tenant.users[0]?.name || "N/A"}
+                          <Crown size={14} className="mr-2 text-amber-500"/> {tenant.users[0]?.name || "N/A"}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-500 mt-1">
+                        <div className="text-[10px] font-mono text-slate-500 mt-1 ml-6">
                           {tenant.users[0]?.email || "No email"}
                         </div>
-                      </td>
+                      </div>
 
-                      <td className="p-5 text-center">
-                        <div className="flex justify-center gap-2">
-                          <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-[10px] uppercase tracking-widest border border-slate-200 font-black flex items-center">
-                            <Store size={10} className="mr-1"/> {tenant._count.outlets}
-                          </span>
-                          <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-[10px] uppercase tracking-widest border border-slate-200 font-black flex items-center">
-                            <Users size={10} className="mr-1"/> {tenant._count.users}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td className="p-5 text-right">
-                        <span className="inline-flex items-center text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
-                          <CheckCircle2 size={12} className="mr-1.5"/> Active Server
+                      <div className="w-1/4 flex justify-end gap-3 items-center">
+                        <span className="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border border-slate-200 font-black flex items-center">
+                          <Store size={14} className="mr-1.5"/> {tenant._count?.outlets || 0} Outlets
                         </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                        {expandedTenantId === tenant.id ? <ChevronUp size={20} className="text-slate-400"/> : <ChevronDown size={20} className="text-slate-400"/>}
+                      </div>
+                    </div>
+
+                    {/* Expandable Outlets Sub-Table */}
+                    {expandedTenantId === tenant.id && (
+                      <div className="bg-slate-50 border-t border-slate-100 p-5">
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 flex items-center mb-4">
+                          <Store size={12} className="mr-1.5"/> Outlets & Subscription Status
+                        </h4>
+                        
+                        {tenant.outlets?.length === 0 ? (
+                          <div className="text-center p-4 bg-white rounded-xl border border-slate-200 text-[10px] font-bold uppercase text-slate-400 tracking-widest">
+                            No outlets mapped to ID {tenant.id} yet.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {tenant.outlets.map((outlet: any) => {
+                              const validity = getValidityDetails(outlet.createdAt);
+                              return (
+                                <div key={outlet.id} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                  <div>
+                                    <p className="text-xs font-black uppercase text-slate-800">{outlet.name}</p>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 flex items-center">
+                                      <Calendar size={10} className="mr-1"/> Valid Till: {validity.validTill}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className={`inline-flex items-center px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border ${validity.isActive ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                                      {validity.daysLeft} Days Left
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 
@@ -214,7 +247,7 @@ export default function SuperAdminTenantsPage() {
               <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4 shrink-0">
                 <div>
                   <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center"><Globe size={20} className="mr-2 text-indigo-600"/> Provision New Tenant</h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Create isolated database workspace & owner login.</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Create master login and generate 5-Digit Brand ID.</p>
                 </div>
                 <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-full"><X size={20}/></button>
               </div>
@@ -234,18 +267,9 @@ export default function SuperAdminTenantsPage() {
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-4 flex items-center"><Crown size={12} className="mr-1.5"/> 2. Super Admin Credentials (Brand Owner)</h3>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Owner Name</label>
-                      <input required type="text" placeholder="e.g. Upendra Yadav" value={onboardForm.ownerName} onChange={(e) => setOnboardForm({...onboardForm, ownerName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Subscription Tier</label>
-                      <select value={onboardForm.subscriptionPlan} onChange={(e) => setOnboardForm({...onboardForm, subscriptionPlan: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white">
-                        <option value="PRO">Pro Plan (Unlimited Outlets)</option>
-                        <option value="BASIC">Basic Plan (1 Outlet)</option>
-                      </select>
-                    </div>
+                  <div className="mb-4">
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Owner Name</label>
+                    <input required type="text" placeholder="e.g. Upendra Yadav" value={onboardForm.ownerName} onChange={(e) => setOnboardForm({...onboardForm, ownerName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white" />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -261,7 +285,7 @@ export default function SuperAdminTenantsPage() {
                 </div>
 
                 <button disabled={isProcessing} type="submit" className="w-full mt-auto bg-slate-900 text-white font-black uppercase tracking-widest py-4 rounded-xl text-xs flex justify-center items-center shadow-xl active:scale-95 transition-all disabled:opacity-50">
-                  {isProcessing ? <Loader2 className="animate-spin" size={16}/> : "Deploy Brand & Send Credentials"}
+                  {isProcessing ? <Loader2 className="animate-spin" size={16}/> : "Deploy Brand & Assign 5-Digit ID"}
                 </button>
               </form>
             </div>

@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
-// Note: In real app, check session to ensure user is SUPER_ADMIN
 
 export const dynamic = "force-dynamic";
 
-// GET ALL BRANDS (TENANTS) ON THE SAAS
+// Helper Function: Generate 5-Digit Unique String ID
+const generate5DigitId = () => {
+  return Math.floor(10000 + Math.random() * 90000).toString();
+};
+
+// GET ALL BRANDS (TENANTS) & THEIR OUTLETS
 export async function GET() {
   try {
     const tenants = await prisma.tenant.findMany({
       include: {
+        outlets: true, // Fetching outlets to show validity & plans
         _count: {
           select: { outlets: true, users: true }
         },
@@ -28,25 +33,36 @@ export async function GET() {
   }
 }
 
-// ONBOARD A NEW BRAND & CREATE ITS OWNER
+// ONBOARD A NEW BRAND (TENANT ONLY, NO SUBSCRIPTION YET)
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { brandName, ownerName, ownerEmail, ownerPassword, subscriptionPlan } = body;
+    const { brandName, ownerName, ownerEmail, ownerPassword } = body;
 
     if (!brandName || !ownerEmail || !ownerPassword) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // Prisma Transaction to setup the entire Brand Workspace safely
     const result = await prisma.$transaction(async (tx) => {
       
-      // 1. Create the Tenant (Brand)
+      // 1. Generate a Unique 5-Digit ID for the Tenant
+      let tenantId = generate5DigitId();
+      let existingTenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+      while (existingTenant) {
+        tenantId = generate5DigitId();
+        existingTenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+      }
+
+      // 2. Create the Tenant (Brand) - Only ID, Name, Email (Subscription will be handled per Outlet later)
       const newTenant = await tx.tenant.create({
-        data: { name: brandName } // You can add plan details to Tenant schema later
+        data: { 
+          id: tenantId,
+          businessName: brandName,
+          ownerEmail: ownerEmail
+        } 
       });
 
-      // 2. Create the default "Brand Owner" Role for this specific Tenant
+      // 3. Create the default "Brand Owner" Role for this Tenant
       const ownerRole = await tx.role.create({
         data: {
           name: "Brand Owner",
@@ -63,12 +79,12 @@ export async function POST(req: Request) {
         }
       });
 
-      // 3. Create the Owner User Account
+      // 4. Create the Owner Login Account
       const newOwner = await tx.user.create({
         data: {
           name: ownerName,
           email: ownerEmail,
-          password: ownerPassword, // In production, hash this using bcrypt!
+          password: ownerPassword, 
           roleId: ownerRole.id,
           tenantId: newTenant.id
         }

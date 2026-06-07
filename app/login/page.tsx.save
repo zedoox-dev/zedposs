@@ -1,4 +1,4 @@
-"use client";
+use client";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -16,20 +16,6 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     
-    // ==========================================
-    // 1. SUPER ADMIN MASTER BYPASS LOGIC
-    // ==========================================
-    // Ye aapka (SaaS Owner) ka secret hardcoded login hai. 
-    // Isse aap direct Super Admin layout me jayenge bina DB check ke.
-    if (email === "admin@zedoox.com" && password === "Master@123") {
-      localStorage.setItem("zed_master_session", email);
-      router.push("/super-admin/tenants"); // Direct to SaaS Master Panel
-      return;
-    }
-
-    // ==========================================
-    // 2. TENANT (BRAND OWNER) & STAFF LOGIN VIA DB
-    // ==========================================
     const result = await signIn("credentials", {
       redirect: false,
       email,
@@ -40,9 +26,8 @@ export default function LoginPage() {
       setError(result.error);
       setLoading(false);
     } else {
-      // Dono Brand Owner aur Staff /dashboard par hi jayenge.
-      // Permissions aur outlets ka control Dashboard ke layout me hoga!
-      router.push("/dashboard"); 
+      // Redirect to main Layout where Offline Sync starts
+      router.push("/pos/redirect"); 
     }
   };
 

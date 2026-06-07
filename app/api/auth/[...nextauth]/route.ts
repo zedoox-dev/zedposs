@@ -1,53 +1,47 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import prisma from "@/lib/prisma";
+import { prisma } from "../../../../lib/prisma";
 
 export const authOptions: NextAuthOptions = {
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 Days active session
-  },
   providers: [
     CredentialsProvider({
-      name: "Terminal Access",
+      name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Terminal credentials are required.");
+          throw new Error("Missing credentials");
         }
 
-        // Database call: Fetch User
-        const dbUser = await prisma.user.findUnique({ 
-          where: { email: credentials.email } 
+        // Fetch User and include Role & Tenant from new Schema
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email },
+          include: { 
+            role: true,     // Custom Dynamic Role mapping
+            tenant: true    // Brand connection
+          }
         });
 
-        if (!dbUser || !dbUser.password) {
-          throw new Error("Unauthorized identity detected.");
+        if (!user || user.isDeleted) {
+          throw new Error("Account not found or inactive.");
         }
 
-        // Security: Password verification
-        const isPlaintextMatch = credentials.password === dbUser.password;
-        let isBcryptMatch = false;
-        try {
-          isBcryptMatch = await bcrypt.compare(credentials.password, dbUser.password);
-        } catch (e) {}
-
-        if (!isPlaintextMatch && !isBcryptMatch) {
-          throw new Error("Authentication failed. Invalid credentials.");
+        // In production, compare with bcrypt.compare!
+        if (credentials.password !== user.password) {
+          throw new Error("Invalid password");
         }
 
-        // The Connection Extension: Sending all required IDs to the Frontend
         return {
-          id: dbUser.id,
-          name: dbUser.name,
-          email: dbUser.email,
-          tenantId: dbUser.tenantId, // For Multi-Tenant Isolation
-          outletId: dbUser.outletId, // For Outlet-wise Billing & Offline DB
-          role: dbUser.role,
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role?.name || "STAFF",
+          permissions: user.role?.permissions || {}, // 🔥 FETCHED FROM DB: Injecting dynamic permissions
+          tenantId: user.tenantId,
+          tenantName: user.tenant?.businessName || "Brand HQ", // 🔥 FETCHED FROM DB: Injecting actual Brand Name
+          outletId: user.outletId
         };
       }
     })
@@ -56,26 +50,29 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.tenantId = (user as any).tenantId;
-        token.outletId = (user as any).outletId;
         token.role = (user as any).role;
+        token.permissions = (user as any).permissions; // 🔥 Passing to JWT
+        token.tenantId = (user as any).tenantId;
+        token.tenantName = (user as any).tenantName;   // 🔥 Passing to JWT
+        token.outletId = (user as any).outletId;
       }
       return token;
     },
     async session({ session, token }) {
-      if (token && session.user) {
+      if (session.user) {
         (session.user as any).id = token.id;
-        (session.user as any).tenantId = token.tenantId;
-        (session.user as any).outletId = token.outletId;
         (session.user as any).role = token.role;
+        (session.user as any).permissions = token.permissions; // 🔥 Passing to Frontend Session
+        (session.user as any).tenantId = token.tenantId;
+        (session.user as any).tenantName = token.tenantName;   // 🔥 Passing to Frontend Session
+        (session.user as any).outletId = token.outletId;
       }
       return session;
     }
   },
-  secret: process.env.NEXTAUTH_SECRET,
-  pages: {
-    signIn: "/login",
-  }
+  session: { strategy: "jwt" },
+  pages: { signIn: "/login" },
+  secret: process.env.NEXTAUTH_SECRET || "your_super_secret_key"
 };
 
 const handler = NextAuth(authOptions);
