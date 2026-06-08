@@ -284,12 +284,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
             </div>
 
-            {generalSettings?.phone && (
-              <div className="h-10 hidden sm:flex bg-slate-800 border border-slate-700 px-4 rounded-xl items-center text-xs font-bold text-slate-300 shrink-0">
-                <Phone size={14} className="text-orange-500 mr-2" /> +91 {generalSettings.phone}
-              </div>
-            )}
-
             {/* LOGOUT BUTTON */}
             <button onClick={() => setShowLogoutConfirm(true)} className="h-10 w-10 flex items-center justify-center text-red-400 hover:text-white bg-red-500/10 hover:bg-red-50 border border-red-500/20 rounded-xl transition-all active:scale-95 shrink-0" title="Sign Out Profile">
               <LogOut size={20} />
