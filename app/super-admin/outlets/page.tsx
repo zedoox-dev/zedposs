@@ -19,8 +19,10 @@ interface Outlet {
     businessName: string;
     ownerEmail: string;
     plan?: {
+      id: string;
       name: string;
       maxOutlets: number;
+      price: number;
     } | null;
     users: any[];
   };
@@ -32,20 +34,28 @@ interface Tenant {
   businessName: string;
 }
 
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+  maxOutlets: number;
+}
+
 export default function OutletsPage() {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Modal States
+  // Modal Controls
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editOutletData, setEditOutletData] = useState<Outlet | null>(null);
 
-  // Add Form State
+  // Add Form State (Strictly holds selected planId now)
   const [formData, setFormData] = useState({
-    name: "", address: "", email: "", password: "", tenantId: "", phone: "", gst: "", fssai: ""
+    name: "", address: "", email: "", password: "", tenantId: "", planId: "", phone: "", gst: "", fssai: ""
   });
 
   // Edit Form State
@@ -54,17 +64,20 @@ export default function OutletsPage() {
   });
 
   useEffect(() => {
-    fetchOutlets();
+    fetchInitialData();
     fetchTenants();
   }, []);
 
-  const fetchOutlets = async () => {
+  const fetchInitialData = async () => {
     try {
       const res = await fetch("/api/super-admin/outlets");
       const data = await res.json();
-      if (data.success) setOutlets(data.outlets);
+      if (data.success) {
+        setOutlets(data.outlets);
+        setPlans(data.subscriptionPlans || []); // Loading DB driven plans list
+      }
     } catch (error) {
-      console.error("Failed to fetch outlets");
+      console.error("Failed to map base stack channels");
     } finally {
       setIsLoading(false);
     }
@@ -76,7 +89,7 @@ export default function OutletsPage() {
       const data = await res.json();
       if (data.success) setTenants(data.tenants);
     } catch (error) {
-      console.error("Failed to fetch tenants");
+      console.error("Failed to fetch tenants stack matrix");
     }
   };
 
@@ -92,15 +105,15 @@ export default function OutletsPage() {
       const data = await res.json();
       
       if (data.success) {
-        setFormData({ name: "", address: "", email: "", password: "", tenantId: "", phone: "", gst: "", fssai: "" });
+        setFormData({ name: "", address: "", email: "", password: "", tenantId: "", planId: "", phone: "", gst: "", fssai: "" });
         setIsModalOpen(false);
-        fetchOutlets();
-        alert(`✅ Outlet created with 7-Digit ID: ${data.outlet.id}`);
+        fetchInitialData();
+        alert(`✅ Outlet deployed with unique 7-Digit ID: ${data.outlet.id}`);
       } else {
-        alert("⚠️ " + data.error);
+        alert("⚠️ Authorization Error: " + data.error);
       }
     } catch (error) {
-      alert("Network Error: Failed to create outlet");
+      alert("Network Connection Refused");
     } finally {
       setIsSubmitting(false);
     }
@@ -119,13 +132,13 @@ export default function OutletsPage() {
       const data = await res.json();
       if (data.success) {
         setEditOutletData(null);
-        fetchOutlets();
-        alert("✅ Outlet details updated successfully.");
+        fetchInitialData();
+        alert("✅ Configuration profiles customized successfully.");
       } else {
-        alert("⚠️ " + data.error);
+        alert("⚠️ Update Denied: " + data.error);
       }
     } catch (error) {
-      alert("Network Error: Failed to update");
+      alert("Network sync timeout error");
     } finally {
       setIsSubmitting(false);
     }
@@ -298,7 +311,7 @@ export default function OutletsPage() {
         </div>
       </div>
 
-      {/* --- ADD OUTLET MODAL --- */}
+      {/* --- ADD OUTLET MODAL WITH MANDATORY SUBSCRIPTION PLAN DROPDOWN --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden border-t-8 border-blue-600 flex flex-col max-h-[90vh]">
@@ -312,30 +325,49 @@ export default function OutletsPage() {
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-700 bg-white p-2 rounded-full border border-slate-200"><XCircle size={16} /></button>
             </div>
             
-            <form onSubmit={handleCreateOutlet} className="p-6 overflow-y-auto custom-scrollbar">
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6">
-                <label className="block text-[10px] font-black uppercase tracking-widest text-blue-800 mb-1.5 flex items-center">
-                  <Building2 size={12} className="mr-1"/> Link to Brand (Tenant ID) *
-                </label>
-                {/* 💡 Suggestion + Manual Input via Datalist */}
-                <input 
-                  required
-                  list="tenant-options"
-                  placeholder="Type ID or select from suggestions..."
-                  value={formData.tenantId}
-                  onChange={(e) => setFormData({...formData, tenantId: e.target.value})}
-                  className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-xs font-mono font-bold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
-                />
-                <datalist id="tenant-options">
-                  {tenants.map(t => <option key={t.id} value={t.id}>{t.businessName} (ID: {t.id})</option>)}
-                </datalist>
-                <p className="text-[8px] font-bold text-blue-500 mt-2 uppercase tracking-widest">Outlet creation will fail if the selected brand's plan limit is exceeded.</p>
+            <form onSubmit={handleCreateOutlet} className="p-6 overflow-y-auto custom-scrollbar space-y-4">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-blue-800 mb-1.5 flex items-center">
+                    <Building2 size={12} className="mr-1"/> 1. Link to Brand ID *
+                  </label>
+                  <input 
+                    required
+                    list="tenant-options"
+                    placeholder="Enter 5-Digit Brand ID..."
+                    value={formData.tenantId}
+                    onChange={(e) => setFormData({...formData, tenantId: e.target.value})}
+                    className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-xs font-mono font-bold outline-none focus:border-blue-500 transition-all"
+                  />
+                  <datalist id="tenant-options">
+                    {tenants.map(t => <option key={t.id} value={t.id}>{t.businessName} (ID: {t.id})</option>)}
+                  </datalist>
+                </div>
+
+                {/* 🔥 MANDATORY SUBSCRIPTION PLAN DROPDOWN */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-blue-800 mb-1.5 flex items-center">
+                    <CreditCard size={12} className="mr-1"/> 2. Purchase Subscription Plan *
+                  </label>
+                  <select
+                    required
+                    value={formData.planId}
+                    onChange={(e) => setFormData({...formData, planId: e.target.value})}
+                    className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-xs font-bold uppercase outline-none focus:border-blue-500 transition-all"
+                  >
+                    <option value="" disabled>Choose Subscription Plan...</option>
+                    {plans.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} (₹{p.price}/mo - Max {p.maxOutlets} Stores)</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Outlet Name *</label>
-                  <input required type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold uppercase focus:border-blue-500 outline-none" placeholder="e.g. CP Branch" />
+                  <input required type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold uppercase focus:border-blue-500 outline-none" placeholder="e.g. Lajpat Nagar Branch" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">POS Login Password</label>
@@ -343,12 +375,12 @@ export default function OutletsPage() {
                 </div>
               </div>
 
-              <div className="mb-4">
+              <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Full Address *</label>
-                <textarea required rows={2} value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-blue-500 outline-none resize-none custom-scrollbar" placeholder="Street, City, State" />
+                <textarea required rows={2} value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-blue-500 outline-none resize-none custom-scrollbar" placeholder="Street Address, City, ZIP" />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Outlet Email</label>
                   <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-blue-500 outline-none" placeholder="store@..." />
@@ -366,7 +398,7 @@ export default function OutletsPage() {
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
                 <button type="submit" disabled={isSubmitting} className="bg-slate-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg px-8 py-3 disabled:opacity-50 flex items-center">
-                  {isSubmitting ? <Loader2 size={16} className="animate-spin mr-2" /> : null} {isSubmitting ? "Allocating..." : "Deploy Outlet"}
+                  {isSubmitting ? <Loader2 size={16} className="animate-spin mr-2" /> : null} {isSubmitting ? "Allocating Plan..." : "Deploy Outlet"}
                 </button>
               </div>
             </form>
@@ -374,7 +406,7 @@ export default function OutletsPage() {
         </div>
       )}
 
-      {/* --- EDIT / VIEW DETAILS MODAL --- */}
+      {/* --- EDIT / CONFIGURATION MODULE MODAL --- */}
       {editOutletData && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden border-t-8 border-amber-500 flex flex-col max-h-[90vh]">
@@ -390,7 +422,7 @@ export default function OutletsPage() {
             
             <form onSubmit={handleUpdateOutlet} className="p-6 overflow-y-auto custom-scrollbar space-y-6">
               
-              {/* Tenant Details (Read Only Info) */}
+              {/* Parent Tenant Metadata */}
               <div className="bg-slate-900 rounded-2xl p-5 text-white flex flex-col md:flex-row gap-4 items-center justify-between shadow-lg">
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Parent Brand (Tenant)</p>
@@ -398,17 +430,16 @@ export default function OutletsPage() {
                 </div>
                 <div className="h-8 w-px bg-slate-700 hidden md:block"></div>
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Owner Contact</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Owner Registry Connection</p>
                   <div className="font-mono text-xs flex items-center"><Crown size={14} className="mr-2 text-amber-400"/> {editOutletData.tenant?.users?.[0]?.email || editOutletData.tenant?.ownerEmail}</div>
                 </div>
                 <div className="h-8 w-px bg-slate-700 hidden md:block"></div>
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">SaaS Plan</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Active SaaS Plan Token</p>
                   <div className="font-black text-xs text-emerald-400">{editOutletData.tenant?.plan?.name || "BASIC"} PLAN</div>
                 </div>
               </div>
 
-              {/* Editable Fields */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Outlet Name</label>
@@ -444,7 +475,7 @@ export default function OutletsPage() {
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input type="checkbox" checked={editFormData.isActive} onChange={(e) => setEditFormData({...editFormData, isActive: e.target.checked})} className="w-5 h-5 text-amber-600 rounded border-slate-300 focus:ring-amber-500" />
                   <div>
-                    <span className="text-xs font-black uppercase text-slate-800 block">Outlet Status</span>
+                    <span className="text-xs font-black uppercase text-slate-800 block">Outlet Operations Status</span>
                     <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase">Toggle to suspend operations</span>
                   </div>
                 </label>
