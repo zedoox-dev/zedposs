@@ -19,8 +19,6 @@ export default function LoginPage() {
     // ==========================================
     // 1. SUPER ADMIN MASTER BYPASS LOGIC
     // ==========================================
-    // Ye aapka (SaaS Owner) ka secret hardcoded login hai. 
-    // Isse aap direct Super Admin layout me jayenge bina DB check ke.
     if (email === "admin@zedoox.com" && password === "Master@123") {
       localStorage.setItem("zed_master_session", email);
       router.push("/super-admin/tenants"); // Direct to SaaS Master Panel
@@ -28,7 +26,7 @@ export default function LoginPage() {
     }
 
     // ==========================================
-    // 2. TENANT (BRAND OWNER) & STAFF LOGIN VIA DB
+    // 2. OUTLET & BRAND OWNER LOGIN VIA DB
     // ==========================================
     const result = await signIn("credentials", {
       redirect: false,
@@ -40,9 +38,23 @@ export default function LoginPage() {
       setError(result.error);
       setLoading(false);
     } else {
-      // Dono Brand Owner aur Staff /dashboard par hi jayenge.
-      // Permissions aur outlets ka control Dashboard ke layout me hoga!
-      router.push("/dashboard"); 
+      // Login successful! Now fetch session to check where to redirect
+      try {
+        const res = await fetch("/api/auth/session");
+        const sessionData = await res.json();
+
+        // 🌟 SMART ROUTING ENGINE
+        if (sessionData?.user?.role === "OUTLET") {
+          // Send POS Terminal directly to its dedicated URL
+          router.push(`/pos/${sessionData.user.outletId}/dashboard`);
+        } else {
+          // Send Brand Owner / Staff to the central Dashboard
+          router.push("/dashboard"); 
+        }
+      } catch (err) {
+        // Fallback
+        router.push("/dashboard");
+      }
     }
   };
 

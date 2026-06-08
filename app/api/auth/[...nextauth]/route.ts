@@ -15,34 +15,54 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Missing credentials");
         }
 
-        // Fetch User and include Role & Tenant from new Schema
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: { 
-            role: true,     // Custom Dynamic Role mapping
-            tenant: true    // Brand connection
-          }
+        // ==========================================
+        // 1. FIRST CHECK IN OUTLETS TABLE
+        // ==========================================
+        const outlet = await prisma.outlet.findFirst({
+          where: { email: credentials.email, isDeleted: false },
+          include: { tenant: true }
         });
 
-        if (!user || user.isDeleted) {
-          throw new Error("Account not found or inactive.");
+        if (outlet) {
+          if (outlet.password !== credentials.password) throw new Error("Invalid terminal password");
+          if (!outlet.isActive) throw new Error("This Outlet is inactive or suspended");
+
+          return {
+            id: outlet.id,
+            name: outlet.name,
+            email: outlet.email,
+            role: "OUTLET", // Explicitly mark as Outlet Terminal
+            tenantId: outlet.tenantId,
+            tenantName: outlet.tenant?.businessName || "Brand HQ",
+            outletId: outlet.id,
+            address: outlet.address // Sent to POS top bar
+          };
         }
 
-        // In production, compare with bcrypt.compare!
-        if (credentials.password !== user.password) {
-          throw new Error("Invalid password");
+        // ==========================================
+        // 2. IF NOT OUTLET, CHECK IN USERS TABLE (Brand Owner / Staff)
+        // ==========================================
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email },
+          include: { role: true, tenant: true }
+        });
+
+        if (user && !user.isDeleted) {
+          if (user.password !== credentials.password) throw new Error("Invalid account password");
+          
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role?.name || "STAFF",
+            permissions: user.role?.permissions || {},
+            tenantId: user.tenantId,
+            tenantName: user.tenant?.businessName || "Brand HQ",
+            outletId: user.outletId
+          };
         }
 
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role?.name || "STAFF",
-          permissions: user.role?.permissions || {}, // 🔥 FETCHED FROM DB: Injecting dynamic permissions
-          tenantId: user.tenantId,
-          tenantName: user.tenant?.businessName || "Brand HQ", // 🔥 FETCHED FROM DB: Injecting actual Brand Name
-          outletId: user.outletId
-        };
+        throw new Error("Account not found in Outlet or User registries.");
       }
     })
   ],
@@ -51,10 +71,11 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = (user as any).role;
-        token.permissions = (user as any).permissions; // 🔥 Passing to JWT
+        token.permissions = (user as any).permissions;
         token.tenantId = (user as any).tenantId;
-        token.tenantName = (user as any).tenantName;   // 🔥 Passing to JWT
+        token.tenantName = (user as any).tenantName;
         token.outletId = (user as any).outletId;
+        token.address = (user as any).address;
       }
       return token;
     },
@@ -62,10 +83,11 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
-        (session.user as any).permissions = token.permissions; // 🔥 Passing to Frontend Session
+        (session.user as any).permissions = token.permissions;
         (session.user as any).tenantId = token.tenantId;
-        (session.user as any).tenantName = token.tenantName;   // 🔥 Passing to Frontend Session
+        (session.user as any).tenantName = token.tenantName;
         (session.user as any).outletId = token.outletId;
+        (session.user as any).address = token.address;
       }
       return session;
     }
