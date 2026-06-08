@@ -13,13 +13,13 @@ export async function GET() {
   try {
     const tenants = await prisma.tenant.findMany({
       include: {
-        outlets: true, // Fetching outlets to show validity & plans
+        outlets: true, // Fetching complete outlet details including password/email
         _count: {
           select: { outlets: true, users: true }
         },
         users: {
           where: { role: { name: "Brand Owner" } },
-          select: { name: true, email: true },
+          select: { id: true, name: true, email: true, password: true }, // Added password for Super Admin View
           take: 1
         }
       },
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
         existingTenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       }
 
-      // 2. Create the Tenant (Brand) - Only ID, Name, Email (Subscription will be handled per Outlet later)
+      // 2. Create the Tenant (Brand) - Only ID, Name, Email
       const newTenant = await tx.tenant.create({
         data: { 
           id: tenantId,
@@ -97,5 +97,36 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("Tenant Creation Error:", error);
     return NextResponse.json({ error: "Failed to onboard new brand. Email might be in use." }, { status: 500 });
+  }
+}
+
+// UPDATE OWNER CREDENTIALS (EMAIL / PASSWORD)
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+    const { tenantId, userId, newEmail, newPassword } = body;
+
+    if (!tenantId || !userId || !newEmail || !newPassword) {
+      return NextResponse.json({ error: "Missing data for update" }, { status: 400 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Update Tenant Level Email
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: { ownerEmail: newEmail }
+      });
+
+      // Update Actual User (Brand Owner) Credentials
+      await tx.user.update({
+        where: { id: userId },
+        data: { email: newEmail, password: newPassword }
+      });
+    });
+
+    return NextResponse.json({ success: true, message: "Credentials updated successfully" });
+  } catch (error: any) {
+    console.error("Update Credentials Error:", error);
+    return NextResponse.json({ error: "Failed to update credentials. Email might exist." }, { status: 500 });
   }
 }
