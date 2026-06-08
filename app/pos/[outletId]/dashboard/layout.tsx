@@ -148,7 +148,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // --- 🔥 OUTLET DATA MAPPING FROM SESSION ---
   const outletName = session.user.name ? session.user.name.toUpperCase() : "ZEDPOSS OUTLET";
-  const outletAddress = (session.user as any).address ? (session.user as any).address.toUpperCase() : "ADDRESS NOT SET";
   const currentUserOutlet = outletId;
 
   const modules = [
@@ -179,14 +178,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <div className="flex flex-col h-screen bg-slate-50 overflow-hidden relative font-sans">
         
-        {/* 👑 WINDOW CONTROL BADGE (NAME | ADDRESS | OUTLET ID) */}
+        {/* 👑 WINDOW CONTROL BADGE (NAME | OUTLET ID) */}
         <div className="h-7 bg-slate-950 flex items-center justify-between px-4 select-none z-50 shrink-0">
           <div className="text-[10px] font-black tracking-widest uppercase text-slate-400 flex items-center overflow-hidden whitespace-nowrap">
             <span className={`${isOnline ? 'text-emerald-500' : 'text-red-500'} mr-2 animate-pulse shrink-0`}>●</span> 
             <span className="truncate">{outletName}</span> 
             <span className="opacity-40 mx-2 shrink-0">|</span> 
-            <span className="truncate max-w-[200px] hidden sm:inline">{outletAddress}</span>
-            <span className="opacity-40 mx-2 shrink-0 hidden md:inline">|</span> 
             <span className="shrink-0 text-orange-500">OUTLET ID: {currentUserOutlet}</span>
           </div>
           <div className="flex items-center space-x-4 text-slate-600 shrink-0">
@@ -293,17 +290,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             )}
 
-            {/* 🔥 SUPPORT NUMBER */}
-            <div className="hidden md:flex flex-col text-right mr-2 border-r border-slate-800 pr-4">
+            {/* LOGOUT BUTTON */}
+            <button onClick={() => setShowLogoutConfirm(true)} className="h-10 w-10 flex items-center justify-center text-red-400 hover:text-white bg-red-500/10 hover:bg-red-50 border border-red-500/20 rounded-xl transition-all active:scale-95 shrink-0" title="Sign Out Profile">
+              <LogOut size={20} />
+            </button>
+
+            {/* 🔥 SUPPORT NUMBER (MOVED TO THE ABSOLUTE RIGHT AFTER LOGOUT) */}
+            <div className="hidden md:flex flex-col text-right pl-4 border-l border-slate-800 ml-1">
               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">24/7 Support</span>
               <span className="text-xs font-bold text-white tracking-wider flex items-center">
                 <Phone size={10} className="mr-1 text-emerald-500"/> 9990-787-533
               </span>
             </div>
 
-            <button onClick={() => setShowLogoutConfirm(true)} className="h-10 w-10 flex items-center justify-center text-red-400 hover:text-white bg-red-500/10 hover:bg-red-50 border border-red-500/20 rounded-xl transition-all active:scale-95" title="Sign Out Profile">
-              <LogOut size={20} />
-            </button>
           </div>
         </header>
 
