@@ -8,7 +8,8 @@ export const authOptions: NextAuthOptions = {
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
+        loginType: { label: "Login Type", type: "text" } // 🔥 NEW: To differentiate Outlet vs Tenant
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -16,39 +17,41 @@ export const authOptions: NextAuthOptions = {
         }
 
         // ==========================================
-        // 1. FIRST CHECK IN OUTLETS TABLE
+        // 1. OUTLET LOGIN FLOW (/login)
         // ==========================================
-        const outlet = await prisma.outlet.findFirst({
-          where: { email: credentials.email, isDeleted: false },
-          include: { tenant: true }
-        });
+        if (credentials.loginType === "OUTLET") {
+          const outlet = await prisma.outlet.findFirst({
+            where: { email: credentials.email, isDeleted: false },
+            include: { tenant: true }
+          });
 
-        if (outlet) {
-          if (outlet.password !== credentials.password) throw new Error("Invalid terminal password");
-          if (!outlet.isActive) throw new Error("This Outlet is inactive or suspended");
+          if (!outlet) throw new Error("Terminal not found. Check Outlet Email.");
+          if (outlet.password !== credentials.password) throw new Error("Invalid terminal password.");
+          if (!outlet.isActive) throw new Error("Terminal is suspended.");
 
           return {
             id: outlet.id,
             name: outlet.name,
             email: outlet.email,
-            role: "OUTLET", // Explicitly mark as Outlet Terminal
+            role: "OUTLET", 
             tenantId: outlet.tenantId,
             tenantName: outlet.tenant?.businessName || "Brand HQ",
             outletId: outlet.id,
-            address: outlet.address // Sent to POS top bar
+            address: outlet.address 
           };
         }
 
         // ==========================================
-        // 2. IF NOT OUTLET, CHECK IN USERS TABLE (Brand Owner / Staff)
+        // 2. BRAND OWNER / STAFF LOGIN FLOW (/dashboard)
         // ==========================================
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: { role: true, tenant: true }
-        });
+        if (credentials.loginType === "TENANT") {
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email },
+            include: { role: true, tenant: true }
+          });
 
-        if (user && !user.isDeleted) {
-          if (user.password !== credentials.password) throw new Error("Invalid account password");
+          if (!user || user.isDeleted) throw new Error("Brand Account not found.");
+          if (user.password !== credentials.password) throw new Error("Invalid password.");
           
           return {
             id: user.id,
@@ -58,11 +61,11 @@ export const authOptions: NextAuthOptions = {
             permissions: user.role?.permissions || {},
             tenantId: user.tenantId,
             tenantName: user.tenant?.businessName || "Brand HQ",
-            outletId: user.outletId
+            outletId: user.outletId || null
           };
         }
 
-        throw new Error("Account not found in Outlet or User registries.");
+        throw new Error("Invalid Login Flow Request.");
       }
     })
   ],
@@ -93,7 +96,6 @@ export const authOptions: NextAuthOptions = {
     }
   },
   session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
   secret: process.env.NEXTAUTH_SECRET || "your_super_secret_key"
 };
 
