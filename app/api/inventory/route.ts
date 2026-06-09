@@ -1,41 +1,49 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const outletId = searchParams.get("outletId");
-  const tenantId = searchParams.get("tenantId"); // 🔒 Protect Data
+  // 🔒 STRICT SECURITY: GET SESSION TOKENS
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) {
+    return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+  }
 
-  if (!outletId || !tenantId) return NextResponse.json({ error: "Outlet and Tenant ID required" }, { status: 400 });
+  const secureOutletId = (session.user as any).outletId;
+  const secureTenantId = (session.user as any).tenantId;
+
+  if (!secureOutletId || !secureTenantId) {
+    return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
+  }
 
   try {
-    // 1. Fetch Inventory SKUs
+    // 1. Fetch Inventory SKUs strictly for this outlet
     const inventory = await prisma.inventory.findMany({
-      where: { outletId: outletId, isDeleted: false },
+      where: { outletId: secureOutletId, isDeleted: false },
       orderBy: { itemName: 'asc' }
     });
 
-    // 2. Fetch Vendors List from DB (Not LocalStorage)
+    // 2. Fetch Vendors strictly for this tenant
     const vendors = await prisma.vendor.findMany({
-      where: { tenantId: tenantId, isDeleted: false },
+      where: { tenantId: secureTenantId, isDeleted: false },
       orderBy: { name: 'asc' }
     });
 
-    // 3. Fetch Purchase Orders (GRN Logs) from DB
+    // 3. Fetch Purchase Orders (GRN Logs) strictly for this outlet
     const purchases = await prisma.purchaseOrder.findMany({
-      where: { outletId: outletId, isDeleted: false },
+      where: { outletId: secureOutletId, isDeleted: false },
       include: {
         vendor: true,
-        items: { include: { inventory: true } } // Includes SKU info
+        items: { include: { inventory: true } } 
       },
       orderBy: { date: 'desc' },
-      take: 100 // Limit for performance
+      take: 100 
     });
 
-    // Format Purchases back to UI-friendly logs
     const purchaseLogs = purchases.flatMap(po => 
       po.items.map(item => ({
-        id: po.id, // Using PO ID for log ref
+        id: po.id, 
         date: po.date,
         poNumber: po.invoiceNumber || "N/A",
         itemName: item.inventory?.itemName || "Unknown",
@@ -44,7 +52,7 @@ export async function GET(req: Request) {
         rate: item.costPrice,
         total: item.quantity * item.costPrice,
         vendor: po.vendor?.name || "HQ / Unknown",
-        paymentMode: po.status, // We temporarily store payment mode in status based on UI schema
+        paymentMode: po.status, 
       }))
     );
 
@@ -56,14 +64,20 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+    const secureOutletId = (session.user as any).outletId;
+    const secureTenantId = (session.user as any).tenantId;
+
     const body = await req.json();
-    const { action, outletId, tenantId, itemName, type, unit, stockLevel, minStock, vendorData } = body;
+    const { action, itemName, type, unit, stockLevel, minStock, vendorData } = body;
 
     // ACTION: ADD NEW INVENTORY SKU
     if (action === "ADD_SKU") {
       const item = await prisma.inventory.create({
         data: {
-          outletId: String(outletId),
+          outletId: secureOutletId, // 🔒 Locked
           itemName: String(itemName).toUpperCase(),
           type: String(type),
           unit: String(unit),
@@ -78,7 +92,7 @@ export async function POST(req: Request) {
     if (action === "ADD_VENDOR") {
       const newVendor = await prisma.vendor.create({
         data: {
-          tenantId: String(tenantId),
+          tenantId: secureTenantId, // 🔒 Locked
           name: String(vendorData.name).toUpperCase(),
           contactPerson: vendorData.contactPerson,
           phone: vendorData.phone,
@@ -96,8 +110,20 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+    const secureOutletId = (session.user as any).outletId;
+    const secureTenantId = (session.user as any).tenantId;
+
     const body = await req.json();
-    const { action, outletId, tenantId, itemId, newStock, addedQty, purchaseData } = body;
+    const { action, itemId, newStock, purchaseData } = body;
+
+    // 🔒 IDOR Prevention: Check if itemId belongs to this secureOutletId
+    const targetInventory = await prisma.inventory.findUnique({ where: { id: itemId } });
+    if (!targetInventory || targetInventory.outletId !== secureOutletId) {
+      return NextResponse.json({ error: "Unauthorized operation on SKU." }, { status: 403 });
+    }
 
     if (action === "ADJUST_STOCK") {
       const item = await prisma.inventory.update({
@@ -119,24 +145,24 @@ export async function PUT(req: Request) {
 
       // 2. Find Vendor (Or default if HQ)
       let targetVendor = await prisma.vendor.findFirst({
-        where: { tenantId: tenantId, name: vendorName }
+        where: { tenantId: secureTenantId, name: vendorName }
       });
 
       if (!targetVendor && vendorName !== "HQ") {
-        // Auto create vendor if missing (fallback)
+        // Auto create vendor if missing (fallback) securely
         targetVendor = await prisma.vendor.create({
-          data: { tenantId: tenantId, name: vendorName, phone: "N/A" }
+          data: { tenantId: secureTenantId, name: vendorName, phone: "N/A" }
         });
       }
 
       // 3. Create Official Purchase Order in DB
       const po = await prisma.purchaseOrder.create({
         data: {
-          outletId: outletId,
-          vendorId: targetVendor?.id || "HQ", // Assuming HQ is handled safely if ID is string
+          outletId: secureOutletId,
+          vendorId: targetVendor?.id || "HQ", 
           invoiceNumber: invoiceNo || `PO-${Date.now()}`,
           totalAmount: parseFloat(totalAmount),
-          status: paymentMode, // Temporarily saving payment info here for log mapping
+          status: paymentMode, 
           items: {
             create: [{
               inventoryId: itemId,

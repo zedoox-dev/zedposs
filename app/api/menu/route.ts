@@ -1,30 +1,29 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]/route"; // Imports your strict auth setup
+import { authOptions } from "../auth/[...nextauth]/route"; 
 
 export async function GET(req: Request) {
   try {
-    // 🔒 STRICT SECURITY: FETCH TENANT ID DIRECTLY FROM BACKEND SESSION TOKEN
-    // Ignore any ID the frontend tries to pass in the URL
+    // 🔒 STRICT SECURITY: FETCH OUTLET ID DIRECTLY FROM BACKEND SESSION TOKEN
     const session = await getServerSession(authOptions);
     
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized terminal access blocked." }, { status: 401 });
     }
 
-    const secureTenantId = (session.user as any).tenantId;
+    const secureOutletId = (session.user as any).outletId;
 
-    if (!secureTenantId) {
-      return NextResponse.json({ error: "Tenant ID missing from authorization token." }, { status: 400 });
+    if (!secureOutletId) {
+      return NextResponse.json({ error: "Outlet ID missing from authorization token." }, { status: 400 });
     }
 
-    // Now safely fetch data for ONLY this authenticated brand
+    // Safely fetch data for ONLY this authenticated Outlet
     const menuItems = await prisma.menuItem.findMany({
       where: { 
-        tenantId: secureTenantId, 
+        outletId: secureOutletId, 
         isActive: true,
-        isDeleted: false // Soft delete protection
+        isDeleted: false 
       },
       orderBy: { category: 'asc' }
     });
@@ -40,7 +39,9 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     
+    const secureOutletId = (session.user as any).outletId;
     const secureTenantId = (session.user as any).tenantId;
+    
     const body = await req.json();
     const { name, finalPrice, category, ItemId } = body;
 
@@ -50,7 +51,8 @@ export async function POST(req: Request) {
         category,
         price: parseFloat(finalPrice), 
         ItemId: Number(ItemId), 
-        tenantId: secureTenantId, // Strictly binds created item to the logged-in brand
+        tenantId: secureTenantId, 
+        outletId: secureOutletId, // 🔒 Strictly binds created item to the logged-in outlet
         isActive: true
       }
     });
@@ -66,13 +68,13 @@ export async function PUT(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     
-    const secureTenantId = (session.user as any).tenantId;
+    const secureOutletId = (session.user as any).outletId;
     const body = await req.json();
     const { id, name, finalPrice, category } = body;
 
     // Verify ownership before updating! (Prevents IDOR)
     const existingItem = await prisma.menuItem.findUnique({ where: { id: id } });
-    if (!existingItem || existingItem.tenantId !== secureTenantId) {
+    if (!existingItem || existingItem.outletId !== secureOutletId) {
        return NextResponse.json({ error: "Unauthorized modification attempt blocked." }, { status: 403 });
     }
 
@@ -96,7 +98,7 @@ export async function DELETE(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     
-    const secureTenantId = (session.user as any).tenantId;
+    const secureOutletId = (session.user as any).outletId;
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -104,7 +106,7 @@ export async function DELETE(req: Request) {
 
     // Verify ownership before deleting! (Prevents IDOR)
     const existingItem = await prisma.menuItem.findUnique({ where: { id: id } });
-    if (!existingItem || existingItem.tenantId !== secureTenantId) {
+    if (!existingItem || existingItem.outletId !== secureOutletId) {
        return NextResponse.json({ error: "Unauthorized deletion attempt blocked." }, { status: 403 });
     }
 

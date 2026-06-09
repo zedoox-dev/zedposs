@@ -31,18 +31,15 @@ export default function ExpensesPage() {
   const [newMasterType, setNewMasterType] = useState("");
   const [newMasterDoar, setNewMasterDoar] = useState("");
 
-  // TOGGLE STATES FOR INLINE "ADD NEW / SELECT"
   const [isAddingType, setIsAddingType] = useState(false);
   const [isAddingDoar, setIsAddingDoar] = useState(false);
 
-  // MOBILE FORM-ONLY SMART ROUTER STATE
   const [isFormOnlyMode, setIsFormOnlyMode] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [qrSalt, setQrSalt] = useState<string>(""); 
   const [isCheckingRoute, setIsCheckingRoute] = useState(true);
 
-  // PRO FIX: Image Preview Modal State
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,14 +47,12 @@ export default function ExpensesPage() {
       const searchParams = new URLSearchParams(window.location.search);
       if (searchParams.get("view") === "form-only") {
         setIsFormOnlyMode(true);
-        // Expiry verification
         const urlSalt = searchParams.get("salt");
         const activeSalt = localStorage.getItem(`zap_qr_salt_${outletId}`);
         if (activeSalt && urlSalt !== activeSalt) {
           setIsExpired(true);
         }
       } else {
-        // Desktop / Manager layout: Setup Active Salt
         let activeSalt = localStorage.getItem(`zap_qr_salt_${outletId}`);
         if (!activeSalt) {
           activeSalt = Date.now().toString();
@@ -90,11 +85,10 @@ export default function ExpensesPage() {
 
   const fetchExpensesAndCash = async () => {
     if (!session?.user) return;
-    const tenantId = (session.user as any).tenantId;
-
     setLoading(true);
     try {
-      let queryParams = `?outletId=${outletId}&tenantId=${tenantId}&date=${dateFilter}`;
+      // 🔒 API ab URLs se id nahi leti, sirf date filters bhejein
+      let queryParams = `?date=${dateFilter}`;
       if (dateFilter === "custom" && customStartDate && customEndDate) {
         queryParams += `&startDate=${customStartDate}&endDate=${customEndDate}`;
       }
@@ -103,7 +97,6 @@ export default function ExpensesPage() {
       const expData = await expRes.json();
       setExpenses(Array.isArray(expData) ? expData : []);
 
-      // Needs reports API to be multi-tenant too
       const repRes = await fetch(`/api/reports${queryParams}`);
       const repData = await repRes.json();
       if (repData.success) {
@@ -120,21 +113,13 @@ export default function ExpensesPage() {
     e.preventDefault();
     if (!formData.expenseType || !formData.doar) return alert("Please select Type and Doar");
     
-    // In mobile mode session might not exist if scanned outside app, need fallback for ID
-    const currentUserId = (session?.user as any)?.id || "MOBILE_ENTRY";
-    const currentTenantId = (session?.user as any)?.tenantId || "MOBILE_TENANT_LINK"; // Ideally URL should have tenantId if outside session
-
     setIsSaving(true);
     try {
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          ...formData, 
-          outletId,
-          tenantId: currentTenantId,
-          loggedByUserId: currentUserId
-        })
+        // 🔒 Removed outletId & tenantId, backend will safely extract from Session!
+        body: JSON.stringify(formData)
       });
       
       const data = await res.json();
@@ -279,209 +264,215 @@ export default function ExpensesPage() {
   }
 
   return (
-    <div className="flex h-full relative overflow-hidden bg-slate-50">
-      
-      {/* LEFT PANEL */}
-      <div className="flex-1 flex flex-col p-6 overflow-hidden">
+    <>
+      <title>ZedPoss | Petty Cash & Expense Manager</title>
+      <meta name="description" content="Track your restaurant's daily expenses, petty cash, and vendor payouts dynamically. Secure expense logging by ZedooX Technologies." />
+      <meta name="keywords" content="Petty Cash Management, Restaurant Expenses, Daily Ledger, Kharcha Management, POS Payouts, Vendor Payments, Expense API, Daily Cash Register, Secure POS Ledger, Smart POS Cashier, ZedPoss Expenses, Cloud Expense Tracker, Business Cash Flow, Retail Kharcha App, ZedooX Technologies, Mobile Receipt Scanner, Branch Expenses POS, Quick Kharcha Entry, POS Accounting, Day End Closing POS, Shop Ledger Software, Auto Expense Sync, GST Payouts Tracker, Outlet Cash Management, Safe Cash Register, POS Payout Terminal, Zapped POS, Cloud Cashier System, Advanced POS Ledger, Digital Receipt App, Till Management Software, Store Funds Control, Multi-Outlet Finance, Expense Categorization, POS Money Out, Smart Kharcha Ledger" />
+
+      <div className="flex h-full relative overflow-hidden bg-slate-50">
         
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 mb-6 gap-4">
-          <div>
-            <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center"><WalletCards className="mr-2 text-red-500" /> Petty Cash Registry</h1>
-            <p className="text-xs text-slate-500 font-bold mt-0.5">Enterprise Expense Ledger & Smart Sync Matrix</p>
-          </div>
+        {/* LEFT PANEL */}
+        <div className="flex-1 flex flex-col p-6 overflow-hidden">
           
-          <div className="flex items-center gap-2">
-            <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="p-2.5 border border-slate-200 rounded-xl font-black text-xs uppercase tracking-wider bg-white shadow-xs outline-none focus:border-red-500">
-              <option value="today">Today Accounts</option><option value="yesterday">Yesterday Closed</option><option value="custom">Custom Range Lookup</option>
-            </select>
-            {dateFilter === "custom" && (
-              <div className="flex items-center gap-2 animate-in fade-in">
-                <input type="date" value={customStartDate} onChange={(e)=>setCustomStartDate(e.target.value)} className="p-2 border border-slate-200 rounded-xl text-xs font-bold" />
-                <input type="date" value={customEndDate} onChange={(e)=>setCustomEndDate(e.target.value)} className="p-2 border border-slate-200 rounded-xl text-xs font-bold" />
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 mb-6 gap-4">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center"><WalletCards className="mr-2 text-red-500" /> Petty Cash Registry</h1>
+              <p className="text-xs text-slate-500 font-bold mt-0.5">Enterprise Expense Ledger & Smart Sync Matrix</p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="p-2.5 border border-slate-200 rounded-xl font-black text-xs uppercase tracking-wider bg-white shadow-xs outline-none focus:border-red-500">
+                <option value="today">Today Accounts</option><option value="yesterday">Yesterday Closed</option><option value="custom">Custom Range Lookup</option>
+              </select>
+              {dateFilter === "custom" && (
+                <div className="flex items-center gap-2 animate-in fade-in">
+                  <input type="date" value={customStartDate} onChange={(e)=>setCustomStartDate(e.target.value)} className="p-2 border border-slate-200 rounded-xl text-xs font-bold" />
+                  <input type="date" value={customEndDate} onChange={(e)=>setCustomEndDate(e.target.value)} className="p-2 border border-slate-200 rounded-xl text-xs font-bold" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* FINANCIAL DATA STATS */}
+          <div className="flex flex-col xl:flex-row gap-4 mb-6">
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex flex-col justify-center">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Cash Collected</span>
+                <p className="text-xl font-mono font-black text-slate-900">₹{Number(cashCollected).toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-5 rounded-2xl border border-red-100 shadow-xs flex flex-col justify-center">
+                <span className="text-[10px] font-black text-red-400 uppercase tracking-widest block mb-1">Total Expenses</span>
+                <p className="text-xl font-mono font-black text-red-600">- ₹{Number(totalExpense).toFixed(2)}</p>
+              </div>
+              <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-md flex flex-col justify-center">
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block mb-1">Drawer Balance</span>
+                <p className="text-2xl font-mono font-black text-emerald-400">₹{Number(availableBalance).toFixed(2)}</p>
+              </div>
+            </div>
+            
+            {/* QR CODE BLOCK */}
+            {qrCodeUrl && (
+              <div className="bg-white px-4 py-2 rounded-2xl border border-slate-200 shrink-0 flex items-center space-x-3 shadow-xs relative group">
+                <img src={qrCodeUrl} alt="Scan to Enter Kharcha" className="w-[75px] h-[75px] border border-slate-100 rounded" />
+                <div className="max-w-[130px]">
+                  <span className="text-[9px] font-black uppercase text-orange-600 tracking-wider flex items-center"><QrCode size={12} className="mr-1"/> Mobile Scan</span>
+                  <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-tight">Log vouchers from camera device instantly.</p>
+                  <button type="button" onClick={handleRegenerateQr} className="mt-1.5 px-2 py-1 bg-slate-900 text-white font-black text-[8px] uppercase rounded flex items-center hover:bg-red-600 transition-all active:scale-95">
+                    <RefreshCw size={8} className="mr-1 animate-spin duration-1000"/> Regenerate QR
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* TABULAR LAYOUT GRIDS */}
+          <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            {loading ? (
+              <div className="flex-1 flex justify-center items-center"><Loader2 className="animate-spin text-red-500" size={40} /></div>
+            ) : expenses.length === 0 ? (
+              <div className="flex-1 flex flex-col justify-center items-center text-slate-400">
+                <ReceiptText size={60} className="mb-4 opacity-20" />
+                <p className="font-black text-xl text-slate-500 uppercase tracking-tight">No Expenses Found</p>
+              </div>
+            ) : (
+              <div className="overflow-y-auto custom-scrollbar">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200">
+                    <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      <th className="p-4 w-20">Exp ID</th>
+                      <th className="p-4 w-44">Date & Time</th>
+                      <th className="p-4 w-32">Expenses Type</th>
+                      <th className="p-4">Narration / Reason</th>
+                      <th className="p-4 w-32">Paid To</th>
+                      <th className="p-4 w-28">Doar (By)</th>
+                      <th className="p-4 w-20 text-center">Attachment</th>
+                      <th className="p-4 w-28 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
+                    {expenses.map((exp) => (
+                      <tr key={exp.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-4 font-black text-slate-800">#{exp.expenseId}</td>
+                        <td className="p-4 font-bold text-slate-500">{new Date(exp.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                        <td className="p-4"><span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-600">{exp.expenseType}</span></td>
+                        <td className="p-4 font-bold text-slate-800">{exp.narration}</td>
+                        <td className="p-4 font-bold text-slate-600">{exp.paidTo}</td>
+                        <td className="p-4 font-bold text-slate-500">{exp.doar}</td>
+                        <td className="p-4 text-center">
+                          {exp.proofUrl ? (
+                            <button type="button" onClick={() => setPreviewImage(exp.proofUrl)} className="text-blue-500 hover:underline font-black text-[10px] flex items-center justify-center mx-auto"><FileText size={14} className="mr-0.5"/> VIEW</button>
+                          ) : <span className="text-slate-300 font-bold">-</span>}
+                        </td>
+                        <td className="p-4 font-black text-red-600 text-right font-mono text-sm">- ₹{Number(exp.amount).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
         </div>
 
-        {/* FINANCIAL DATA STATS */}
-        <div className="flex flex-col xl:flex-row gap-4 mb-6">
-          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex flex-col justify-center">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Cash Collected</span>
-              <p className="text-xl font-mono font-black text-slate-900">₹{Number(cashCollected).toFixed(2)}</p>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-red-100 shadow-xs flex flex-col justify-center">
-              <span className="text-[10px] font-black text-red-400 uppercase tracking-widest block mb-1">Total Expenses</span>
-              <p className="text-xl font-mono font-black text-red-600">- ₹{Number(totalExpense).toFixed(2)}</p>
-            </div>
-            <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-md flex flex-col justify-center">
-              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block mb-1">Drawer Balance</span>
-              <p className="text-2xl font-mono font-black text-emerald-400">₹{Number(availableBalance).toFixed(2)}</p>
-            </div>
-          </div>
-          
-          {/* QR CODE BLOCK */}
-          {qrCodeUrl && (
-            <div className="bg-white px-4 py-2 rounded-2xl border border-slate-200 shrink-0 flex items-center space-x-3 shadow-xs relative group">
-              <img src={qrCodeUrl} alt="Scan to Enter Kharcha" className="w-[75px] h-[75px] border border-slate-100 rounded" />
-              <div className="max-w-[130px]">
-                <span className="text-[9px] font-black uppercase text-orange-600 tracking-wider flex items-center"><QrCode size={12} className="mr-1"/> Mobile Scan</span>
-                <p className="text-[9px] font-bold text-slate-400 mt-0.5 leading-tight">Log vouchers from camera device instantly.</p>
-                <button type="button" onClick={handleRegenerateQr} className="mt-1.5 px-2 py-1 bg-slate-900 text-white font-black text-[8px] uppercase rounded flex items-center hover:bg-red-600 transition-all active:scale-95">
-                  <RefreshCw size={8} className="mr-1 animate-spin duration-1000"/> Regenerate QR
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* ----------------- RIGHT INPUT PANEL ----------------- */}
+        <div className="w-[400px] bg-white border-l border-slate-200 shadow-xl z-20 flex flex-col overflow-y-auto custom-scrollbar">
+          <div className="p-6 flex-1">
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center mb-6"><Plus size={18} className="mr-2 text-red-500"/> Record New Expense</h2>
 
-        {/* TABULAR LAYOUT GRIDS */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-          {loading ? (
-            <div className="flex-1 flex justify-center items-center"><Loader2 className="animate-spin text-red-500" size={40} /></div>
-          ) : expenses.length === 0 ? (
-            <div className="flex-1 flex flex-col justify-center items-center text-slate-400">
-              <ReceiptText size={60} className="mb-4 opacity-20" />
-              <p className="font-black text-xl text-slate-500 uppercase tracking-tight">No Expenses Found</p>
-            </div>
-          ) : (
-            <div className="overflow-y-auto custom-scrollbar">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200">
-                  <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                    <th className="p-4 w-20">Exp ID</th>
-                    <th className="p-4 w-44">Date & Time</th>
-                    <th className="p-4 w-32">Expenses Type</th>
-                    <th className="p-4">Narration / Reason</th>
-                    <th className="p-4 w-32">Paid To</th>
-                    <th className="p-4 w-28">Doar (By)</th>
-                    <th className="p-4 w-20 text-center">Attachment</th>
-                    <th className="p-4 w-28 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
-                  {expenses.map((exp) => (
-                    <tr key={exp.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="p-4 font-black text-slate-800">#{exp.expenseId}</td>
-                      <td className="p-4 font-bold text-slate-500">{new Date(exp.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                      <td className="p-4"><span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-600">{exp.expenseType}</span></td>
-                      <td className="p-4 font-bold text-slate-800">{exp.narration}</td>
-                      <td className="p-4 font-bold text-slate-600">{exp.paidTo}</td>
-                      <td className="p-4 font-bold text-slate-500">{exp.doar}</td>
-                      <td className="p-4 text-center">
-                        {exp.proofUrl ? (
-                          <button type="button" onClick={() => setPreviewImage(exp.proofUrl)} className="text-blue-500 hover:underline font-black text-[10px] flex items-center justify-center mx-auto"><FileText size={14} className="mr-0.5"/> VIEW</button>
-                        ) : <span className="text-slate-300 font-bold">-</span>}
-                      </td>
-                      <td className="p-4 font-black text-red-600 text-right font-mono text-sm">- ₹{Number(exp.amount).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ----------------- RIGHT INPUT PANEL ----------------- */}
-      <div className="w-[400px] bg-white border-l border-slate-200 shadow-xl z-20 flex flex-col overflow-y-auto custom-scrollbar">
-        <div className="p-6 flex-1">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center mb-6"><Plus size={18} className="mr-2 text-red-500"/> Record New Expense</h2>
-
-          <form onSubmit={handleAddExpense} className="space-y-5">
-            
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-[10px] font-black uppercase text-slate-600 tracking-wider">Expenses Type</label>
-                <button type="button" onClick={() => setIsAddingType(!isAddingType)} className="text-[9px] font-bold text-blue-600 uppercase hover:underline">
-                  {isAddingType ? "Select Existing" : "+ Add New"}
-                </button>
-              </div>
+            <form onSubmit={handleAddExpense} className="space-y-5">
               
-              {isAddingType ? (
-                <div className="flex gap-1">
-                  <input type="text" placeholder="Add Custom Type..." value={newMasterType} onChange={(e) => setNewMasterType(e.target.value)} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold uppercase outline-none focus:border-red-500 bg-white" />
-                  <button type="button" onClick={() => { addMasterDataInline("TYPE"); setIsAddingType(false); }} className="bg-slate-900 text-white px-4 rounded-xl font-black text-[10px] uppercase active:scale-95 transition-transform">Add</button>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[10px] font-black uppercase text-slate-600 tracking-wider">Expenses Type</label>
+                  <button type="button" onClick={() => setIsAddingType(!isAddingType)} className="text-[9px] font-bold text-blue-600 uppercase hover:underline">
+                    {isAddingType ? "Select Existing" : "+ Add New"}
+                  </button>
                 </div>
-              ) : (
-                <div className="flex gap-1">
-                  <select required={!isAddingType} value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-red-500">
-                    <option value="" disabled>Choose...</option>
-                    {expenseTypes.map(type => <option key={type} value={type}>{type}</option>)}
-                  </select>
-                  {formData.expenseType && !["STAFF FOOD", "RAW MATERIAL", "MAINTENANCE", "ELECTRICITY", "GENERAL"].includes(formData.expenseType) && (
-                    <button type="button" onClick={() => removeMasterItem("TYPE", formData.expenseType)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-xl border border-slate-200 shadow-xs"><Trash2 size={13}/></button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-[10px] font-black uppercase text-slate-600 tracking-wider">Doar (Exp By)</label>
-                <button type="button" onClick={() => setIsAddingDoar(!isAddingDoar)} className="text-[9px] font-bold text-blue-600 uppercase hover:underline">
-                  {isAddingDoar ? "Select Existing" : "+ Add New"}
-                </button>
+                
+                {isAddingType ? (
+                  <div className="flex gap-1">
+                    <input type="text" placeholder="Add Custom Type..." value={newMasterType} onChange={(e) => setNewMasterType(e.target.value)} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold uppercase outline-none focus:border-red-500 bg-white" />
+                    <button type="button" onClick={() => { addMasterDataInline("TYPE"); setIsAddingType(false); }} className="bg-slate-900 text-white px-4 rounded-xl font-black text-[10px] uppercase active:scale-95 transition-transform">Add</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-1">
+                    <select required={!isAddingType} value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-red-500">
+                      <option value="" disabled>Choose...</option>
+                      {expenseTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                    {formData.expenseType && !["STAFF FOOD", "RAW MATERIAL", "MAINTENANCE", "ELECTRICITY", "GENERAL"].includes(formData.expenseType) && (
+                      <button type="button" onClick={() => removeMasterItem("TYPE", formData.expenseType)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-xl border border-slate-200 shadow-xs"><Trash2 size={13}/></button>
+                    )}
+                  </div>
+                )}
               </div>
-              
-              {isAddingDoar ? (
-                <div className="flex gap-1">
-                  <input type="text" placeholder="Add Custom Doar..." value={newMasterDoar} onChange={(e) => setNewMasterDoar(e.target.value)} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold capitalize outline-none focus:border-red-500 bg-white" />
-                  <button type="button" onClick={() => { addMasterDataInline("DOAR"); setIsAddingDoar(false); }} className="bg-slate-900 text-white px-4 rounded-xl font-black text-[10px] uppercase active:scale-95 transition-transform">Add</button>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[10px] font-black uppercase text-slate-600 tracking-wider">Doar (Exp By)</label>
+                  <button type="button" onClick={() => setIsAddingDoar(!isAddingDoar)} className="text-[9px] font-bold text-blue-600 uppercase hover:underline">
+                    {isAddingDoar ? "Select Existing" : "+ Add New"}
+                  </button>
                 </div>
-              ) : (
-                <div className="flex gap-1">
-                  <select required={!isAddingDoar} value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-red-500">
-                    <option value="" disabled>Choose...</option>
-                    {doars.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                  {formData.doar && !["Admin", "Manager", "Deepak"].includes(formData.doar) && (
-                    <button type="button" onClick={() => removeMasterItem("DOAR", formData.doar)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-xl border border-slate-200 shadow-xs"><Trash2 size={13}/></button>
-                  )}
-                </div>
-              )}
-            </div>
+                
+                {isAddingDoar ? (
+                  <div className="flex gap-1">
+                    <input type="text" placeholder="Add Custom Doar..." value={newMasterDoar} onChange={(e) => setNewMasterDoar(e.target.value)} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold capitalize outline-none focus:border-red-500 bg-white" />
+                    <button type="button" onClick={() => { addMasterDataInline("DOAR"); setIsAddingDoar(false); }} className="bg-slate-900 text-white px-4 rounded-xl font-black text-[10px] uppercase active:scale-95 transition-transform">Add</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-1">
+                    <select required={!isAddingDoar} value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-red-500">
+                      <option value="" disabled>Choose...</option>
+                      {doars.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                    {formData.doar && !["Admin", "Manager", "Deepak"].includes(formData.doar) && (
+                      <button type="button" onClick={() => removeMasterItem("DOAR", formData.doar)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-xl border border-slate-200 shadow-xs"><Trash2 size={13}/></button>
+                    )}
+                  </div>
+                )}
+              </div>
 
-            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Amount (₹)</label><input required type="number" min="1" step="any" placeholder="0.00" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-mono font-black text-red-600 text-lg" /></div>
-            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Paid To</label><input required type="text" placeholder="Vendor / Person name" value={formData.paidTo} onChange={(e) => setFormData({...formData, paidTo: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold" /></div>
-            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Narration</label><textarea required rows={2} placeholder="Reason specification..." value={formData.narration} onChange={(e) => setFormData({...formData, narration: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold resize-none" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Amount (₹)</label><input required type="number" min="1" step="any" placeholder="0.00" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-mono font-black text-red-600 text-lg" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Paid To</label><input required type="text" placeholder="Vendor / Person name" value={formData.paidTo} onChange={(e) => setFormData({...formData, paidTo: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Narration</label><textarea required rows={2} placeholder="Reason specification..." value={formData.narration} onChange={(e) => setFormData({...formData, narration: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold resize-none" /></div>
 
-            <div>
-              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Upload Receipt Image</label>
-              <label className="flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-2.5 cursor-pointer bg-slate-50 hover:bg-slate-100 shadow-xs">
-                <Upload size={14} className="text-slate-400 mr-2" /><span className="text-[11px] font-bold text-slate-500">{formData.proofUrl ? "Proof Image Attached ✔" : "Choose Image File"}</span>
-                <input type="file" accept="image/*" onChange={simulateImageUpload} className="hidden" />
-              </label>
-            </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Upload Receipt Image</label>
+                <label className="flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-2.5 cursor-pointer bg-slate-50 hover:bg-slate-100 shadow-xs">
+                  <Upload size={14} className="text-slate-400 mr-2" /><span className="text-[11px] font-bold text-slate-500">{formData.proofUrl ? "Proof Image Attached ✔" : "Choose Image File"}</span>
+                  <input type="file" accept="image/*" onChange={simulateImageUpload} className="hidden" />
+                </label>
+              </div>
 
-            <button disabled={isSaving} type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black uppercase py-3.5 rounded-xl text-[11px] tracking-wider flex justify-center items-center transition-all shadow-md">{isSaving ? <Loader2 className="animate-spin" size={16} /> : "Process Deduction"}</button>
-          </form>
-        </div>
-      </div>
-
-      {/* OVERLAY PROOF PREVIEW MODAL */}
-      {previewImage && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-4 max-w-lg w-full shadow-2xl relative animate-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-3 border-b pb-2">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-800">Petty Cash Receipt Voucher Proof</span>
-              <button type="button" onClick={() => setPreviewImage(null)} className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition-colors"><X size={16}/></button>
-            </div>
-            <div className="w-full max-h-[70vh] overflow-y-auto rounded-2xl bg-slate-50 border border-slate-200 p-2 flex justify-center items-center">
-              {previewImage.startsWith("data:image/") ? (
-                <img src={previewImage} alt="Voucher Attachment" className="max-w-full h-auto rounded-xl object-contain shadow" />
-              ) : (
-                <div className="p-8 text-center text-slate-500 text-xs font-bold space-y-2">
-                  <FileText size={40} className="mx-auto text-slate-300"/>
-                  <p>Cloud URL String Node:</p>
-                  <p className="font-mono bg-slate-200 p-2 rounded text-[10px] break-all">{previewImage}</p>
-                </div>
-              )}
-            </div>
+              <button disabled={isSaving} type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black uppercase py-3.5 rounded-xl text-[11px] tracking-wider flex justify-center items-center transition-all shadow-md">{isSaving ? <Loader2 className="animate-spin" size={16} /> : "Process Deduction"}</button>
+            </form>
           </div>
         </div>
-      )}
 
-    </div>
+        {/* OVERLAY PROOF PREVIEW MODAL */}
+        {previewImage && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-4 max-w-lg w-full shadow-2xl relative animate-in zoom-in duration-200">
+              <div className="flex justify-between items-center mb-3 border-b pb-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-800">Petty Cash Receipt Voucher Proof</span>
+                <button type="button" onClick={() => setPreviewImage(null)} className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-600 transition-colors"><X size={16}/></button>
+              </div>
+              <div className="w-full max-h-[70vh] overflow-y-auto rounded-2xl bg-slate-50 border border-slate-200 p-2 flex justify-center items-center">
+                {previewImage.startsWith("data:image/") ? (
+                  <img src={previewImage} alt="Voucher Attachment" className="max-w-full h-auto rounded-xl object-contain shadow" />
+                ) : (
+                  <div className="p-8 text-center text-slate-500 text-xs font-bold space-y-2">
+                    <FileText size={40} className="mx-auto text-slate-300"/>
+                    <p>Cloud URL String Node:</p>
+                    <p className="font-mono bg-slate-200 p-2 rounded text-[10px] break-all">{previewImage}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </>
   );
 }

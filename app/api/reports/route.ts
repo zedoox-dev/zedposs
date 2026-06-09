@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 export async function GET(req: Request) {
+  // 🔒 STRICT SECURITY: GET SESSION TOKENS
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) {
+    return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+  }
+
+  const secureOutletId = (session.user as any).outletId;
+  const secureTenantId = (session.user as any).tenantId;
+
+  if (!secureOutletId || !secureTenantId) {
+    return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
+  }
+
   const { searchParams } = new URL(req.url);
-  const outletId = searchParams.get("outletId");
-  const tenantId = searchParams.get("tenantId"); // 🔒 Multi-Tenant Lock
   const dateFilter = searchParams.get("date") || "today"; 
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
-
-  if (!outletId || !tenantId) return NextResponse.json({ error: "Outlet ID and Tenant ID required" }, { status: 400 });
 
   let dateQuery: any = {};
   const now = new Date();
@@ -32,14 +43,14 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 1. Fetch Orders (Tenant & Outlet Scoped, Soft Delete protected)
+    // 1. Fetch Orders (Strictly Outlet & Tenant Scoped)
     const orders = await prisma.order.findMany({
-      where: { outletId: outletId, tenantId: tenantId, createdAt: dateQuery, isDeleted: false },
+      where: { outletId: secureOutletId, tenantId: secureTenantId, createdAt: dateQuery, isDeleted: false },
     });
 
-    // 2. 🔥 FETCH EXPENSES (Petty Cash Deductions - Outlet Scoped)
+    // 2. 🔥 FETCH EXPENSES (Strictly Outlet Scoped)
     const expenses = await prisma.expense.findMany({
-      where: { outletId: outletId, date: dateQuery, isDeleted: false },
+      where: { outletId: secureOutletId, date: dateQuery, isDeleted: false },
     });
     
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -116,7 +127,7 @@ export async function GET(req: Request) {
         totalDelivery: posTotalDelivery,
         orderCount: posOrderCount,
         aov: posAov,
-        totalExpenses: totalExpenses, // 🔥 Safely Exported
+        totalExpenses: totalExpenses, 
       },
       payments: {
         cash: totalCash,

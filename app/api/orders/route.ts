@@ -1,26 +1,40 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route"; 
 
 export async function POST(req: Request) {
   try {
+    // 🔒 STRICT SECURITY: FETCH IDs FROM BACKEND SESSION TOKEN
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized terminal access blocked." }, { status: 401 });
+    }
+
+    const secureOutletId = (session.user as any).outletId;
+    const secureTenantId = (session.user as any).tenantId;
+
+    if (!secureOutletId || !secureTenantId) {
+      return NextResponse.json({ error: "Authentication IDs missing." }, { status: 400 });
+    }
+
     const body = await req.json();
     const { 
-      outletId, tenantId, cart, totalAmount, paymentMode, 
+      cart, totalAmount, paymentMode, 
       orderType, tableNo, partCash, partCard, isComplementary, compReason,
       customerPhone, customerName,
       discount, packingCharges, deliveryCharges, cgst, sgst 
     } = body;
 
-    if (!outletId || !tenantId || cart.length === 0) {
+    if (cart.length === 0) {
       return NextResponse.json({ error: "Invalid Order Data" }, { status: 400 });
     }
 
     let customerId = null;
 
     if (customerPhone && customerPhone.length === 10 && !isComplementary) {
-      // 🔒 Customer ab Tenant specific hoga
       let customer = await prisma.customer.findFirst({ 
-        where: { phone: customerPhone, tenantId: tenantId } 
+        where: { phone: customerPhone, tenantId: secureTenantId } 
       });
       
       const earnedPoints = Math.floor(totalAmount / 20);
@@ -31,7 +45,7 @@ export async function POST(req: Request) {
             phone: customerPhone, 
             name: customerName || "Guest", 
             loyaltyPoints: 50 + earnedPoints,
-            tenantId: tenantId 
+            tenantId: secureTenantId 
           }
         });
       } else {
@@ -43,16 +57,16 @@ export async function POST(req: Request) {
       customerId = customer.id;
     }
 
-    // 🔥 SAAS FIX: Har outlet ka bill number alag se calculate hoga
+    // Bill number calculated based on secureOutletId only
     const count = await prisma.order.count({
-      where: { outletId: outletId }
+      where: { outletId: secureOutletId }
     });
     const billNumber = 10000 + count + 1; 
 
     const newOrder = await prisma.order.create({
       data: {
         billNumber: billNumber, 
-        outletId, 
+        outletId: secureOutletId, // 🔒 Strictly Locked
         customerId, 
         totalAmount: isComplementary ? 0 : totalAmount, 
         paymentMode, 
@@ -87,15 +101,16 @@ export async function POST(req: Request) {
   }
 }
 
-// 🟢 GET: Filter orders by Date (Today, Yesterday, Custom)
+// 🟢 GET: Filter orders by Date (Strictly locked to Session Outlet ID)
 export async function GET(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  
+  const secureOutletId = (session.user as any).outletId;
   const { searchParams } = new URL(req.url);
-  const outletId = searchParams.get("outletId");
   const dateFilter = searchParams.get("date") || "today"; 
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
-
-  if (!outletId) return NextResponse.json({ error: "Outlet ID required" }, { status: 400 });
 
   let dateQuery: any = {};
   const now = new Date();
@@ -117,8 +132,8 @@ export async function GET(req: Request) {
     dateQuery = { gte: new Date(startDate), lte: end };
   }
 
-  // Soft Delete check added to protect data flow
-  const whereClause: any = { outletId: outletId, isDeleted: false };
+  // Soft Delete check & Secure Outlet Lock
+  const whereClause: any = { outletId: secureOutletId, isDeleted: false };
   if (Object.keys(dateQuery).length > 0) {
     whereClause.createdAt = dateQuery;
   }
@@ -138,12 +153,22 @@ export async function GET(req: Request) {
 // 🔴 PUT: Cancel Order with PIN verification
 export async function PUT(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    
+    const secureOutletId = (session.user as any).outletId;
+
     const body = await req.json();
     const { orderId, pin, action } = body;
 
-    // Hardcoded Master PIN or Admin PIN logic (can be linked to staff table later)
     if (pin !== "1234") {
       return NextResponse.json({ error: "Invalid Authorization PIN" }, { status: 403 });
+    }
+
+    // Prevent cancelling orders from other outlets (IDOR protection)
+    const existingOrder = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!existingOrder || existingOrder.outletId !== secureOutletId) {
+      return NextResponse.json({ error: "Unauthorized order modification blocked." }, { status: 403 });
     }
 
     if (action === "CANCEL") {

@@ -1,31 +1,33 @@
-import { NextResponse } from "next/server";
+kimport { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
-// 1. GET: Saare customers aur unki order history lana (Tenant Isolated)
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const tenantId = searchParams.get("tenantId");
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
 
-  if (!tenantId) {
+  // 🔒 Multi-Tenant Lock Securely via Session
+  const secureTenantId = (session.user as any).tenantId;
+
+  if (!secureTenantId) {
     return NextResponse.json({ error: "Tenant ID required for CRM access" }, { status: 400 });
   }
 
   try {
     const customers = await prisma.customer.findMany({
       where: { 
-        tenantId: tenantId, 
+        tenantId: secureTenantId, 
         isDeleted: false 
       },
       include: {
-        // Customer ke pichle saare VALID orders sath layega spend calculate karne ke liye
         orders: { 
           where: { isDeleted: false, status: { not: "CANCELLED" } } 
         } 
       },
-      orderBy: { loyaltyPoints: 'desc' } // Jiske sabse zyada points, wo upar
+      orderBy: { loyaltyPoints: 'desc' }
     });
 
-    // Automatically har customer ka total kharcha aur visits nikalna
     const formattedCustomers = customers.map(c => ({
       id: c.id,
       name: c.name || "Unknown",
@@ -41,16 +43,17 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. POST: Naya customer add karna
 export async function POST(req: Request) {
   try {
-    const { name, phone, tenantId } = await req.json();
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
 
-    if (!tenantId) return NextResponse.json({ error: "Tenant ID required" }, { status: 400 });
+    const secureTenantId = (session.user as any).tenantId;
 
-    // Check karein ki number is brand ke paas pehle se toh nahi hai
+    const { name, phone } = await req.json();
+
     const existing = await prisma.customer.findFirst({ 
-      where: { phone: phone, tenantId: tenantId } 
+      where: { phone: phone, tenantId: secureTenantId } 
     });
     
     if (existing) {
@@ -61,8 +64,8 @@ export async function POST(req: Request) {
       data: { 
         name, 
         phone,
-        tenantId: tenantId, // 🔥 Locked to business owner 
-        loyaltyPoints: 50 // Naya register karne par 50 Bonus Points! 🎉
+        tenantId: secureTenantId, // 🔥 Locked to business owner securely 
+        loyaltyPoints: 50 
       } 
     });
 
@@ -72,12 +75,21 @@ export async function POST(req: Request) {
   }
 }
 
-// 3. PUT: Customer Points Redeem Karna (FRONTEND ME CALL THA, API ME MISSING THA)
 export async function PUT(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
+
+    const secureTenantId = (session.user as any).tenantId;
     const { action, customerId, pointsToDeduct } = await req.json();
 
     if (action === "REDEEM_POINTS") {
+      // 🔒 IDOR Prevention
+      const existingCustomer = await prisma.customer.findUnique({ where: { id: customerId } });
+      if (!existingCustomer || existingCustomer.tenantId !== secureTenantId) {
+        return NextResponse.json({ error: "Unauthorized modification blocked." }, { status: 403 });
+      }
+
       const customer = await prisma.customer.update({
         where: { id: customerId },
         data: { loyaltyPoints: { decrement: parseInt(pointsToDeduct) } }

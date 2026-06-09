@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]/route";
 
 export async function GET(req: Request) {
+  // 🔒 STRICT SECURITY: GET SESSION TOKENS
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) {
+    return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+  }
+
+  const secureOutletId = (session.user as any).outletId;
+  const secureTenantId = (session.user as any).tenantId;
+
+  if (!secureOutletId || !secureTenantId) {
+    return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
+  }
+
   const { searchParams } = new URL(req.url);
-  const outletId = searchParams.get("outletId");
-  const tenantId = searchParams.get("tenantId"); // 🔥 Multi-Tenant Protection
   const dateFilter = searchParams.get("date") || "today"; 
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
-
-  if (!outletId || !tenantId) return NextResponse.json({ error: "Outlet ID and Tenant ID required" }, { status: 400 });
 
   let dateQuery: any = {};
   const now = new Date();
@@ -32,11 +43,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    // Sirf valid (non-cancelled, non-deleted) orders fetch karenge
     const orders = await prisma.order.findMany({
       where: { 
-        outletId: outletId, 
-        tenantId: tenantId, // 🔒 Data Isloated for current business owner
+        outletId: secureOutletId, 
+        tenantId: secureTenantId, // 🔒 Data Isolated securely 
         createdAt: dateQuery,
         status: { not: "CANCELLED" },
         isDeleted: false 
@@ -52,25 +62,20 @@ export async function GET(req: Request) {
     let totalItemsSold = 0;
 
     orders.forEach((order) => {
-      // Ignore strictly free complementary orders from item revenue mapping
       const isComp = order.paymentMode === "COMPLEMENTARY" || order.isComplementary;
 
       order.items.forEach((item) => {
         const id = item.menuItemId;
-        // Backup names if menuItem relation fails gracefully
         const name = item.menuItem?.name || "Unknown Item";
         const category = item.menuItem?.category || "General";
         const qty = item.quantity;
         
-        // Agar complementary hai toh revenue 0 gino, otherwise actual item base price gino
         const rev = isComp ? 0 : (item.price * item.quantity);
 
-        // Map Item
         if (!itemMap[id]) itemMap[id] = { id, name, category, qty: 0, revenue: 0 };
         itemMap[id].qty += qty;
         itemMap[id].revenue += rev;
 
-        // Map Category
         if (!categoryMap[category]) categoryMap[category] = 0;
         categoryMap[category] += rev;
 

@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 export async function GET(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) {
+    return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+  }
+
+  // 🔒 Secure Extraction from Session Only
+  const secureOutletId = (session.user as any).outletId;
+  const secureTenantId = (session.user as any).tenantId;
+
+  if (!secureOutletId || !secureTenantId) return NextResponse.json({ error: "Authentication details missing" }, { status: 400 });
+
   const { searchParams } = new URL(req.url);
-  const outletId = searchParams.get("outletId");
-  const tenantId = searchParams.get("tenantId"); // 🔥 SaaS Multi-Tenant Shield
   const dateFilter = searchParams.get("date") || "today"; 
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
-
-  if (!outletId || !tenantId) return NextResponse.json({ error: "Outlet ID & Tenant ID required" }, { status: 400 });
 
   let dateQuery: any = {};
   const now = new Date();
@@ -34,8 +43,9 @@ export async function GET(req: Request) {
   }
 
   try {
+    // 🔥 All fetching is now 100% isolated to secureOutletId
     const orders = await prisma.order.findMany({
-      where: { outletId, createdAt: dateQuery, status: { not: "CANCELLED" }, isDeleted: false },
+      where: { outletId: secureOutletId, createdAt: dateQuery, status: { not: "CANCELLED" }, isDeleted: false },
       include: { items: true }
     });
 
@@ -49,18 +59,17 @@ export async function GET(req: Request) {
       });
     });
 
-    // Fetched specifically for the current tenant 
-    const menuItems = await prisma.menuItem.findMany({ where: { tenantId, isActive: true, isDeleted: false } });
-    const rawMaterials = await prisma.inventory.findMany({ where: { outletId, type: "RAW_MATERIAL", isDeleted: false } });
+    // Fetched specifically for the current tenant & outlet
+    const menuItems = await prisma.menuItem.findMany({ where: { tenantId: secureTenantId, outletId: secureOutletId, isActive: true, isDeleted: false } });
+    const rawMaterials = await prisma.inventory.findMany({ where: { outletId: secureOutletId, type: "RAW_MATERIAL", isDeleted: false } });
     const recipes = await prisma.recipeItem.findMany({ include: { rawMaterial: true } });
 
     const productionBatches = await prisma.productionBatch.findMany({
-      where: { outletId, date: dateQuery, isDeleted: false },
+      where: { outletId: secureOutletId, date: dateQuery, isDeleted: false },
       include: { finishedGood: true, createdByUser: true },
       orderBy: { date: 'desc' }
     });
 
-    // 🔥 SMART ENGINE: Unpack custom tags and connect MenuItems to Inventory safely
     const mappedBatches = productionBatches.map(b => {
       const menuMatch = b.batchNumber.match(/\[MENU:(.*?)\]/);
       return {
@@ -85,17 +94,30 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+
+    const secureOutletId = (session.user as any).outletId;
+    const secureUserId = (session.user as any).id;
+
     const body = await req.json();
-    const { action, outletId, tenantId, loggedByUserId, mappingData, productionData } = body;
+    const { action, mappingData, productionData } = body;
 
     if (action === "SAVE_MAPPING") {
       const { menuItemId, baseQty, materials } = mappingData; 
+      
+      // 🔒 IDOR Prevention: Verify menu item belongs to this outlet
+      const menuItem = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
+      if (!menuItem || menuItem.outletId !== secureOutletId) {
+        return NextResponse.json({ error: "Unauthorized modification attempt." }, { status: 403 });
+      }
+
       await prisma.recipeItem.deleteMany({ where: { finishedGoodId: menuItemId } });
       
       if (materials.length > 0) {
         await prisma.recipeItem.createMany({
           data: materials.map((m: any) => ({
-            finishedGoodId: menuItemId, // String mapping allowed
+            finishedGoodId: menuItemId, 
             rawMaterialId: m.rawMaterialId,
             quantityUsed: parseFloat(m.quantityUsed) / parseFloat(baseQty)
           }))
@@ -105,16 +127,16 @@ export async function POST(req: Request) {
     }
 
     if (action === "RECORD_PRODUCTION") {
-      if (!loggedByUserId) throw new Error("Active user session missing.");
+      if (!secureUserId) throw new Error("Active user session missing.");
 
       const { menuItemId, producedQty, finishedWastage, actualMaterialsUsed } = productionData;
 
-      // 🔥 CRITICAL FIX: Bridge MenuItem to Inventory to satisfy Prisma Schema Constraint
+      // 🔒 Verify Menu Item
       const menuItem = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
-      if (!menuItem) throw new Error("Menu item mapping missing.");
+      if (!menuItem || menuItem.outletId !== secureOutletId) throw new Error("Menu item mapping missing or unauthorized.");
 
       let invItem = await prisma.inventory.findFirst({
-        where: { outletId: String(outletId), itemName: menuItem.name, type: "FINISHED_GOOD" }
+        where: { outletId: secureOutletId, itemName: menuItem.name, type: "FINISHED_GOOD" }
       });
 
       // Auto-create finished good in inventory if it doesn't exist
@@ -126,22 +148,21 @@ export async function POST(req: Request) {
             unit: "SERVINGS",
             stockLevel: 0,
             minStock: 0,
-            outletId: String(outletId)
+            outletId: secureOutletId
           }
         });
       }
 
-      const count = await prisma.productionBatch.count({ where: { outletId } });
-      // Store the real Menu ID safely inside the batch string for tracking
+      const count = await prisma.productionBatch.count({ where: { outletId: secureOutletId } });
       const structuredBatchNo = `PB-${50000 + count + 1}[WASTE:${finishedWastage || 0}][MENU:${menuItemId}]`;
 
       const batch = await prisma.productionBatch.create({
         data: {
           batchNumber: structuredBatchNo,
-          finishedGoodId: invItem.id, // PERFECT FOREIGN KEY LINKED
+          finishedGoodId: invItem.id, 
           quantityProduced: parseFloat(producedQty),
-          outletId: String(outletId),
-          createdByUserId: String(loggedByUserId) // Fixed real identity injection
+          outletId: secureOutletId,
+          createdByUserId: secureUserId 
         }
       });
 

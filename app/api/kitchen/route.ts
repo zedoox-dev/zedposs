@@ -1,25 +1,30 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
-// 1. GET: Kitchen me live, prepared aur all orders dikhane ke liye
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const outletId = searchParams.get("outletId");
-  const tenantId = searchParams.get("tenantId");
+  // 🔒 STRICT SECURITY: GET SESSION OUTLET ID
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) {
+    return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+  }
 
-  if (!outletId || !tenantId) {
-    return NextResponse.json({ error: "Outlet ID and Tenant ID required" }, { status: 400 });
+  const secureOutletId = (session.user as any).outletId;
+  const secureTenantId = (session.user as any).tenantId;
+
+  if (!secureOutletId || !secureTenantId) {
+    return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
   }
 
   try {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    // Fetching all orders for today for this specific outlet and tenant
     const todaysOrders = await prisma.order.findMany({
       where: {
-        outletId: outletId,
-        tenantId: tenantId, // Multi-Tenant Lock
+        outletId: secureOutletId, // 🔒 Locked to Session
+        tenantId: secureTenantId, 
         createdAt: { gte: startOfDay },
         isDeleted: false
       },
@@ -28,7 +33,7 @@ export async function GET(req: Request) {
           include: { menuItem: true }
         }
       },
-      orderBy: { createdAt: 'desc' } // Naye sabse upar (UI mein logic se reverse karenge)
+      orderBy: { createdAt: 'desc' } 
     });
 
     return NextResponse.json(todaysOrders);
@@ -37,15 +42,26 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. PATCH: Cook jab "MARK READY" dabayega tab order ko SERVED mark karne ke liye
 export async function PATCH(req: Request) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+    }
+    const secureOutletId = (session.user as any).outletId;
+
     const body = await req.json();
     const { orderId } = body;
 
+    // 🔒 IDOR Check: Ensure order belongs to this outlet
+    const orderCheck = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!orderCheck || orderCheck.outletId !== secureOutletId) {
+      return NextResponse.json({ error: "Forbidden modification." }, { status: 403 });
+    }
+
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
-      data: { status: "SERVED" } // Order ready ho gaya
+      data: { status: "SERVED" } 
     });
 
     return NextResponse.json({ success: true, order: updatedOrder });

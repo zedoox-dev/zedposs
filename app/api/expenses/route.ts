@@ -1,28 +1,40 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    // SaaS Security: Add tenantId and loggedByUserId from the Frontend payload
-    const { outletId, tenantId, loggedByUserId, expenseType, amount, paidTo, narration, doar, proofUrl } = body;
-
-    if (!outletId || !tenantId || !loggedByUserId || !amount || parseFloat(amount) <= 0) {
-      return NextResponse.json({ success: false, error: "Missing required multi-tenant or amount fields!" }, { status: 400 });
+    // 🔒 STRICT SECURITY: FETCH IDs FROM BACKEND SESSION TOKEN
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized terminal access blocked." }, { status: 401 });
     }
 
-    // 🔥 SCHEMA SAFELY PRESERVED: Packing high-tech variables into description string using structural matrix tokens
+    const secureOutletId = (session.user as any).outletId;
+    const secureUserId = (session.user as any).id; // For loggedByUserId
+
+    if (!secureOutletId || !secureUserId) {
+      return NextResponse.json({ error: "Authentication IDs missing. Connection refused." }, { status: 400 });
+    }
+
+    const body = await req.json();
+    const { expenseType, amount, paidTo, narration, doar, proofUrl } = body;
+
+    if (!amount || parseFloat(amount) <= 0) {
+      return NextResponse.json({ success: false, error: "Valid amount is required!" }, { status: 400 });
+    }
+
+    // 🔥 SCHEMA SAFELY PRESERVED: Packing high-tech variables into description
     const structuredDescription = `[PAIDTO:${paidTo || "N/A"}][DOAR:${doar || "N/A"}][NARRATION:${narration || "N/A"}][PROOF:${proofUrl || ""}]`;
 
     const expense = await prisma.expense.create({
       data: {
-        outletId: String(outletId),
-        // Tenant Relation explicitly mapping missing thi schema me, agar Expense me tenantId nahi hai 
-        // toh outletId khud secure isolation kar raha hai kyunki Outlet Tenant se juda hai.
+        outletId: secureOutletId, // 🔒 Strictly isolated to the logged-in outlet
         category: String(expenseType).toUpperCase(),  
         amount: parseFloat(String(amount)),
         description: structuredDescription,                 
-        loggedByUserId: String(loggedByUserId) // Fixed: Real user ID mapping                 
+        loggedByUserId: secureUserId // 🔒 Strictly isolated to the logged-in user                 
       }
     });
 
@@ -34,13 +46,18 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
+  // 🔒 STRICT SECURITY: GET SESSION OUTLET ID
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const secureOutletId = (session.user as any).outletId;
+
   const { searchParams } = new URL(req.url);
-  const outletId = searchParams.get("outletId");
   const dateFilter = searchParams.get("date") || "today"; 
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
-
-  if (!outletId) return NextResponse.json({ error: "Outlet ID required" }, { status: 400 });
 
   let dateQuery: any = {};
   const now = new Date();
@@ -65,14 +82,13 @@ export async function GET(req: Request) {
   try {
     const expenses = await prisma.expense.findMany({
       where: { 
-        outletId: outletId, 
+        outletId: secureOutletId, // 🔒 Data completely restricted to this specific outlet
         date: dateQuery,
-        isDeleted: false // Soft Delete Check
+        isDeleted: false 
       },
-      orderBy: { date: 'asc' } // Ascending to calculate stable sequential indices
+      orderBy: { date: 'asc' } 
     });
 
-    // Helper regex token extractor
     const unpackToken = (str: string, key: string) => {
       if (!str) return "N/A";
       const match = str.match(new RegExp(`\\[${key}:(.*?)\\]`));
@@ -81,14 +97,12 @@ export async function GET(req: Request) {
 
     const totalCount = expenses.length;
 
-    // Mapping database elements back into high-tech tabular segments
     const mappedExpenses = expenses.map((exp, idx) => {
       const descStr = exp.description || "";
       const isTokenized = descStr.includes("[PAIDTO:");
 
       return {
         id: exp.id,
-        // 🔥 FIXED: Proper sequential number generation safely matrix locked
         expenseId: 50000 + (totalCount - idx), 
         createdAt: exp.date,
         expenseType: exp.category,
@@ -98,7 +112,7 @@ export async function GET(req: Request) {
         narration: isTokenized ? unpackToken(descStr, "NARRATION") : descStr,
         proofUrl: isTokenized ? unpackToken(descStr, "PROOF") : ""
       };
-    }).reverse(); // Reverse back to show latest entries first in dashboard
+    }).reverse(); 
 
     return NextResponse.json(mappedExpenses);
   } catch (error) {

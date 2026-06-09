@@ -107,6 +107,8 @@ model Outlet {
   expenses            Expense[]
   purchases           PurchaseOrder[]
   productions         ProductionBatch[]
+
+  menuItems           MenuItem[]
 }
 
 // ==========================================
@@ -358,6 +360,9 @@ model MenuItem {
 
   tenantId        String
   tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  outletId    String?
+  outlet      Outlet?  @relation(fields: [outletId], references: [id], onDelete: Cascade)
   
   orderItems      OrderItem[]
 }
