@@ -9,7 +9,7 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
-        loginType: { label: "Login Type", type: "text" } // 🔥 NEW: To differentiate Outlet vs Tenant
+        loginType: { label: "Login Type", type: "text" } 
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {

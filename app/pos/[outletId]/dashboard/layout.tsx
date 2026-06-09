@@ -16,7 +16,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const outletId = params.outletId as string;
   
   // --- 🔥 CORE NATIVE DB SESSION AUTHENTICATION ---
-  // Using the Outlet model login. Session now holds Outlet Name, Address, etc.
   const { data: session, status } = useSession({
     required: true,
     onUnauthenticated() {
@@ -38,6 +37,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) return;
+
+    // ==========================================
+    // 🔒 STRICT URL ISOLATION SECURITY CHECK
+    // ==========================================
+    const sessionOutletId = (session.user as any).outletId;
+    // Agar login kisi outlet ka hai, but URL kisi aur outlet ka open ho raha hai:
+    if (sessionOutletId && sessionOutletId !== outletId) {
+      console.warn("Security Alert: Unauthorized Outlet URL access blocked.");
+      router.replace(`/pos/${sessionOutletId}/dashboard`);
+      return;
+    }
 
     const tenantId = (session.user as any).tenantId;
 
@@ -64,20 +74,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
     
     checkHolds();
-    const interval = setInterval(checkHolds, 1000); // Fast sync for Hold Bills
+    const interval = setInterval(checkHolds, 1000); 
     
     return () => {
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [pathname, outletId, status, session]);
+  }, [pathname, outletId, status, session, router]); // Added router to dependency
 
   const triggerBackgroundSync = async (tenantId: string, currentOutletId: string) => {
     if (!navigator.onLine) return;
     setIsSyncing(true);
     try {
-      // API call to sync latest menu & settings to Dexie DB
       await new Promise(resolve => setTimeout(resolve, 800));
     } catch (error) {
       console.error("Sync failed:", error);
@@ -86,27 +95,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   };
 
-  // 🔥 EVENT: Recall Hold Order to Cart
   const recallOrder = (order: any) => {
     const savedHolds = JSON.parse(localStorage.getItem(`zapped_held_orders_${outletId}`) || "[]");
     const filtered = savedHolds.filter((h: any) => h.holdId !== order.holdId);
     localStorage.setItem(`zapped_held_orders_${outletId}`, JSON.stringify(filtered));
     setHeldOrders(filtered); 
 
-    // Dispatches event to page.tsx to fill the cart
     const event = new CustomEvent("zapped_recall_order", { detail: order });
     window.dispatchEvent(event);
     setShowHoldList(false);
   };
 
-  // 🔥 EVENT: New Order (Clear Cart & Refresh)
   const handleNewOrder = () => {
     window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
     router.push(`/pos/${outletId}/dashboard`);
     router.refresh();
   };
 
-  // 🔥 EVENT: Search Bill (Connects to /orders page)
   const handleBillSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchBillNo.trim() !== "") {
@@ -120,9 +125,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     await signOut({ callbackUrl: "/login" });
   };
 
-  // ==========================================
-  // 🔥 STAGE 0: GLOBAL CUSTOM LOADING ANIMATION
-  // ==========================================
   if (status === "loading" || !session?.user) {
     return (
       <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center relative overflow-hidden">
@@ -146,7 +148,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // --- 🔥 OUTLET DATA MAPPING FROM SESSION ---
   const outletName = session.user.name ? session.user.name.toUpperCase() : "ZEDPOSS OUTLET";
   const currentUserOutlet = outletId;
 
@@ -167,9 +168,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      {/* ==========================================
-          🔥 SEO & META TAGS INJECTION
-          ========================================== */}
       <title>ZedPoss | ZedPoss By ZedooX</title>
       <meta name="description" content="ZedPoss By ZedooX - The ultimate Cloud POS, Billing, and Restaurant Management software designed for modern outlets." />
       <meta name="keywords" content="ZedPoss, ZedooX, POS Software, Retail POS, Restaurant POS, Cloud Billing, ZedPoss App, Smart POS, FSSAI POS, GST Billing Software, Outlet Management, KDS, ZedooX Technologies, Fast Checkout, Inventory Management, Cafe POS, QSR POS, Offline POS, Cloud Sync POS" />
@@ -188,7 +186,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <div className="flex items-center space-x-4 text-slate-600 shrink-0">
             
-            {/* OFFLINE/SYNC INDICATOR */}
             <div className="flex items-center mr-4 border-r border-slate-800 pr-4">
               {isSyncing ? (
                 <span className="flex items-center text-orange-500"><CloudSync size={12} className="animate-spin mr-1"/> SYNCING</span>
@@ -214,7 +211,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Menu size={20} />
             </button>
             
-            {/* BRANDING */}
             <div className="flex items-center text-orange-500 shrink-0 cursor-pointer" onClick={() => router.push(`/pos/${outletId}/dashboard`)}>
               <Zap size={22} className="mr-1.5 fill-orange-500" />
               <span className="font-black text-lg sm:text-xl tracking-wider">ZedPoss</span>
@@ -254,7 +250,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 )}
               </button>
 
-              {/* EXPANDED HOLD LIST */}
               {showHoldList && (
                 <div className="absolute right-0 mt-3 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
@@ -284,12 +279,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
             </div>
 
-            {/* LOGOUT BUTTON */}
             <button onClick={() => setShowLogoutConfirm(true)} className="h-10 w-10 flex items-center justify-center text-red-400 hover:text-white bg-red-500/10 hover:bg-red-50 border border-red-500/20 rounded-xl transition-all active:scale-95 shrink-0" title="Sign Out Profile">
               <LogOut size={20} />
             </button>
 
-            {/* 🔥 SUPPORT NUMBER (MOVED TO THE ABSOLUTE RIGHT AFTER LOGOUT) */}
+            {/* 🔥 SUPPORT NUMBER */}
             <div className="hidden md:flex flex-col text-right pl-4 border-l border-slate-800 ml-1">
               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">24/7 Support</span>
               <span className="text-xs font-bold text-white tracking-wider flex items-center">
@@ -300,10 +294,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* RENDER DYNAMIC COMPONENT INJECTIONS */}
         <div className="flex-1 overflow-hidden relative">{children}</div>
 
-        {/* OVERLAY APP DASHBOARD HUB */}
         {showNavOverlay && (
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md z-50 p-6 flex flex-col justify-center items-center">
             <div className="w-full max-w-6xl animate-in fade-in zoom-in-95 duration-200">
@@ -332,7 +324,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         )}
 
-        {/* 🔥 PREMIUM TERMINAL DISCONNECT MODAL */}
         {showLogoutConfirm && (
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-150">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
