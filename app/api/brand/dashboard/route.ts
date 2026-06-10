@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+kimport { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]/route"; 
 
 export const dynamic = "force-dynamic";
 
@@ -10,42 +11,35 @@ export async function GET(req: Request) {
     const outletId = searchParams.get("outletId") || "ALL";
 
     // 1. Authenticate User (Get Session)
-    const session = await getServerSession();
-    const userEmail = session?.user?.email;
+    const session = await getServerSession(authOptions);
 
-    if (!userEmail) {
+    if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
     }
 
-    // 2. Fetch User & Tenant Info
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail },
-      select: { tenantId: true }
-    });
+    const secureTenantId = (session.user as any).tenantId;
 
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!secureTenantId) return NextResponse.json({ error: "Tenant verification failed" }, { status: 403 });
 
-    const tenantId = user.tenantId;
-
-    // 3. Dynamic Filter Logic based on Outlet Switcher
+    // 2. Dynamic Filter Logic based on Outlet Switcher
     let outletFilter = {};
     if (outletId !== "ALL") {
-      // Fetch only for the selected outlet
-      outletFilter = { outletId: outletId, outlet: { tenantId: tenantId } };
+      // Fetch only for the selected outlet, STRICTLY verifying it belongs to this tenant
+      outletFilter = { outletId: outletId, outlet: { tenantId: secureTenantId } };
     } else {
-      // Fetch for ALL outlets under this brand
-      outletFilter = { outlet: { tenantId: tenantId } };
+      // Fetch for ALL outlets under this specific brand
+      outletFilter = { outlet: { tenantId: secureTenantId } };
     }
 
-    // 4. Fetch Aggregate Metrics
+    // 3. Fetch Aggregate Metrics
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of today
+    today.setHours(0, 0, 0, 0); 
 
     // Total Orders & Revenue
     const orders = await prisma.order.aggregate({
       _sum: { totalAmount: true },
       _count: { id: true },
-      where: { ...outletFilter, isDeleted: false } // Modify to add date filter if needed
+      where: { ...outletFilter, isDeleted: false } 
     });
 
     // Today's Orders
@@ -59,8 +53,6 @@ export async function GET(req: Request) {
       where: { 
         ...outletFilter, 
         isDeleted: false,
-        // Prisma doesn't support comparing two columns directly in findMany where easily without raw query, 
-        // so we'll fetch items where stock is dangerously low (e.g., < 10) for this specific view
         stockLevel: { lte: 10 } 
       },
       include: { outlet: { select: { name: true } } },
@@ -77,7 +69,7 @@ export async function GET(req: Request) {
 
     // Staff Count
     const staffCount = await prisma.user.count({
-      where: outletId !== "ALL" ? { outletId: outletId, isDeleted: false } : { tenantId: tenantId, isDeleted: false }
+      where: outletId !== "ALL" ? { outletId: outletId, isDeleted: false } : { tenantId: secureTenantId, isDeleted: false }
     });
 
     return NextResponse.json({
