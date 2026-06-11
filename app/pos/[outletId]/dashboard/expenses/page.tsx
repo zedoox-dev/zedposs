@@ -9,7 +9,6 @@ export default function ExpensesPage() {
   const outletId = params.outletId as string;
   const { data: session } = useSession();
 
-  const [orders, setOrders] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -87,20 +86,22 @@ export default function ExpensesPage() {
     if (!session?.user) return;
     setLoading(true);
     try {
-      // 🔒 API ab URLs se id nahi leti, sirf date filters bhejein
-      let queryParams = `?date=${dateFilter}`;
+      // 🟢 API UPDATE: Passing outletId strictly via query params for Multi-Outlet Support
+      let queryParams = `?outletId=${outletId}&date=${dateFilter}`;
       if (dateFilter === "custom" && customStartDate && customEndDate) {
         queryParams += `&startDate=${customStartDate}&endDate=${customEndDate}`;
       }
 
+      // 🟢 Unified Data Fetching: We now fetch BOTH Expenses & Accurate Cash from same optimized API
       const expRes = await fetch(`/api/expenses${queryParams}`);
       const expData = await expRes.json();
-      setExpenses(Array.isArray(expData) ? expData : []);
-
-      const repRes = await fetch(`/api/reports${queryParams}`);
-      const repData = await repRes.json();
-      if (repData.success) {
-        setCashCollected(repData.payments.cash || 0);
+      
+      if (expData.success) {
+        setExpenses(expData.expenses || []);
+        setCashCollected(expData.cashCollected || 0);
+      } else {
+        // Fallback incase of older API structure
+        setExpenses(Array.isArray(expData) ? expData : []);
       }
     } catch (err) {
       console.error("Error connecting metrics:", err);
@@ -118,8 +119,8 @@ export default function ExpensesPage() {
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // 🔒 Removed outletId & tenantId, backend will safely extract from Session!
-        body: JSON.stringify(formData)
+        // 🟢 UPDATE: Sending outletId explicitly from URL context so correct branch is hit
+        body: JSON.stringify({ ...formData, outletId })
       });
       
       const data = await res.json();
@@ -221,7 +222,7 @@ export default function ExpensesPage() {
             <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight flex items-center justify-center">
               <Phone size={20} className="mr-2 text-red-500 animate-pulse"/> ZAP Mobile Entry
             </h2>
-            <p className="text-slate-400 text-xs font-bold mt-1">Terminal ID Connection Activated: {outletId}</p>
+            <p className="text-slate-400 text-xs font-bold mt-1">Terminal ID Connection Activated</p>
           </div>
 
           <form onSubmit={handleAddExpense} className="space-y-4">
@@ -267,8 +268,7 @@ export default function ExpensesPage() {
     <>
       <title>ZedPoss | Petty Cash & Expense Manager</title>
       <meta name="description" content="Track your restaurant's daily expenses, petty cash, and vendor payouts dynamically. Secure expense logging by ZedooX Technologies." />
-      <meta name="keywords" content="Petty Cash Management, Restaurant Expenses, Daily Ledger, Kharcha Management, POS Payouts, Vendor Payments, Expense API, Daily Cash Register, Secure POS Ledger, Smart POS Cashier, ZedPoss Expenses, Cloud Expense Tracker, Business Cash Flow, Retail Kharcha App, ZedooX Technologies, Mobile Receipt Scanner, Branch Expenses POS, Quick Kharcha Entry, POS Accounting, Day End Closing POS, Shop Ledger Software, Auto Expense Sync, GST Payouts Tracker, Outlet Cash Management, Safe Cash Register, POS Payout Terminal, Zapped POS, Cloud Cashier System, Advanced POS Ledger, Digital Receipt App, Till Management Software, Store Funds Control, Multi-Outlet Finance, Expense Categorization, POS Money Out, Smart Kharcha Ledger" />
-
+      
       <div className="flex h-full relative overflow-hidden bg-slate-50">
         
         {/* LEFT PANEL */}
