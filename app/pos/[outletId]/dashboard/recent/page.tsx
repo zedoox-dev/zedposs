@@ -1,26 +1,33 @@
-import { db } from "@/lib/prisma";
-import { History } from "lucide-react";
+"use client";
+import { useState, useEffect } from "react";
+import { History, Loader2 } from "lucide-react";
+import { useParams } from "next/navigation";
 
-export default async function RecentOrdersPage({ params }: { params: { outletId: string } }) {
-  // Aaj ki starting date nikalo
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+export default function RecentOrdersPage() {
+  const params = useParams();
+  const [orders, setOrders] = useState<any[]>([]);
+  const [todaysTotal, setTodaysTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  // 🔥 STRICT ISOLATION + DATE FILTER
-  const recentOrders = await db.order.findMany({
-    where: {
-      outletId: params.outletId,
-      isDeleted: false,
-      createdAt: {
-        gte: startOfToday, // Sirf aaj ke orders
+  useEffect(() => {
+    const fetchRecent = async () => {
+      try {
+        const res = await fetch(`/api/pos/${params.outletId}/recent`);
+        const json = await res.json();
+        if (json.success) {
+          setOrders(json.data);
+          setTodaysTotal(json.todaysTotal);
+        }
+      } catch (error) {
+        console.error("Error fetching recent orders:", error);
+      } finally {
+        setLoading(false);
       }
-    },
-    include: { items: { include: { menuItem: true } } },
-    orderBy: { createdAt: 'desc' }
-  });
+    };
+    fetchRecent();
+  }, [params.outletId]);
 
-  // Total calculation for today
-  const todaysTotal = recentOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+  if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={40}/></div>;
 
   return (
     <div className="p-6 h-full flex flex-col bg-slate-50">
@@ -40,26 +47,29 @@ export default async function RecentOrdersPage({ params }: { params: { outletId:
         </div>
       </div>
 
-      {/* Table grid can be reused from Orders Page design */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto custom-scrollbar pb-20">
-        {recentOrders.map((order) => (
-          <div key={order.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-orange-500 transition-colors">
-            <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-3">
-              <div>
-                <span className="text-lg font-black text-slate-800">#{order.billNumber}</span>
-                <span className="block text-[10px] font-bold text-slate-400 mt-1 uppercase">{new Date(order.createdAt).toLocaleTimeString()}</span>
+        {orders.length === 0 ? (
+           <div className="col-span-full p-8 text-center text-slate-400 font-bold text-sm">No orders today yet.</div>
+        ) : (
+          orders.map((order) => (
+            <div key={order.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-orange-500 transition-colors">
+              <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-3">
+                <div>
+                  <span className="text-lg font-black text-slate-800">#{order.billNumber}</span>
+                  <span className="block text-[10px] font-bold text-slate-400 mt-1 uppercase">{new Date(order.createdAt).toLocaleTimeString()}</span>
+                </div>
+                <span className="text-emerald-600 font-black text-lg">₹{order.totalAmount}</span>
               </div>
-              <span className="text-emerald-600 font-black text-lg">₹{order.totalAmount}</span>
+              <div className="text-xs font-semibold text-slate-600 mb-3 flex-1">
+                {order.items.map((i:any) => `${i.quantity}x ${i.menuItem.name}`).join(", ")}
+              </div>
+              <div className="flex justify-between items-center pt-2">
+                 <span className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{order.orderType.replace('_', ' ')}</span>
+                 <span className="text-[10px] font-black uppercase text-orange-500">{order.paymentMode}</span>
+              </div>
             </div>
-            <div className="text-xs font-semibold text-slate-600 mb-3 flex-1">
-              {order.items.map(i => `${i.quantity}x ${i.menuItem.name}`).join(", ")}
-            </div>
-            <div className="flex justify-between items-center pt-2">
-               <span className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{order.orderType}</span>
-               <span className="text-[10px] font-black uppercase text-orange-500">{order.paymentMode}</span>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

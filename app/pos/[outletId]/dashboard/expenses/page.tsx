@@ -86,13 +86,11 @@ export default function ExpensesPage() {
     if (!session?.user) return;
     setLoading(true);
     try {
-      // 🟢 API UPDATE: Passing outletId strictly via query params for Multi-Outlet Support
       let queryParams = `?outletId=${outletId}&date=${dateFilter}`;
       if (dateFilter === "custom" && customStartDate && customEndDate) {
         queryParams += `&startDate=${customStartDate}&endDate=${customEndDate}`;
       }
 
-      // 🟢 Unified Data Fetching: We now fetch BOTH Expenses & Accurate Cash from same optimized API
       const expRes = await fetch(`/api/expenses${queryParams}`);
       const expData = await expRes.json();
       
@@ -100,7 +98,6 @@ export default function ExpensesPage() {
         setExpenses(expData.expenses || []);
         setCashCollected(expData.cashCollected || 0);
       } else {
-        // Fallback incase of older API structure
         setExpenses(Array.isArray(expData) ? expData : []);
       }
     } catch (err) {
@@ -119,7 +116,6 @@ export default function ExpensesPage() {
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // 🟢 UPDATE: Sending outletId explicitly from URL context so correct branch is hit
         body: JSON.stringify({ ...formData, outletId })
       });
       

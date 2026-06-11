@@ -13,25 +13,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { expenseType, amount, paidTo, narration, doar, proofUrl, outletId } = body;
 
-    // 🟢 1. SMART USER VALIDATION (Auto-Heals Stale Session IDs)
-    const sessionUserId = (session.user as any).id;
-    const sessionEmail = session.user.email;
-
-    const dbUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          ...(sessionUserId ? [{ id: sessionUserId }] : []),
-          ...(sessionEmail ? [{ email: sessionEmail }] : [])
-        ]
-      }
-    });
-
-    if (!dbUser) {
-      console.log("❌ USER NOT FOUND IN DB. Session ID:", sessionUserId, "Email:", sessionEmail);
-      return NextResponse.json({ success: false, error: "User mismatch! ID exists in browser but not in Database." }, { status: 400 });
-    }
-
-    // 🟢 2. STRICT OUTLET VALIDATION
+    // 🟢 1. STRICT OUTLET VALIDATION
     const secureOutletId = outletId || (session.user as any).outletId;
     if (!secureOutletId) {
       return NextResponse.json({ success: false, error: "Outlet ID missing from request." }, { status: 400 });
@@ -42,8 +24,35 @@ export async function POST(req: Request) {
     });
 
     if (!dbOutlet) {
-      console.log("❌ OUTLET NOT FOUND. Searched ID:", secureOutletId);
-      return NextResponse.json({ success: false, error: `Invalid Outlet! ID [${secureOutletId}] does not exist in Database.` }, { status: 400 });
+      return NextResponse.json({ success: false, error: `Invalid Outlet! ID [${secureOutletId}] does not exist.` }, { status: 400 });
+    }
+
+    // 🟢 2. SMART USER VALIDATION & AUTO-HEAL (Aapke logic ke hisaab se)
+    const sessionUserId = (session.user as any).id;
+    const sessionEmail = session.user.email || `outlet_${secureOutletId}@system.local`;
+    const tenantId = (session.user as any).tenantId || dbOutlet.tenantId;
+
+    let dbUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(sessionUserId ? [{ id: sessionUserId }] : []),
+          { email: sessionEmail }
+        ]
+      }
+    });
+
+    // 🔥 AUTO-HEAL: Agar User DB mein nahi hai, toh is Outlet ko as a User create kardo
+    if (!dbUser) {
+      dbUser = await prisma.user.create({
+        data: {
+          name: dbOutlet.name + " Admin",
+          email: sessionEmail,
+          password: "auto-generated-pos",
+          tenantId: tenantId,
+          outletId: secureOutletId,
+          roleId: null // Role assign nahi kar rahe, bas expense link ke liye banaya hai
+        }
+      });
     }
 
     // 🟢 3. VALIDATE AMOUNT
@@ -56,8 +65,8 @@ export async function POST(req: Request) {
 
     const expense = await prisma.expense.create({
       data: {
-        outletId: dbOutlet.id,       // Passed foreign key test
-        loggedByUserId: dbUser.id,   // Passed foreign key test
+        outletId: secureOutletId,       // Strictly mapped to Outlet
+        loggedByUserId: dbUser.id,      // Strictly mapped to resolved User
         category: String(expenseType).toUpperCase(),  
         amount: parseFloat(String(amount)),
         description: structuredDescription
@@ -133,11 +142,13 @@ export async function GET(req: Request) {
 
     let calculatedCash = 0;
     
+    // 🔥 CASH CALCULATION STRICT LOGIC
     orders.forEach(order => {
       if (order.paymentMode === "CASH") {
         calculatedCash += order.totalAmount;
       } 
-      else if (order.partCash && order.partCash > 0) {
+      else if (order.paymentMode === "PART" && order.partCash && order.partCash > 0) {
+        // Sirf PartCash hi calculate hoga agar PART selected hai
         calculatedCash += order.partCash;
       }
     });
@@ -175,6 +186,6 @@ export async function GET(req: Request) {
     
   } catch (error) {
     console.error("Expenses Fetch Error:", error);
-    return NextResponse.json({ error: "Fetch matrix configuration logs failed." }, { status: 500 });
+    return NextResponse.json({ error: "Fetch logs failed." }, { status: 500 });
   }
 }
