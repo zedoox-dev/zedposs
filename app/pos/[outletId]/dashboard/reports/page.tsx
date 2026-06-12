@@ -56,7 +56,6 @@ export default function ReportsPage() {
     }
 
     setLoading(true);
-    // 🔒 Removed IDs from URL. Backend verifies Session.
     let url = `/api/reports?date=${dateFilter}`;
     if (dateFilter === "custom" && customStartDate && customEndDate) {
       url += `&startDate=${customStartDate}&endDate=${customEndDate}`;
@@ -98,14 +97,12 @@ export default function ReportsPage() {
 
   return (
     <>
-      {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss | End of Day Z-Report & Analytics</title>
       <meta name="description" content="Generate daily restaurant Z-Reports, reconcile cash drawers, and analyze digital versus cash sales securely with ZedPoss." />
       <meta name="keywords" content="Z-Report, End of Day POS, Cash Reconciliation, Restaurant Analytics, POS Sales Report, Cash Drawer Management, GST Tax Liability Report, Aggregator Sales Sync, Zomato POS Integration, Swiggy POS Sync, ZedPoss Reports, Retail Analytics, ZedooX Technologies, Day Closing POS, X-Report, Daily Transaction Ledger, Offline Sales Analytics, Secure POS Records" />
 
       <div className="flex h-full relative overflow-hidden bg-slate-50 print:overflow-visible">
         
-        {/* ------------------- INTERFACE VIEW SCREEN MONITOR LAYER (Hidden on print) ------------------- */}
         <div className="flex-1 flex flex-col p-6 overflow-y-auto custom-scrollbar print:hidden">
           
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 mb-6 gap-4">
@@ -158,7 +155,6 @@ export default function ReportsPage() {
           ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               
-              {/* 🔥 CORE STATUS CARDS (Strictly 5 in one row with icons - Card 2 Updated to Expected Cash) */}
               <div className="overflow-x-auto pb-2 custom-scrollbar">
                 <div className="grid grid-cols-5 gap-4 min-w-[1100px]">
                   <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex flex-col justify-center">
@@ -169,7 +165,6 @@ export default function ReportsPage() {
                     <p className="text-2xl font-mono font-black text-slate-900">₹{Number(reportData?.summary?.grossSales || 0).toFixed(2)}</p>
                   </div>
 
-                  {/* 🔥 EXPECTED CASH DRAWER */}
                   <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-200 shadow-sm flex flex-col justify-center relative overflow-hidden">
                     <WalletCards size={80} className="absolute -right-4 -bottom-4 text-emerald-500/10"/>
                     <div className="flex items-center justify-between mb-2 relative z-10">
@@ -205,10 +200,8 @@ export default function ReportsPage() {
                 </div>
               </div>
 
-              {/* BREAKDOWNS MATRIX GRID AREA */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 
-                {/* 🔥 Payment Settlement Matrix (Pure Sales + Business Trend) */}
                 <div className="bg-white p-5 border border-slate-200/60 rounded-2xl shadow-xs flex flex-col justify-between">
                   <div>
                     <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-4 flex items-center"><Wallet size={16} className="mr-1.5 text-orange-500" /> Payment & App Settlement</h3>
@@ -221,7 +214,6 @@ export default function ReportsPage() {
                     </div>
                   </div>
 
-                  {/* Ultra Pro Feature: Business Trend Analytics */}
                   <div className="mt-5 pt-4 border-t border-slate-100">
                     <div className="flex justify-between items-end mb-2">
                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Business Trend: Cash vs Digital</span>
@@ -238,7 +230,6 @@ export default function ReportsPage() {
                   </div>
                 </div>
 
-                {/* Order Channels Split WITH EXPANDABLE AGGREGATORS */}
                 <div className="bg-white p-5 border border-slate-200/60 rounded-2xl shadow-xs flex flex-col justify-between">
                   <div>
                     <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-4 flex items-center"><FilePieChart size={16} className="mr-1.5 text-orange-500" /> Revenue By Channel</h3>
@@ -247,7 +238,6 @@ export default function ReportsPage() {
                       <div className="flex justify-between py-2 border-b border-slate-100"><span>Takeaway (Pick Up)</span><span className="font-mono text-slate-900">₹{Number(reportData?.channels?.pickUp || 0).toFixed(2)}</span></div>
                       <div className="flex justify-between py-2 border-b border-slate-100"><span>Direct Delivery</span><span className="font-mono text-slate-900">₹{Number(reportData?.channels?.delivery || 0).toFixed(2)}</span></div>
                       
-                      {/* Expandable Zomato */}
                       <div className="flex flex-col border-b border-slate-100">
                         <button onClick={() => toggleAgg('zomato')} className="flex justify-between py-2 w-full text-left items-center outline-none hover:text-orange-600 transition-colors">
                           <span className="flex items-center">Zomato Details {expandedAgg === 'zomato' ? <ChevronUp size={14} className="ml-1"/> : <ChevronDown size={14} className="ml-1"/>}</span>
@@ -262,7 +252,6 @@ export default function ReportsPage() {
                         )}
                       </div>
 
-                      {/* Expandable Swiggy */}
                       <div className="flex flex-col border-b border-slate-100">
                         <button onClick={() => toggleAgg('swiggy')} className="flex justify-between py-2 w-full text-left items-center outline-none hover:text-orange-600 transition-colors">
                           <span className="flex items-center">Swiggy Details {expandedAgg === 'swiggy' ? <ChevronUp size={14} className="ml-1"/> : <ChevronDown size={14} className="ml-1"/>}</span>
@@ -277,7 +266,6 @@ export default function ReportsPage() {
                         )}
                       </div>
 
-                      {/* Expandable Our App */}
                       <div className="flex flex-col">
                         <button onClick={() => toggleAgg('ourapp')} className="flex justify-between py-2 w-full text-left items-center outline-none hover:text-orange-600 transition-colors">
                           <span className="flex items-center">Our Online App {expandedAgg === 'ourapp' ? <ChevronUp size={14} className="ml-1"/> : <ChevronDown size={14} className="ml-1"/>}</span>
@@ -294,7 +282,6 @@ export default function ReportsPage() {
                     </div>
                   </div>
 
-                  {/* Exceptions Quick View */}
                   <div className="mt-4 pt-4 border-t border-slate-200">
                     <div className="flex justify-between items-center text-xs font-bold text-slate-500"><span className="flex items-center"><AlertTriangle size={12} className="mr-1 text-red-400"/> Voided / Cancelled Invoices</span> <span className="text-red-500 font-mono">{reportData?.exceptions?.cancelledCount || 0} Bills</span></div>
                   </div>
@@ -302,7 +289,6 @@ export default function ReportsPage() {
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {/* ISOLATED POS Tax & Financial Summary PRO LEVEL */}
                 <div className="bg-white p-5 border border-slate-200/60 rounded-2xl shadow-xs">
                   <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-4 flex items-center"><ArrowRightLeft size={16} className="mr-1.5 text-orange-500" /> POS Financial Breakdown (Excl. Aggregators)</h3>
                   
@@ -311,7 +297,6 @@ export default function ReportsPage() {
                     <div className="flex justify-between py-2 border-b border-slate-100"><span>POS CGST Collected</span><span className="font-mono text-slate-900">₹{Number(reportData?.summary?.totalCgst || 0).toFixed(2)}</span></div>
                     <div className="flex justify-between py-2 border-b border-slate-100"><span>POS SGST Collected</span><span className="font-mono text-slate-900">₹{Number(reportData?.summary?.totalSgst || 0).toFixed(2)}</span></div>
                     
-                    {/* Ultra Pro Feature: Net Taxable Liability Warning */}
                     <div className="flex justify-between py-2 border-b border-orange-100 bg-orange-50/50 px-2 rounded-lg text-orange-800"><span>Total Govt Tax Liability</span><span className="font-mono font-black">₹{Number(totalGovtTaxLiability).toFixed(2)}</span></div>
                     
                     <div className="flex justify-between py-2 border-b border-slate-100 mt-2"><span>Packaging Surcharges</span><span className="font-mono text-slate-900">₹{Number(reportData?.summary?.totalPacking || 0).toFixed(2)}</span></div>
@@ -320,7 +305,6 @@ export default function ReportsPage() {
                   </div>
                 </div>
 
-                {/* 🔥 CASH DRAWER AUDIT & RECONCILIATION */}
                 <div className="bg-slate-900 p-5 border border-slate-800 rounded-2xl shadow-xl relative overflow-hidden flex flex-col justify-between">
                   <ShieldCheck size={100} className="absolute -right-4 -bottom-4 text-white/5" />
                   <div>
@@ -346,7 +330,6 @@ export default function ReportsPage() {
           )}
         </div>
 
-        {/* ------------------- ENTERPRISE HARDWARE CLOSED Z-REPORT PRINT LAYER ------------------- */}
         <div 
           id="enterprise-receipt-print-area" 
           className="print:block absolute opacity-0 print:opacity-100 top-0 left-0 bg-white text-black font-mono z-[-50] print:z-[9999] text-center w-full"
@@ -373,7 +356,6 @@ export default function ReportsPage() {
                 </div>
               </div>
 
-              {/* SEGMENT 1: POS ISOLATED SALES LEDGER MATRIX */}
               <table className="w-full text-[10px] text-center mb-2 border-collapse font-bold mx-auto">
                 <thead>
                   <tr className="border-b border-solid border-black">
@@ -427,7 +409,6 @@ export default function ReportsPage() {
                 </tbody>
               </table>
 
-              {/* 🔥 SEGMENT 2: PAYMENT & APP SETTLEMENT (PURE SALES) */}
               <div className="w-full text-center text-[10px] font-black border-t border-solid border-black py-1 uppercase tracking-wider bg-slate-100">PAYMENT & APP SETTLEMENT</div>
               <table className="w-full text-[10px] text-center mb-2 border-collapse font-bold mx-auto border-b border-solid border-black">
                 <tbody>
@@ -454,7 +435,6 @@ export default function ReportsPage() {
                 </tbody>
               </table>
 
-              {/* SEGMENT 3: POS REVENUE BY CHANNEL */}
               <div className="w-full text-center text-[10px] font-black py-1 uppercase tracking-wider bg-slate-100 border-b border-solid border-slate-300">POS REVENUE BY CHANNEL</div>
               <table className="w-full text-[10px] text-center mb-2 border-collapse font-bold mx-auto border-b border-solid border-black">
                 <tbody>
@@ -473,7 +453,6 @@ export default function ReportsPage() {
                 </tbody>
               </table>
 
-              {/* 🔥 SEGMENT 4: CASH DRAWER RECONCILIATION */}
               <div className="w-full text-center text-[10px] font-black py-1 uppercase tracking-wider bg-slate-100 border-b border-solid border-slate-300">CASH DRAWER RECONCILIATION</div>
               <table className="w-full text-[10px] text-center mb-2 border-collapse font-bold mx-auto border-b border-solid border-black">
                 <tbody>
@@ -492,7 +471,6 @@ export default function ReportsPage() {
                 </tbody>
               </table>
 
-              {/* SEGMENT 5: EXCEPTIONS AND VOIDS */}
               <div className="w-full text-center text-[10px] font-black py-1 uppercase tracking-wider bg-slate-100 border-b border-solid border-slate-300">EXCEPTIONS & VOIDS</div>
               <table className="w-full text-[10px] text-center mb-2 border-collapse font-bold mx-auto">
                 <tbody>
@@ -515,7 +493,6 @@ export default function ReportsPage() {
                 </tbody>
               </table>
 
-              {/* END OF FILE STATEMENT WITHOUT EXTRA LINES */}
               <div className="text-center font-black w-full mt-4 border-t border-solid border-black pt-2 text-[10px] tracking-widest uppercase">
                 --- END OF REPORT CLOSING ---
               </div>

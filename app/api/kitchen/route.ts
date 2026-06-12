@@ -11,9 +11,8 @@ export async function GET(req: Request) {
   }
 
   const secureOutletId = (session.user as any).outletId;
-  const secureTenantId = (session.user as any).tenantId;
 
-  if (!secureOutletId || !secureTenantId) {
+  if (!secureOutletId) {
     return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
   }
 
@@ -23,8 +22,7 @@ export async function GET(req: Request) {
 
     const todaysOrders = await prisma.order.findMany({
       where: {
-        outletId: secureOutletId, // 🔒 Locked to Session
-        tenantId: secureTenantId, 
+        outletId: secureOutletId, // 🔒 Locked Strictly to Outlet
         createdAt: { gte: startOfDay },
         isDeleted: false
       },
@@ -53,7 +51,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const { orderId } = body;
 
-    // 🔒 IDOR Check: Ensure order belongs to this outlet
+    // 🔒 IDOR Check: Ensure order belongs to this specific outlet before updating
     const orderCheck = await prisma.order.findUnique({ where: { id: orderId } });
     if (!orderCheck || orderCheck.outletId !== secureOutletId) {
       return NextResponse.json({ error: "Forbidden modification." }, { status: 403 });

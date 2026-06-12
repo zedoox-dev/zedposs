@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+kimport { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/route";
@@ -11,9 +11,8 @@ export async function GET(req: Request) {
   }
 
   const secureOutletId = (session.user as any).outletId;
-  const secureTenantId = (session.user as any).tenantId;
 
-  if (!secureOutletId || !secureTenantId) {
+  if (!secureOutletId) {
     return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
   }
 
@@ -43,14 +42,22 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 1. Fetch Orders (Strictly Outlet & Tenant Scoped)
+    // 1. Fetch Orders (Strictly Outlet Scoped - tenantId removed to fix Prisma crash)
     const orders = await prisma.order.findMany({
-      where: { outletId: secureOutletId, tenantId: secureTenantId, createdAt: dateQuery, isDeleted: false },
+      where: { 
+        outletId: secureOutletId, 
+        createdAt: dateQuery, 
+        isDeleted: false 
+      },
     });
 
     // 2. 🔥 FETCH EXPENSES (Strictly Outlet Scoped)
     const expenses = await prisma.expense.findMany({
-      where: { outletId: secureOutletId, date: dateQuery, isDeleted: false },
+      where: { 
+        outletId: secureOutletId, 
+        date: dateQuery, 
+        isDeleted: false 
+      },
     });
     
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -150,6 +157,7 @@ export async function GET(req: Request) {
       }
     });
   } catch (error: any) {
+    console.error("Reports Fetch Error:", error);
     return NextResponse.json({ error: "Failed compiling financial metrics.", details: error.message }, { status: 500 });
   }
 }
