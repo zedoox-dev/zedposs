@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { WalletCards, Plus, Loader2, ReceiptText, ArrowRightLeft, UserCircle, Upload, FileText, QrCode, Phone, RefreshCw, Trash2, X } from "lucide-react";
+import { WalletCards, Plus, Loader2, ReceiptText, ArrowRightLeft, UserCircle, Upload, FileText, QrCode, Phone, RefreshCw, Trash2, X, Store } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -38,40 +38,60 @@ export default function ExpensesPage() {
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [qrSalt, setQrSalt] = useState<string>(""); 
   const [isCheckingRoute, setIsCheckingRoute] = useState(true);
+  const [mobileOutletName, setMobileOutletName] = useState("");
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const searchParams = new URLSearchParams(window.location.search);
-      if (searchParams.get("view") === "form-only") {
-        setIsFormOnlyMode(true);
-        const urlSalt = searchParams.get("salt");
-        const activeSalt = localStorage.getItem(`zap_qr_salt_${outletId}`);
-        if (activeSalt && urlSalt !== activeSalt) {
-          setIsExpired(true);
+    const initializePage = async () => {
+      if (typeof window !== "undefined") {
+        const searchParams = new URLSearchParams(window.location.search);
+        
+        // Mobile QR Form Flow
+        if (searchParams.get("view") === "form-only") {
+          setIsFormOnlyMode(true);
+          const urlSalt = searchParams.get("salt");
+          
+          try {
+            const res = await fetch(`/api/expenses?formOnly=true&outletId=${outletId}&salt=${urlSalt}`);
+            const data = await res.json();
+            
+            if (data.expired) {
+              setIsExpired(true);
+            } else {
+              setMobileOutletName(data.outletName);
+            }
+          } catch (e) {
+            setIsExpired(true);
+          }
+        } 
+        // Dashboard Flow
+        else {
+          let activeSalt = localStorage.getItem(`zap_qr_salt_${outletId}`);
+          if (!activeSalt) {
+            activeSalt = Date.now().toString();
+            localStorage.setItem(`zap_qr_salt_${outletId}`, activeSalt);
+            // Sync initial salt to DB
+            fetch("/api/expenses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "REGENERATE_SALT", newSalt: activeSalt }) });
+          }
+          setQrSalt(activeSalt);
+          const currentUrl = `${window.location.origin}${window.location.pathname}?view=form-only&salt=${activeSalt}`;
+          setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(currentUrl)}`);
         }
-      } else {
-        let activeSalt = localStorage.getItem(`zap_qr_salt_${outletId}`);
-        if (!activeSalt) {
-          activeSalt = Date.now().toString();
-          localStorage.setItem(`zap_qr_salt_${outletId}`, activeSalt);
-        }
-        setQrSalt(activeSalt);
-        const currentUrl = `${window.location.origin}${window.location.pathname}?view=form-only&salt=${activeSalt}`;
-        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(currentUrl)}`);
+        setIsCheckingRoute(false);
       }
-      setIsCheckingRoute(false);
-    }
 
-    const savedTypes = localStorage.getItem(`zapped_exp_types_${outletId}`);
-    const savedDoars = localStorage.getItem(`zapped_doars_${outletId}`);
-    
-    if (savedTypes) setExpenseTypes(JSON.parse(savedTypes));
-    else setExpenseTypes(["STAFF FOOD", "RAW MATERIAL", "MAINTENANCE", "ELECTRICITY", "GENERAL"]);
+      const savedTypes = localStorage.getItem(`zapped_exp_types_${outletId}`);
+      const savedDoars = localStorage.getItem(`zapped_doars_${outletId}`);
+      
+      if (savedTypes) setExpenseTypes(JSON.parse(savedTypes));
+      else setExpenseTypes(["STAFF FOOD", "RAW MATERIAL", "MAINTENANCE", "ELECTRICITY", "GENERAL"]);
 
-    if (savedDoars) setDoars(JSON.parse(savedDoars));
-    else setDoars(["Admin", "Manager", "Deepak", "Chotu", "Varinder", "Raju"]);
+      if (savedDoars) setDoars(JSON.parse(savedDoars));
+      else setDoars(["Admin", "Manager", "Deepak", "Chotu", "Varinder", "Raju"]);
+    };
+
+    initializePage();
   }, [outletId]);
 
   useEffect(() => {
@@ -116,7 +136,7 @@ export default function ExpensesPage() {
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, outletId })
+        body: JSON.stringify({ ...formData, outletId, isMobileEntry: isFormOnlyMode })
       });
       
       const data = await res.json();
@@ -177,13 +197,21 @@ export default function ExpensesPage() {
     }
   };
 
-  const handleRegenerateQr = () => {
+  const handleRegenerateQr = async () => {
     const newSalt = Date.now().toString();
     setQrSalt(newSalt);
     localStorage.setItem(`zap_qr_salt_${outletId}`, newSalt);
+    
+    // Sync new salt to Backend to instantly expire old forms
+    await fetch("/api/expenses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "REGENERATE_SALT", newSalt })
+    });
+
     const currentUrl = `${window.location.origin}${window.location.pathname}?view=form-only&salt=${newSalt}`;
     setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(currentUrl)}`);
-    alert("🔄 Old QR links expired! Brand fresh secure URL parameters sync locked.");
+    alert("🔄 Old QR links expired! Brand fresh secure URL parameters generated.");
   };
 
   const totalExpense = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -198,6 +226,7 @@ export default function ExpensesPage() {
     );
   }
 
+  // 🔥 PUBLIC MOBILE ENTRY FORM (QR SCANNED)
   if (isFormOnlyMode) {
     if (isExpired) {
       return (
@@ -205,56 +234,59 @@ export default function ExpensesPage() {
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center animate-in fade-in zoom-in">
             <X size={50} className="mx-auto text-red-500 mb-4" />
             <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">Link Expired</h2>
-            <p className="text-sm font-bold text-slate-500">This entry link is no longer valid. Please contact your manager for a new QR code.</p>
+            <p className="text-sm font-bold text-slate-500">This entry link is no longer valid. Please scan the new QR code from the POS terminal.</p>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="fixed inset-0 z-[9999] bg-slate-900 flex items-center justify-center p-4 overflow-y-auto">
-        <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in my-auto">
-          <div className="text-center mb-6 border-b border-slate-100 pb-3">
-            <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight flex items-center justify-center">
-              <Phone size={20} className="mr-2 text-red-500 animate-pulse"/> ZAP Mobile Entry
-            </h2>
-            <p className="text-slate-400 text-xs font-bold mt-1">Terminal ID Connection Activated</p>
+      <div className="fixed inset-0 z-[9999] bg-slate-50 flex flex-col items-center p-4 overflow-y-auto custom-scrollbar">
+        <div className="w-full max-w-md my-auto">
+          {/* Outlet Name Banner */}
+          <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-red-500 text-center shadow-lg">
+            <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center">
+              <Store size={18} className="mr-2 text-red-500"/> {mobileOutletName || "ZAPPED OUTLET"}
+            </h1>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Petty Cash Sync Portal</p>
           </div>
 
-          <form onSubmit={handleAddExpense} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Expenses Type</label>
-                <select required value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold bg-white">
-                  <option value="" disabled>Select Type...</option>
-                  {expenseTypes.map(type => <option key={type} value={type}>{type}</option>)}
-                </select>
+          <div className="bg-white rounded-b-3xl p-6 shadow-2xl animate-in fade-in zoom-in border border-slate-200">
+            <form onSubmit={handleAddExpense} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Expenses Type</label>
+                  <select required value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50">
+                    <option value="" disabled>Select Type...</option>
+                    {expenseTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Doar (Exp By)</label>
+                  <select required value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50">
+                    <option value="" disabled>Select Person...</option>
+                    {doars.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
               </div>
+
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Amount (₹)</label><input required type="number" min="1" step="any" placeholder="0.00" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-red-500 font-mono font-black text-red-600 text-2xl text-center bg-slate-50" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Paid To</label><input required type="text" placeholder="Vendor / Staff Name" value={formData.paidTo} onChange={(e) => setFormData({...formData, paidTo: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Narration</label><textarea required rows={2} placeholder="Reason detail..." value={formData.narration} onChange={(e) => setFormData({...formData, narration: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold resize-none bg-slate-50" /></div>
+
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Doar (Exp By)</label>
-                <select required value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold bg-white">
-                  <option value="" disabled>Select Person...</option>
-                  {doars.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Upload Receipt Image</label>
+                <label className="flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl p-4 cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <Upload size={16} className="text-slate-400 mr-2"/><span className="text-xs font-bold text-slate-500">{formData.proofUrl ? "Proof Image Loaded ✔" : "Take Photo / Choose File"}</span>
+                  <input type="file" accept="image/*" onChange={simulateImageUpload} className="hidden" />
+                </label>
               </div>
-            </div>
 
-            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Amount (₹)</label><input required type="number" min="1" step="any" placeholder="0.00" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-red-500 font-mono font-black text-red-600 text-lg" /></div>
-            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Paid To</label><input required type="text" placeholder="Vendor / Staff Name" value={formData.paidTo} onChange={(e) => setFormData({...formData, paidTo: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold" /></div>
-            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Narration</label><textarea required rows={2} placeholder="Reason detail..." value={formData.narration} onChange={(e) => setFormData({...formData, narration: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold resize-none" /></div>
-
-            <div>
-              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Upload Receipt Image</label>
-              <label className="flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-3 cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                <Upload size={16} className="text-slate-400 mr-2"/><span className="text-xs font-bold text-slate-500">{formData.proofUrl ? "Proof Image Loaded ✔" : "Take Photo / Choose File"}</span>
-                <input type="file" accept="image/*" onChange={simulateImageUpload} className="hidden" />
-              </label>
-            </div>
-
-            <button disabled={isSaving} type="submit" className="w-full bg-slate-900 text-white font-black uppercase tracking-wider py-3.5 rounded-xl text-xs flex justify-center items-center">
-              {isSaving ? <Loader2 className="animate-spin" size={16} /> : "Submit Mobile Entry"}
-            </button>
-          </form>
+              <button disabled={isSaving} type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider py-4 rounded-xl text-xs flex justify-center items-center shadow-lg shadow-red-500/30 transition-all active:scale-95">
+                {isSaving ? <Loader2 className="animate-spin" size={16} /> : "Submit Mobile Entry"}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     );

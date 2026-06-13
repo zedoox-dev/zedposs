@@ -122,7 +122,6 @@ export default function MegaProductionERP() {
       return;
     }
 
-    // 🔒 URLs cleaned. Backend extracts secure session keys.
     let url = `/api/production?date=${dateFilter}`;
     if (dateFilter === "custom" && customStartDate && customEndDate) url += `&startDate=${customStartDate}&endDate=${customEndDate}`;
     try {
@@ -297,7 +296,6 @@ export default function MegaProductionERP() {
     <>
       <title>ZedPoss | Production, BOM & Yield ERP</title>
       <meta name="description" content="Enterprise Production and Manufacturing ERP by ZedPoss. Track BOM recipes, raw material consumption, yield, and wastage seamlessly." />
-      <meta name="keywords" content="Restaurant ERP, Food Production Software, Bill Of Materials Software, Recipe Management POS, Restaurant Yield Analytics, Cloud Kitchen Production, Wastage Tracker POS, Kitchen Batch Management, Raw Material Requisition, Inventory Consumption, Food Cost Control, ERP Analytics, Sales vs Production, Daily Production Log, ZedPoss Manufacturing, QSR Kitchen Operations, ZedooX Technologies, Secure Cloud ERP" />
 
       <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden print:h-auto print:overflow-visible print:bg-white">
         
@@ -352,7 +350,7 @@ export default function MegaProductionERP() {
         ) : (
           <div className="flex-1 p-6 overflow-y-auto custom-scrollbar print:p-0 print:overflow-visible print:h-auto">
 
-            {/* ================= TAB 1: ITEM SALES (UPGRADED %) ================= */}
+            {/* ================= TAB 1: ITEM SALES ================= */}
             {activeTab === "SALES" && (
               <div className="animate-in fade-in duration-200 print:hidden">
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -368,7 +366,7 @@ export default function MegaProductionERP() {
                         return (
                           <tr key={item.id} className="hover:bg-slate-50/50">
                             <td className="p-4 font-black text-slate-800 uppercase">{item.name}</td>
-                            <td className="p-4"><span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold uppercase tracking-wider">{item.category}</span></td>
+                            <td className="p-4"><span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-1 rounded font-bold uppercase tracking-wider">{item.category?.name || "Uncategorized"}</span></td>
                             <td className="p-4 text-center font-mono font-black text-indigo-600 text-lg">{salesData[item.id]?.qty || 0}</td>
                             <td className="p-4">
                               <div className="flex items-center space-x-2">
@@ -600,7 +598,7 @@ export default function MegaProductionERP() {
                     {calcItem && parseFloat(calcQty) > 0 ? (
                       <table className="w-full text-left">
                         <thead><tr className="text-[10px] font-black uppercase text-slate-400 border-b"><th>Raw Material Item</th><th className="text-right">Required Quantity Matrix</th></tr></thead>
-                        <tbody className="divide-y font-mono text-sm">{recipes.filter(r => r.finishedGoodId === calcItem).map((rm, idx) => (<tr key={idx}><td className="py-3 font-bold text-slate-700 uppercase">{rm.rawMaterial.itemName}</td><td className="py-3 text-right font-black text-slate-900">{(rm.quantityUsed * parseFloat(calcQty)).toFixed(3)} {rm.rawMaterial.unit}</td></tr>))}</tbody>
+                        <tbody className="divide-y font-mono text-sm">{recipes.filter(r => r.finishedGoodId === calcItem).map((rm, idx) => (<tr key={idx}><td className="py-3 font-bold text-slate-700 uppercase">{rm.rawMaterial?.itemName}</td><td className="py-3 text-right font-black text-slate-900">{(rm.quantityUsed * parseFloat(calcQty)).toFixed(3)} {rm.rawMaterial?.unit}</td></tr>))}</tbody>
                       </table>
                     ) : <div className="text-center text-slate-300 py-10 uppercase tracking-widest text-xs font-black">Awaiting yield matrix criteria</div>}
                   </div>
@@ -779,8 +777,8 @@ export default function MegaProductionERP() {
                   <tbody>
                     {recipes.filter(r => r.finishedGoodId === calcItem).map((rm, idx) => (
                       <tr key={idx} className="border-b border-gray-200">
-                        <td className="py-2 uppercase font-black">{rm.rawMaterial.itemName}</td>
-                        <td className="py-2 text-right font-black text-lg">{(rm.quantityUsed * parseFloat(calcQty)).toFixed(3)} {rm.rawMaterial.unit}</td>
+                        <td className="py-2 uppercase font-black">{rm.rawMaterial?.itemName}</td>
+                        <td className="py-2 text-right font-black text-lg">{(rm.quantityUsed * parseFloat(calcQty)).toFixed(3)} {rm.rawMaterial?.unit}</td>
                       </tr>
                     ))}
                   </tbody>

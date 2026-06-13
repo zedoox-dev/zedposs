@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff } from "lucide-react";
+import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff, Image as ImageIcon } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
 import { useParams } from "next/navigation";
@@ -17,7 +17,7 @@ export default function MenuManagePage() {
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
 
   // Form State
-  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "" });
+  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "" });
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
 
@@ -76,7 +76,6 @@ export default function MenuManagePage() {
 
     if (!navigator.onLine) {
       try {
-        // 🔥 STRICTLY FILTER BY OUTLET ID IN LOCAL DB
         const localMenus = await localDB.menuItems.where('outletId').equals(secureOutletId).toArray();
         const activeMenus = localMenus.filter(m => m.isActive !== false && m.isDeleted !== true);
         setItems(activeMenus);
@@ -91,7 +90,6 @@ export default function MenuManagePage() {
     }
 
     try {
-      // 🔒 NO TENANT ID OR OUTLET ID IN URL. Backend pulls from session.
       const res = await fetch(`/api/menu`);
       const data = await res.json();
       const menuData = Array.isArray(data) ? data : [];
@@ -129,11 +127,11 @@ export default function MenuManagePage() {
 
     const generatedItemId = Math.floor(1000 + Math.random() * 9000);
 
-    // 🔒 NO TENANT ID IN PAYLOAD. Backend handles assignment securely.
     const payload = {
       name: formData.name,
       finalPrice: formData.finalPrice,
-      category: finalCategory
+      category: finalCategory,
+      imageUrl: formData.imageUrl
     };
 
     const method = editingId ? "PUT" : "POST";
@@ -151,11 +149,12 @@ export default function MenuManagePage() {
         ...bodyData, 
         price: parseFloat(payload.finalPrice), 
         outletId: secureOutletId,
+        imageUrl: formData.imageUrl || null,
         isActive: true, 
         isDeleted: false 
       });
       
-      setFormData({ name: "", finalPrice: "", category: existingCategories[0] || "" });
+      setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "" });
       setCustomCategoryName(""); setIsCustomCategory(false); setEditingId(null);
       fetchMenu();
       setIsSaving(false);
@@ -170,7 +169,13 @@ export default function MenuManagePage() {
       });
 
       if (res.ok) {
-        setFormData({ name: "", finalPrice: "", category: existingCategories[0] || "" });
+        const data = await res.json();
+        // Backup Image URL to local storage automatically if provided
+        if (formData.imageUrl) {
+          localStorage.setItem(`zapped_img_${data.item?.id || editingId}`, formData.imageUrl);
+        }
+        
+        setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "" });
         setCustomCategoryName("");
         setIsCustomCategory(false);
         setEditingId(null);
@@ -191,7 +196,8 @@ export default function MenuManagePage() {
     setFormData({
       name: item.name,
       finalPrice: item.price.toString(),
-      category: item.category
+      category: item.category,
+      imageUrl: item.imageUrl || localStorage.getItem(`zapped_img_${item.id}`) || ""
     });
   };
 
@@ -217,6 +223,48 @@ export default function MenuManagePage() {
     }
   };
 
+  // 🔥 Smart Toggle for Dashboard Image Isolation
+  const handleImageToggle = async (item: any, isChecked: boolean) => {
+    if (!navigator.onLine) {
+      alert("Connect to internet to toggle images.");
+      return;
+    }
+
+    let targetUrl = "";
+
+    if (isChecked) {
+      targetUrl = localStorage.getItem(`zapped_img_${item.id}`) || "";
+      if (!targetUrl) {
+         alert("No image saved locally. Please edit the item to add an image URL.");
+         return;
+      }
+    } else {
+      if (item.imageUrl) {
+         localStorage.setItem(`zapped_img_${item.id}`, item.imageUrl);
+      }
+      targetUrl = ""; // This sends an empty string, which the API converts to `null` in the DB
+    }
+
+    try {
+      const res = await fetch("/api/menu", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: item.id,
+          name: item.name,
+          category: item.category,
+          finalPrice: item.price,
+          imageUrl: targetUrl
+        })
+      });
+      if (res.ok) {
+         fetchMenu();
+      }
+    } catch (e) {
+      console.error("Toggle Error", e);
+    }
+  };
+
   const finalPriceInput = parseFloat(formData.finalPrice) || 0;
   const calculatedBase = finalPriceInput / 1.05;
   const calculatedCgst = calculatedBase * 0.025;
@@ -230,7 +278,7 @@ export default function MenuManagePage() {
 
       <div className="p-6 h-full flex flex-col lg:flex-row gap-6 bg-slate-50 overflow-y-auto">
         {/* FORM FIELD SIDEBAR PANEL */}
-        <div className="w-full lg:w-96 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm h-fit">
+        <div className="w-full lg:w-96 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm h-fit shrink-0">
           <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center">
             <Utensils className="mr-2 text-orange-500" />
             {editingId ? "Edit Menu Item" : "Create New Item"}
@@ -273,6 +321,15 @@ export default function MenuManagePage() {
               )}
             </div>
 
+            {/* 🔥 NEW IMAGE URL FIELD */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Image URL (Optional)</label>
+              <div className="flex relative">
+                <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+                <input type="text" placeholder="https://..." value={formData.imageUrl} onChange={(e) => setFormData({...formData, imageUrl: e.target.value})} className="w-full pl-10 p-3 border border-slate-200 rounded-xl outline-none font-bold" />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Final Selling Price (Round Figure)</label>
               <input required type="number" placeholder="e.g., 40" value={formData.finalPrice} onChange={(e) => setFormData({...formData, finalPrice: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-black text-lg text-slate-900" />
@@ -288,7 +345,7 @@ export default function MenuManagePage() {
 
             <div className="flex space-x-2 pt-2">
               {editingId && (
-                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || ""}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
+                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: ""}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
               )}
               <button disabled={isSaving} type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl flex justify-center items-center">
                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : editingId ? "Update Item" : "Add to Menu"}
@@ -316,6 +373,7 @@ export default function MenuManagePage() {
                     <th className="p-4">Base Price</th>
                     <th className="p-4">Tax (5% GST)</th>
                     <th className="p-4">Final Price</th>
+                    <th className="p-4 text-center">Image On/Off</th>
                     <th className="p-4 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -331,6 +389,20 @@ export default function MenuManagePage() {
                         <td className="p-4 font-mono text-sm">₹{base.toFixed(2)}</td>
                         <td className="p-4 font-mono text-xs text-slate-400">₹{gst.toFixed(2)}</td>
                         <td className="p-4 font-black text-slate-900 text-base">₹{item.price}</td>
+                        
+                        {/* 🔥 IMAGE ON/OFF TOGGLE */}
+                        <td className="p-4 text-center">
+                          <label className="relative inline-flex items-center cursor-pointer" title="Toggle Dashboard Visibility">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={!!item.imageUrl} 
+                              onChange={(e) => handleImageToggle(item, e.target.checked)} 
+                            />
+                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
+                          </label>
+                        </td>
+
                         <td className="p-4 text-center">
                           <div className="flex items-center justify-center space-x-2">
                             <button onClick={() => handleEdit(item)} className="p-2 text-blue-500"><Edit2 size={16}/></button>

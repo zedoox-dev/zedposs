@@ -42,7 +42,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 1. Fetch Orders (Strictly Outlet Scoped - tenantId removed to fix Prisma crash)
+    // 1. Fetch Orders (Strictly Outlet Scoped)
     const orders = await prisma.order.findMany({
       where: { 
         outletId: secureOutletId, 
@@ -82,6 +82,11 @@ export async function GET(req: Request) {
     let cancelledCount = 0;
     let cancelledValue = 0;
 
+    // Aggregators Setup
+    let zomato = { total: 0, tax: 0, discount: 0, charges: 0 };
+    let swiggy = { total: 0, tax: 0, discount: 0, charges: 0 };
+    let ourApp = { total: 0, tax: 0, discount: 0, charges: 0 };
+
     orders.forEach((order) => {
       if (order.status === "CANCELLED") {
         cancelledCount++;
@@ -94,11 +99,11 @@ export async function GET(req: Request) {
       if (isComp) {
         totalComp += order.totalAmount || 0; 
       } else {
-        const isPOS = ["DINE_IN", "DELIVERY", "PICK_UP"].includes(order.orderType);
+        const isPOS = ["DINE_IN", "DELIVERY", "TAKEAWAY", "PICK_UP"].includes(order.orderType);
         
         if (isPOS) {
           posGrossSales += order.totalAmount;
-          posTotalDiscount += order.discount || 0;
+          posTotalDiscount += order.discountAmount || 0;
           posTotalPacking += order.packingCharges || 0;
           posTotalDelivery += order.deliveryCharges || 0;
           posTotalCgst += order.cgst || 0;
@@ -107,19 +112,36 @@ export async function GET(req: Request) {
 
           if (order.orderType === "DINE_IN") dineInSales += order.totalAmount;
           else if (order.orderType === "DELIVERY") deliverySales += order.totalAmount;
-          else if (order.orderType === "PICK_UP") pickUpSales += order.totalAmount;
+          else if (order.orderType === "TAKEAWAY" || order.orderType === "PICK_UP") pickUpSales += order.totalAmount;
+        } 
+        // Aggregator Analytics Map
+        else if (order.orderType === "ONLINE_ZOMATO") {
+          zomato.total += order.totalAmount;
+          zomato.tax += (order.cgst || 0) + (order.sgst || 0);
+          zomato.discount += order.discountAmount || 0;
+        } 
+        else if (order.orderType === "ONLINE_SWIGGY") {
+          swiggy.total += order.totalAmount;
+          swiggy.tax += (order.cgst || 0) + (order.sgst || 0);
+          swiggy.discount += order.discountAmount || 0;
+        } 
+        else if (order.orderType === "OWN_APP" || order.orderType === "OWN_WEB") {
+          ourApp.total += order.totalAmount;
+          ourApp.tax += (order.cgst || 0) + (order.sgst || 0);
+          ourApp.discount += order.discountAmount || 0;
         }
         
+        // Tender Tracking
         if (order.paymentMode === "CASH") totalCash += order.totalAmount;
-        else if (order.paymentMode === "CARD") totalCard += order.totalAmount;
-        else if (order.paymentMode === "PART") {
+        else if (order.paymentMode === "CARD" || order.paymentMode === "UPI" || order.paymentMode === "ONLINE_PREPAID") totalCard += order.totalAmount;
+        else if (order.paymentMode === "MIXED" || (order.paymentMode as any) === "PART") {
           totalCash += order.partCash || 0;
           totalCard += order.partCard || 0;
         }
       }
     });
 
-    const posNetBaseSales = posGrossSales / 1.05;
+    const posNetBaseSales = posGrossSales > 0 ? posGrossSales / 1.05 : 0;
     const posAov = posOrderCount > 0 ? (posGrossSales / posOrderCount) : 0;
 
     return NextResponse.json({
@@ -146,9 +168,9 @@ export async function GET(req: Request) {
         delivery: deliverySales, 
       },
       aggregators: {
-        zomato: { total: 0, tax: 0, discount: 0, charges: 0 },
-        swiggy: { total: 0, tax: 0, discount: 0, charges: 0 },
-        ourApp: { total: 0, tax: 0, discount: 0, charges: 0 }
+        zomato,
+        swiggy,
+        ourApp
       },
       exceptions: {
         complementaryValue: totalComp,

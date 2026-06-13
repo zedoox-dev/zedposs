@@ -105,7 +105,6 @@ export default function CustomersCRMPage() {
     }
 
     try {
-      // 🔒 Removed IDs from URL
       const res = await fetch(`/api/customers`);
       const data = await res.json();
       const crmData = Array.isArray(data) ? data : [];
@@ -158,7 +157,6 @@ export default function CustomersCRMPage() {
       const res = await fetch("/api/customers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // 🔒 Removed tenantId from body
         body: JSON.stringify(formData)
       });
       const data = await res.json();
@@ -291,7 +289,6 @@ export default function CustomersCRMPage() {
 
   return (
     <>
-      {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss CRM | Customer Loyalty & Marketing Hub</title>
       <meta name="description" content="Engage restaurant customers with VIP Tiers, Loyalty Points, and SMS Marketing. ZedPoss CRM Dashboard by ZedooX Technologies." />
       <meta name="keywords" content="Restaurant CRM, Customer Loyalty Points, POS Marketing, ZedPoss VIP, Retail Customer Directory, SMS Marketing POS, WhatsApp Billing Notifications, ZedPoss CRM, ZedooX Technologies, Loyalty Program POS, Customer Retention Software, Cloud Database CRM, Retail Membership App, Cafe Loyalty Program, Points Redemption POS, POS Contact Manager, Auto Send Offers POS, High Spender Analytics, Customer Purchase History, Customer Leaderboard" />
@@ -624,7 +621,7 @@ export default function CustomersCRMPage() {
                                       placeholder="Enter your promotional ad message here..."
                                   />
                               </div>
-
+                              
                               {/* Template 2: Points Credited */}
                               <div className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${selectedTemplate === 2 ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-200 bg-white hover:border-slate-300'}`} onClick={() => setSelectedTemplate(2)}>
                                   <div className="flex justify-between items-center mb-2">

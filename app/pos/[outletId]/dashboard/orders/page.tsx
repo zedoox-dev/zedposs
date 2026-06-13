@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Search, Loader2, Calendar, Filter, Eye, Printer, XCircle, ChevronRight, CheckCircle2, AlertCircle, WifiOff } from "lucide-react";
+import { Search, Loader2, Calendar, Filter, Eye, Printer, XCircle, ChevronRight, CheckCircle2, AlertCircle, WifiOff, Banknote, CreditCard } from "lucide-react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
@@ -24,7 +24,8 @@ export default function OrdersHistoryPage() {
 
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   
-  const [pinModal, setPinModal] = useState<{ isOpen: boolean; action: "CANCEL" | "REPRINT" | null }>({ isOpen: false, action: null });
+  // Track action context and payload for payment changes
+  const [pinModal, setPinModal] = useState<{ isOpen: boolean; action: "CANCEL" | "REPRINT" | "CHANGE_PAY" | null, payload?: string }>({ isOpen: false, action: null });
   const [authPin, setAuthPin] = useState("");
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [printerConfig, setPrinterConfig] = useState<any>(null);
@@ -36,7 +37,6 @@ export default function OrdersHistoryPage() {
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
-    // Dynamic secure outlet check
     const secureOutletId = (session?.user as any)?.outletId || outletId;
 
     const pConf = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
@@ -62,7 +62,6 @@ export default function OrdersHistoryPage() {
     setLoading(true);
     const secureOutletId = (session?.user as any)?.outletId || outletId;
 
-    // 🔥 OFFLINE FETCHING
     if (!navigator.onLine) {
       try {
         const offlineOrders = await localDB.orders.where('outletId').equals(secureOutletId).reverse().toArray();
@@ -75,7 +74,6 @@ export default function OrdersHistoryPage() {
       return;
     }
 
-    // 🔒 ONLINE FETCHING (Secure session handles Outlet ID)
     let url = `/api/orders?date=${dateFilter}`;
     if (dateFilter === "custom" && customStartDate && customEndDate) {
       url += `&startDate=${customStartDate}&endDate=${customEndDate}`;
@@ -112,37 +110,44 @@ export default function OrdersHistoryPage() {
     e.preventDefault();
     if (!selectedOrder) return;
     
-    if (pinModal.action === "REPRINT") {
-      if (authPin !== "1234") return alert("Invalid Authorization PIN for Reprint!");
-      
-      setLastReprintOrder({ ...selectedOrder }); 
-      setPinModal({ isOpen: false, action: null });
-      setAuthPin("");
-      
-      setTimeout(() => { window.print(); }, 200);
-      return;
-    }
-
     if (!navigator.onLine) {
-      return alert("System is offline! Cancellations require server verification. Please connect to internet.");
+      return alert("System is offline! Actions require server POS password verification. Please connect to internet.");
     }
 
     setIsActionLoading(true);
     try {
+      // If it's just a REPRINT, we send VERIFY_ONLY to validate the POS password
+      const apiAction = pinModal.action === "REPRINT" ? "VERIFY_ONLY" : pinModal.action;
+
       const res = await fetch("/api/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: selectedOrder.id, pin: authPin, action: "CANCEL" })
+        body: JSON.stringify({ 
+          orderId: selectedOrder.id, 
+          pin: authPin, 
+          action: apiAction,
+          newPaymentMode: pinModal.payload
+        })
       });
       const data = await res.json();
+
       if (data.success) {
-        alert("Bill Cancelled Successfully!");
+        if (pinModal.action === "REPRINT") {
+          setLastReprintOrder({ ...selectedOrder }); 
+          setTimeout(() => { window.print(); }, 200);
+        } else if (pinModal.action === "CANCEL") {
+          alert("Bill Cancelled Successfully!");
+          setSelectedOrder(null);
+        } else if (pinModal.action === "CHANGE_PAY") {
+          alert(`Payment Mode Updated to ${pinModal.payload}!`);
+          setSelectedOrder({ ...selectedOrder, paymentMode: pinModal.payload });
+        }
+        
         setPinModal({ isOpen: false, action: null });
         setAuthPin("");
-        setSelectedOrder(null);
-        fetchOrders();
+        fetchOrders(); // Refresh table
       } else {
-        alert(data.error || "Failed to cancel invoice data.");
+        alert(data.error || "Authorization Failed.");
       }
     } catch (error) {
       alert("Network Error");
@@ -161,8 +166,7 @@ export default function OrdersHistoryPage() {
     <>
       <title>ZedPoss | Orders & Billing History</title>
       <meta name="description" content="Manage your past invoices, KOTs, and billing history dynamically with ZedPoss cloud technology." />
-      <meta name="keywords" content="POS History, Restaurant Billing History, Cloud Invoice App, ZedPoss, ZedooX Technologies, Secure Invoices, KOT Reprint, E-Bill Records, Store Analytics, POS Records, Retail Cloud Billing, POS Reporting, Cash Register Logs, Cancel Bill POS, Fast Search POS" />
-
+      
       <div className="flex h-full relative overflow-hidden bg-slate-50 print:overflow-visible">
         <div className="flex h-full w-full print:hidden">
           
@@ -200,7 +204,7 @@ export default function OrdersHistoryPage() {
                   <table className="w-full text-left border-collapse">
                     <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200">
                       <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                        <th className="p-4">Bill No</th><th className="p-4">Time</th><th className="p-4">Type</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4 text-center">Action</th>
+                        <th className="p-4">Bill No</th><th className="p-4">Date & Time</th><th className="p-4">Type</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -209,7 +213,9 @@ export default function OrdersHistoryPage() {
                       ) : displayedOrders.map((order) => (
                         <tr key={order.id} className={`hover:bg-orange-50/50 transition-colors cursor-pointer ${selectedOrder?.id === order.id ? 'bg-orange-50' : ''}`} onClick={() => setSelectedOrder(order)}>
                           <td className="p-4 font-black text-slate-800">#{order.billNumber}</td>
-                          <td className="p-4 font-bold text-xs text-slate-600">{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                          <td className="p-4 font-bold text-[11px] text-slate-600">
+                            {new Date(order.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' })}
+                          </td>
                           <td className="p-4"><span className="text-[10px] font-black bg-slate-100 px-2 py-1 rounded text-slate-600 uppercase">{order.orderType.replace("_", " ")}</span></td>
                           <td className="p-4 font-mono font-black text-slate-900">₹{(order.isComplementary || order.paymentMode === "COMPLEMENTARY") ? "0.00" : Number(order.totalAmount).toFixed(2)}</td>
                           <td className="p-4">{getStatusBadge(order)}</td>
@@ -237,14 +243,33 @@ export default function OrdersHistoryPage() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h2 className="text-xl font-black tracking-tight">BILL #{selectedOrder.billNumber}</h2>
-                      <p className="text-xs text-slate-400 font-bold">{new Date(selectedOrder.createdAt).toLocaleString('en-IN')}</p>
+                      <p className="text-xs text-slate-400 font-bold">{new Date(selectedOrder.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' })}</p>
                     </div>
                     {getStatusBadge(selectedOrder)}
                   </div>
-                  <div className="flex items-center space-x-2 text-xs font-bold mt-3 bg-slate-800 p-2 rounded-lg">
-                    <span className="text-orange-400 uppercase">{selectedOrder.orderType?.replace("_", " ")}</span>
-                    {selectedOrder.tableNo && <span className="text-slate-300">| Table {selectedOrder.tableNo}</span>}
-                    <span className="text-slate-300">| {selectedOrder.paymentMode}</span>
+                  
+                  <div className="flex items-center justify-between text-xs font-bold mt-3 bg-slate-800 p-2 rounded-lg">
+                    <div>
+                      <span className="text-orange-400 uppercase">{selectedOrder.orderType?.replace("_", " ")}</span>
+                      {selectedOrder.tableNo && <span className="text-slate-300"> | Table {selectedOrder.tableNo}</span>}
+                      <span className="text-emerald-400 ml-2 border-l border-slate-600 pl-2">{selectedOrder.paymentMode}</span>
+                    </div>
+                    
+                    {/* 🔥 EXCLUSIVE DB-CONNECTED PAYMENT MODE SWITCHER */}
+                    {selectedOrder.status !== "CANCELLED" && !selectedOrder.isComplementary && selectedOrder.paymentMode !== "COMPLEMENTARY" && (
+                      <div className="flex gap-1.5">
+                        {selectedOrder.paymentMode !== "CASH" && (
+                          <button onClick={() => setPinModal({ isOpen: true, action: "CHANGE_PAY", payload: "CASH" })} className="bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded text-[9px] uppercase tracking-wider flex items-center transition-colors">
+                            <Banknote size={10} className="mr-1"/> Set Cash
+                          </button>
+                        )}
+                        {selectedOrder.paymentMode !== "CARD" && (
+                          <button onClick={() => setPinModal({ isOpen: true, action: "CHANGE_PAY", payload: "CARD" })} className="bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded text-[9px] uppercase tracking-wider flex items-center transition-colors">
+                            <CreditCard size={10} className="mr-1"/> Set Card
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -265,7 +290,7 @@ export default function OrdersHistoryPage() {
                       {selectedOrder.items?.map((item: any) => (
                         <div key={item.id} className="flex justify-between items-start text-xs font-bold">
                           <div className="flex-1"><span className="uppercase text-slate-800">{item.menuItem?.name || item.name || 'Unknown Item'}</span> <span className="text-slate-400 ml-1">x{item.quantity}</span></div>
-                          <div className="font-mono text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</div>
+                          <div className="font-mono text-slate-900">₹{((item.totalPrice || item.price) * (item.totalPrice ? 1 : item.quantity)).toFixed(2)}</div>
                         </div>
                       ))}
                     </div>
@@ -274,8 +299,7 @@ export default function OrdersHistoryPage() {
                   <div className="bg-orange-50/50 p-4 rounded-xl border border-orange-100 space-y-2">
                     <h4 className="text-[10px] font-black uppercase text-orange-600 mb-2 border-b border-orange-200 pb-1">Financial Breakdown</h4>
                     {(() => {
-                      const itemsTotal = selectedOrder.items?.reduce((s:number, i:any) => s + (i.price * i.quantity), 0) || 0;
-                      const baseAmt = itemsTotal / 1.05;
+                      const baseAmt = selectedOrder.subtotal > 0 ? selectedOrder.subtotal / 1.05 : 0;
                       const cgstAmt = selectedOrder.cgst > 0 ? selectedOrder.cgst : baseAmt * 0.025;
                       const sgstAmt = selectedOrder.sgst > 0 ? selectedOrder.sgst : baseAmt * 0.025;
                       return (
@@ -288,7 +312,8 @@ export default function OrdersHistoryPage() {
                     })()}
                     {selectedOrder.packingCharges > 0 && <div className="flex justify-between text-[10px] font-bold text-slate-500"><span>Packing Charge</span><span className="font-mono">+ ₹{Number(selectedOrder.packingCharges).toFixed(2)}</span></div>}
                     {selectedOrder.deliveryCharges > 0 && <div className="flex justify-between text-[10px] font-bold text-slate-500"><span>Delivery Charge</span><span className="font-mono">+ ₹{Number(selectedOrder.deliveryCharges).toFixed(2)}</span></div>}
-                    {selectedOrder.discount > 0 && <div className="flex justify-between text-[10px] font-bold text-emerald-600"><span>Discount</span><span className="font-mono">- ₹{Number(selectedOrder.discount).toFixed(2)}</span></div>}
+                    {selectedOrder.discountAmount > 0 && <div className="flex justify-between text-[10px] font-bold text-emerald-600"><span>Discount</span><span className="font-mono">- ₹{Number(selectedOrder.discountAmount).toFixed(2)}</span></div>}
+                    {selectedOrder.roundOff !== 0 && <div className="flex justify-between text-[10px] font-bold text-slate-500"><span>Round Off</span><span className="font-mono">{selectedOrder.roundOff > 0 ? '+' : ''}{Number(selectedOrder.roundOff).toFixed(2)}</span></div>}
                     <div className="border-t border-orange-200 pt-2 mt-2 flex justify-between items-end">
                       <span className="font-black text-slate-800 text-sm uppercase">Grand Total</span>
                       <span className="text-xl font-black text-slate-900 font-mono">
@@ -334,17 +359,21 @@ export default function OrdersHistoryPage() {
           </div>
         </div>
 
-        {/* ---------- AUTH PIN MODAL ---------- */}
+        {/* ---------- AUTH PIN MODAL (FOR CANCEL, REPRINT & CHANGE PAY) ---------- */}
         {pinModal.isOpen && (
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in duration-150">
-              <h2 className="text-xl font-black text-slate-800 mb-2 uppercase tracking-tight text-center">Authorization Required</h2>
-              <p className="text-xs font-bold text-slate-500 text-center mb-6">Enter Admin PIN to {pinModal.action?.toLowerCase()} this bill.</p>
+              <h2 className="text-xl font-black text-slate-800 mb-2 uppercase tracking-tight text-center">POS Login Required</h2>
+              <p className="text-xs font-bold text-slate-500 text-center mb-6">
+                Enter your terminal POS password to {
+                  pinModal.action === "CHANGE_PAY" ? `change payment to ${pinModal.payload}` : pinModal.action?.toLowerCase()
+                } this bill.
+              </p>
               <form onSubmit={handleAuthAction}>
-                <input type="password" required maxLength={4} placeholder="••••" value={authPin} onChange={(e) => setAuthPin(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-xl text-center text-2xl tracking-widest font-mono font-black mb-4 outline-none focus:border-orange-500" />
+                <input type="password" required placeholder="••••" value={authPin} onChange={(e) => setAuthPin(e.target.value)} className="w-full p-4 border border-slate-200 rounded-xl text-center text-2xl tracking-widest font-mono font-black mb-4 outline-none focus:border-orange-500" />
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => { setPinModal({isOpen: false, action: null}); setAuthPin(""); }} className="py-3 bg-slate-100 text-slate-700 font-bold rounded-xl text-sm">Close</button>
-                  <button type="submit" disabled={isActionLoading || authPin.length !== 4} className={`py-3 font-bold rounded-xl text-sm text-white ${pinModal.action === 'CANCEL' ? 'bg-red-600' : 'bg-slate-900'}`}>
+                  <button type="submit" disabled={isActionLoading || authPin.length < 1} className={`py-3 font-bold rounded-xl text-sm text-white ${pinModal.action === 'CANCEL' ? 'bg-red-600' : 'bg-slate-900'}`}>
                     {isActionLoading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Confirm'}
                   </button>
                 </div>
@@ -400,8 +429,8 @@ export default function OrdersHistoryPage() {
                     <tr key={idx} className="border-b border-solid border-slate-300">
                       <td className="py-1 text-left uppercase pl-1 leading-tight">{item.menuItem?.name || item.name || 'Item'}</td>
                       <td className="py-1 text-center">{item.quantity}</td>
-                      <td className="py-1 text-right font-mono">₹{Number(item.price).toFixed(2)}</td>
-                      <td className="py-1 text-right pr-1 font-mono">₹{Number(item.price * item.quantity).toFixed(2)}</td>
+                      <td className="py-1 text-right font-mono">₹{Number(item.unitPrice || item.price).toFixed(2)}</td>
+                      <td className="py-1 text-right pr-1 font-mono">₹{Number(item.totalPrice || (item.price * item.quantity)).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -409,8 +438,7 @@ export default function OrdersHistoryPage() {
               
               <div className="w-full text-[10px] font-bold border-t border-b border-solid border-black pb-1 pt-1 px-1 mb-1">
                 {(() => {
-                  const repItemsTotal = lastReprintOrder.items?.reduce((s:number, i:any) => s + (i.price * i.quantity), 0) || 0;
-                  const repBaseAmt = repItemsTotal / 1.05;
+                  const repBaseAmt = lastReprintOrder.subtotal > 0 ? lastReprintOrder.subtotal / 1.05 : 0;
                   const repCgstAmt = lastReprintOrder.cgst > 0 ? lastReprintOrder.cgst : repBaseAmt * 0.025;
                   const repSgstAmt = lastReprintOrder.sgst > 0 ? lastReprintOrder.sgst : repBaseAmt * 0.025;
                   return (
@@ -423,7 +451,8 @@ export default function OrdersHistoryPage() {
                 })()}
                 {lastReprintOrder.packingCharges > 0 && <div className="flex justify-between"><span>Packing Charge</span><span>+ ₹{Number(lastReprintOrder.packingCharges).toFixed(2)}</span></div>}
                 {lastReprintOrder.deliveryCharges > 0 && <div className="flex justify-between"><span>Delivery Charge</span><span>+ ₹{Number(lastReprintOrder.deliveryCharges).toFixed(2)}</span></div>}
-                {lastReprintOrder.discount > 0 && <div className="flex justify-between text-emerald-600"><span>Discount</span><span>- ₹{Number(lastReprintOrder.discount).toFixed(2)}</span></div>}
+                {lastReprintOrder.discountAmount > 0 && <div className="flex justify-between text-emerald-600"><span>Discount</span><span>- ₹{Number(lastReprintOrder.discountAmount).toFixed(2)}</span></div>}
+                {lastReprintOrder.roundOff !== 0 && <div className="flex justify-between"><span>Round Off</span><span>{lastReprintOrder.roundOff > 0 ? '+' : ''}{Number(lastReprintOrder.roundOff).toFixed(2)}</span></div>}
               </div>
 
               <div className="w-full flex justify-between font-black text-[13px] border-b border-solid border-black pb-1 px-1">

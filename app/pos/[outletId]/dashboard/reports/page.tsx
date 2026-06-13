@@ -99,7 +99,6 @@ export default function ReportsPage() {
     <>
       <title>ZedPoss | End of Day Z-Report & Analytics</title>
       <meta name="description" content="Generate daily restaurant Z-Reports, reconcile cash drawers, and analyze digital versus cash sales securely with ZedPoss." />
-      <meta name="keywords" content="Z-Report, End of Day POS, Cash Reconciliation, Restaurant Analytics, POS Sales Report, Cash Drawer Management, GST Tax Liability Report, Aggregator Sales Sync, Zomato POS Integration, Swiggy POS Sync, ZedPoss Reports, Retail Analytics, ZedooX Technologies, Day Closing POS, X-Report, Daily Transaction Ledger, Offline Sales Analytics, Secure POS Records" />
 
       <div className="flex h-full relative overflow-hidden bg-slate-50 print:overflow-visible">
         

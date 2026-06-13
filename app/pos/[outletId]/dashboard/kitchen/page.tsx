@@ -50,8 +50,8 @@ export default function KitchenKOTPage() {
   const markAsReady = async (orderId: string) => {
     if (!navigator.onLine) return alert("System Offline: Cannot mark order as ready.");
     
-    // Optimistic UI Update
-    setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "SERVED" } : o));
+    // Optimistic UI Update (Aligned with OrderStatus.READY)
+    setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "READY" } : o));
 
     try {
       await fetch("/api/kitchen", {
@@ -66,12 +66,11 @@ export default function KitchenKOTPage() {
   };
 
   const liveOrders = allOrders.filter(o => o.status === "COMPLETED").reverse(); 
-  const preparedOrders = allOrders.filter(o => o.status === "SERVED"); 
+  const preparedOrders = allOrders.filter(o => o.status === "READY"); 
   const displayOrders = activeTab === "LIVE" ? liveOrders : (activeTab === "PREPARED" ? preparedOrders : allOrders);
 
   return (
     <>
-      {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss KDS | Smart Kitchen Display System</title>
       <meta name="description" content="Digital Kitchen Order Ticket (KOT) and Kitchen Display System (KDS) by ZedooX Technologies for seamless chef-to-server operations." />
       <meta name="keywords" content="ZedPoss KDS, Kitchen Display System, Digital KOT, Restaurant Kitchen Software, Cloud Kitchen KDS, Fast Food KOT, POS Order Display, Kitchen Ticket System, ZedooX Technologies, Chef Dashboard, Paperless Kitchen, Order Expediting Software, Smart Cafe Kitchen, Live KOT Tracking, BOH Software, Restaurant Backend Operations, QSR Kitchen Display, Dine-in KDS, Delivery Order Manager, Takeaway KOT, Seamless POS Integration, Kitchen Prep Timer, Chef Management POS, ZedPoss Cloud KDS" />
@@ -140,7 +139,7 @@ export default function KitchenKOTPage() {
 
                 return (
                   <div key={order.id} className={`bg-white rounded-2xl shadow-md border-t-8 p-5 flex flex-col transition-all ${
-                    order.status === "SERVED" ? 'border-green-500 opacity-90' : (isDelayed ? 'border-red-500 shadow-red-100' : 'border-orange-500')
+                    order.status === "READY" ? 'border-green-500 opacity-90' : (isDelayed ? 'border-red-500 shadow-red-100' : 'border-orange-500')
                   }`}>
                     
                     {/* Card Header */}
@@ -154,14 +153,14 @@ export default function KitchenKOTPage() {
                       
                       <div className="flex flex-col items-end gap-1">
                         <div className={`flex items-center text-[11px] px-2 py-1 rounded-lg font-bold ${
-                          order.status === "SERVED" ? 'bg-green-100 text-green-700' : (isDelayed ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500')
+                          order.status === "READY" ? 'bg-green-100 text-green-700' : (isDelayed ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500')
                         }`}>
                           <Clock size={12} className="mr-1" /> 
                           {diffMins === 0 ? 'Just now' : `${diffMins}m ago`}
                         </div>
                         
                         {activeTab === "HISTORY" && (
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${order.status === "SERVED" ? "bg-green-100 text-green-600" : (order.status === "CANCELLED" ? "bg-red-100 text-red-600" : "bg-orange-100 text-orange-600")}`}>
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${order.status === "READY" ? "bg-green-100 text-green-600" : (order.status === "CANCELLED" ? "bg-red-100 text-red-600" : "bg-orange-100 text-orange-600")}`}>
                             {order.status}
                           </span>
                         )}
@@ -171,9 +170,9 @@ export default function KitchenKOTPage() {
                     {/* Kitchen Items List */}
                     <ul className="space-y-3 flex-1 mb-6 text-lg font-bold text-slate-700">
                       {order.items.map((item: any) => (
-                        <li key={item.id} className={`flex justify-between items-start border-b border-slate-50 pb-2 border-dashed ${order.status === 'SERVED' ? 'line-through text-slate-400' : ''}`}>
+                        <li key={item.id} className={`flex justify-between items-start border-b border-slate-50 pb-2 border-dashed ${order.status === 'READY' ? 'line-through text-slate-400' : ''}`}>
                           <span className="flex items-start">
-                            <span className={`text-sm px-2 py-1 rounded mr-3 font-mono shrink-0 ${order.status === 'SERVED' ? 'bg-slate-100' : 'bg-orange-100 text-orange-700'}`}>{item.quantity}x</span> 
+                            <span className={`text-sm px-2 py-1 rounded mr-3 font-mono shrink-0 ${order.status === 'READY' ? 'bg-slate-100' : 'bg-orange-100 text-orange-700'}`}>{item.quantity}x</span> 
                             <span className="leading-tight mt-0.5 uppercase">{item.menuItem.name}</span>
                           </span>
                         </li>
@@ -189,7 +188,7 @@ export default function KitchenKOTPage() {
                       </button>
                     )}
                     
-                    {order.status === "SERVED" && activeTab === "PREPARED" && (
+                    {order.status === "READY" && activeTab === "PREPARED" && (
                       <div className="w-full bg-slate-50 border border-slate-100 text-slate-500 font-bold text-xs py-3 rounded-xl flex items-center justify-center space-x-2 uppercase tracking-wider">
                         <CheckCheck size={16} /> <span>Order Prepared</span>
                       </div>

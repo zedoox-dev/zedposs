@@ -43,7 +43,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 🔥 All fetching is now 100% isolated to secureOutletId
+    // 🔥 1. Sales Data Extraction (Strictly Outlet Wise)
     const orders = await prisma.order.findMany({
       where: { outletId: secureOutletId, createdAt: dateQuery, status: { not: "CANCELLED" }, isDeleted: false },
       include: { items: true }
@@ -55,22 +55,36 @@ export async function GET(req: Request) {
       order.items.forEach(item => {
         if (!salesData[item.menuItemId]) salesData[item.menuItemId] = { qty: 0, revenue: 0 };
         salesData[item.menuItemId].qty += item.quantity;
-        if (!isComp) salesData[item.menuItemId].revenue += (item.price * item.quantity);
+        if (!isComp) salesData[item.menuItemId].revenue += (item.totalPrice || (item.unitPrice * item.quantity));
       });
     });
 
-    // 🔒 Fetch specifically for the current tenant & outlet
+    // 🔥 2. Menu Items (Strictly Outlet Wise)
     const menuItems = await prisma.menuItem.findMany({ 
       where: { 
-        tenantId: secureTenantId, 
-        OR: [{ outletId: secureOutletId }, { outletId: null }], // Allows brand-wide menu items
+        outletId: secureOutletId,
         isActive: true, 
         isDeleted: false 
       } 
     });
-    const rawMaterials = await prisma.inventory.findMany({ where: { outletId: secureOutletId, type: "RAW_MATERIAL", isDeleted: false } });
-    const recipes = await prisma.recipeItem.findMany({ include: { rawMaterial: true } });
 
+    // 🔥 3. Raw Materials & Recipes
+    const rawMaterials = await prisma.inventory.findMany({ 
+      where: { outletId: secureOutletId, type: "RAW_MATERIAL", isDeleted: false } 
+    });
+
+    const recipes = await prisma.recipeItem.findMany({ 
+      where: { menuItemId: { in: menuItems.map(m => m.id) }, isDeleted: false },
+      include: { rawMaterial: true } 
+    });
+
+    // Add an alias 'finishedGoodId' for the frontend compatibility (since Schema uses menuItemId)
+    const mappedRecipes = recipes.map(r => ({
+      ...r,
+      finishedGoodId: r.menuItemId
+    }));
+
+    // 🔥 4. Production History
     const productionBatches = await prisma.productionBatch.findMany({
       where: { outletId: secureOutletId, date: dateQuery, isDeleted: false },
       include: { finishedGood: true, createdByUser: true },
@@ -91,7 +105,7 @@ export async function GET(req: Request) {
       salesData,
       menuItems,
       rawMaterials,
-      recipes,
+      recipes: mappedRecipes,
       productionBatches: mappedBatches
     });
   } catch (error: any) {
@@ -113,17 +127,12 @@ export async function POST(req: Request) {
     const dbOutlet = await prisma.outlet.findUnique({ where: { id: secureOutletId } });
     if (!dbOutlet) return NextResponse.json({ error: "Invalid Outlet." }, { status: 400 });
 
-    // 🟢 SMART USER AUTO-HEALER LOGIC (Same as Petty Cash)
+    // 🟢 SMART USER AUTO-HEALER LOGIC
     const sessionUserId = (session.user as any).id;
     const sessionEmail = session.user.email || `outlet_${secureOutletId}@system.local`;
 
     let dbUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          ...(sessionUserId ? [{ id: sessionUserId }] : []),
-          { email: sessionEmail }
-        ]
-      }
+      where: { OR: [ ...(sessionUserId ? [{ id: sessionUserId }] : []), { email: sessionEmail } ] }
     });
 
     if (!dbUser) {
@@ -139,82 +148,101 @@ export async function POST(req: Request) {
       });
     }
 
+    // 🟢 ACTION: SAVE YIELD MAPPING (BOM)
     if (action === "SAVE_MAPPING") {
       const { menuItemId, baseQty, materials } = mappingData; 
       
-      // 🔒 IDOR Prevention: Verify menu item
       const menuItem = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
       if (!menuItem || (menuItem.outletId && menuItem.outletId !== secureOutletId)) {
         return NextResponse.json({ error: "Unauthorized modification attempt." }, { status: 403 });
       }
 
-      await prisma.recipeItem.deleteMany({ where: { finishedGoodId: menuItemId } });
-      
-      if (materials.length > 0) {
-        await prisma.recipeItem.createMany({
-          data: materials.map((m: any) => ({
-            finishedGoodId: menuItemId, 
-            rawMaterialId: m.rawMaterialId,
-            quantityUsed: parseFloat(m.quantityUsed) / parseFloat(baseQty)
-          }))
-        });
-      }
+      await prisma.$transaction(async (tx) => {
+        await tx.recipeItem.deleteMany({ where: { menuItemId: menuItemId } });
+        
+        if (materials.length > 0) {
+          await tx.recipeItem.createMany({
+            data: materials.map((m: any) => ({
+              menuItemId: menuItemId, 
+              rawMaterialId: m.rawMaterialId,
+              quantityUsed: parseFloat(m.quantityUsed) / parseFloat(baseQty)
+            }))
+          });
+        }
+      });
       return NextResponse.json({ success: true, message: "BOM Locked!" });
     }
 
+    // 🟢 ACTION: LOG BATCH & DEDUCT INVENTORY
     if (action === "RECORD_PRODUCTION") {
       const { menuItemId, producedQty, finishedWastage, actualMaterialsUsed } = productionData;
 
-      // 🔒 Verify Menu Item
       const menuItem = await prisma.menuItem.findUnique({ where: { id: menuItemId } });
       if (!menuItem || (menuItem.outletId && menuItem.outletId !== secureOutletId)) {
         throw new Error("Menu item mapping missing or unauthorized.");
       }
 
-      let invItem = await prisma.inventory.findFirst({
-        where: { outletId: secureOutletId, itemName: menuItem.name, type: "FINISHED_GOOD" }
-      });
+      const result = await prisma.$transaction(async (tx) => {
+        let invItem = await tx.inventory.findFirst({
+          where: { outletId: secureOutletId, itemName: menuItem.name, type: "FINISHED_GOOD" }
+        });
 
-      // Auto-create finished good in inventory if it doesn't exist
-      if (!invItem) {
-        invItem = await prisma.inventory.create({
+        const netProduced = parseFloat(producedQty);
+        const netWasted = parseFloat(finishedWastage || "0");
+        const addedToStock = netProduced - netWasted;
+
+        // Auto-create finished good in inventory if it doesn't exist
+        if (!invItem) {
+          invItem = await tx.inventory.create({
+            data: {
+              itemName: menuItem.name,
+              type: "FINISHED_GOOD",
+              unit: "SERVINGS",
+              stockLevel: addedToStock > 0 ? addedToStock : 0,
+              minStock: 0,
+              outletId: secureOutletId
+            }
+          });
+        } else {
+          // Increment stock by produced amount (minus waste)
+          if (addedToStock > 0) {
+            await tx.inventory.update({
+              where: { id: invItem.id },
+              data: { stockLevel: { increment: addedToStock } }
+            });
+          }
+        }
+
+        // Guaranteed unique batch number
+        const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const structuredBatchNo = `PB-${Date.now().toString().slice(-6)}-${uniqueSuffix}[WASTE:${netWasted}][MENU:${menuItemId}]`;
+
+        const batch = await tx.productionBatch.create({
           data: {
-            itemName: menuItem.name,
-            type: "FINISHED_GOOD",
-            unit: "SERVINGS",
-            stockLevel: 0,
-            minStock: 0,
-            outletId: secureOutletId
+            batchNumber: structuredBatchNo,
+            finishedGoodId: invItem.id, 
+            quantityProduced: netProduced,
+            outletId: secureOutletId,
+            createdByUserId: dbUser.id 
           }
         });
-      }
 
-      // 🟢 GUARANTEED UNIQUE BATCH NUMBER
-      const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const structuredBatchNo = `PB-${Date.now().toString().slice(-6)}-${uniqueSuffix}[WASTE:${finishedWastage || 0}][MENU:${menuItemId}]`;
-
-      const batch = await prisma.productionBatch.create({
-        data: {
-          batchNumber: structuredBatchNo,
-          finishedGoodId: invItem.id, 
-          quantityProduced: parseFloat(producedQty),
-          outletId: secureOutletId,
-          createdByUserId: dbUser.id  // 🔥 100% Fixed using Auto-Healed DB User
+        // Deduct raw material stock accurately
+        for (const rm of actualMaterialsUsed) {
+          const netDeduction = parseFloat(rm.actualUsed || "0") + parseFloat(rm.rawWastage || "0");
+          if (netDeduction > 0) {
+            await tx.inventory.update({
+              where: { id: rm.rawMaterialId },
+              data: { stockLevel: { decrement: netDeduction } }
+            });
+            // Optional: You can create a StockLog record here for auditing
+          }
         }
+
+        return batch;
       });
-
-      // Deduct raw material stock accurately
-      for (const rm of actualMaterialsUsed) {
-        const netDeduction = parseFloat(rm.actualUsed || "0") + parseFloat(rm.rawWastage || "0");
-        if (netDeduction > 0) {
-          await prisma.inventory.update({
-            where: { id: rm.rawMaterialId },
-            data: { stockLevel: { decrement: netDeduction } }
-          });
-        }
-      }
       
-      return NextResponse.json({ success: true, batch });
+      return NextResponse.json({ success: true, batch: result });
     }
 
     return NextResponse.json({ error: "Invalid Action" }, { status: 400 });

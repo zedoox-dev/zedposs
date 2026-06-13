@@ -431,7 +431,7 @@ export default function BillingPage() {
               {/* 🔥 UI FIX 3: Buttons Size Matched cleanly */}
               <div className="grid grid-cols-4 gap-1.5">
                 {[ { id: "CASH", icon: <Banknote size={14}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={14}/>, label: "Card/UPI" }, { id: "PART", icon: <SplitSquareHorizontal size={14}/>, label: "Part" }, { id: "COMPLEMENTARY", icon: <Gift size={14}/>, label: "Comp" }].map(mode => (
-                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center h-11 rounded-lg border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-xs" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
+                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center h-11 rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-xs" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
                     <div className="scale-90 mb-0.5">{mode.icon}</div>
                     <span className="text-[9px] font-black uppercase">{mode.label}</span>
                   </button>
@@ -443,7 +443,7 @@ export default function BillingPage() {
 
               <div className="grid grid-cols-4 gap-1.5">
                 <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 hover:bg-slate-300 transition-colors text-center px-1">SAVE</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-slate-900 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-black transition-colors text-center px-1">SAVE & PRINT</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center px-1">SAVE & PRINT</button>
                 <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("EBILL")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center px-1">SAVE & EBILL</button>
                 <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("HOLD")} className="bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 transition-colors text-center px-1">HOLD</button>
               </div>

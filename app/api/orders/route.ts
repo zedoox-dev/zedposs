@@ -157,10 +157,19 @@ export async function PUT(req: Request) {
     
     const secureOutletId = (session.user as any).outletId;
     const body = await req.json();
-    const { orderId, pin, action } = body;
+    const { orderId, pin, action, newPaymentMode } = body;
 
-    if (pin !== "1234") {
-      return NextResponse.json({ error: "Invalid Authorization PIN" }, { status: 403 });
+    // 🔒 VERIFY OUTLET POS LOGIN PASSWORD FOR AUTHORIZATION
+    const outlet = await prisma.outlet.findUnique({ where: { id: secureOutletId } });
+    if (!outlet) return NextResponse.json({ error: "Outlet not found." }, { status: 404 });
+    
+    if (outlet.password !== pin) {
+      return NextResponse.json({ error: "Invalid POS Terminal Password!" }, { status: 403 });
+    }
+
+    // VERIFY_ONLY is used just to authenticate before a client-side REPRINT action
+    if (action === "VERIFY_ONLY") {
+      return NextResponse.json({ success: true });
     }
 
     const existingOrder = await prisma.order.findUnique({ where: { id: orderId } });
@@ -172,6 +181,19 @@ export async function PUT(req: Request) {
       const updatedOrder = await prisma.order.update({
         where: { id: orderId },
         data: { status: "CANCELLED" }
+      });
+      return NextResponse.json({ success: true, order: updatedOrder });
+    }
+
+    // 💰 CHANGE PAYMENT MODE TO CASH OR CARD ONLY
+    if (action === "CHANGE_PAYMENT") {
+      if (newPaymentMode !== "CASH" && newPaymentMode !== "CARD") {
+        return NextResponse.json({ error: "Only CASH or CARD payment updates are allowed." }, { status: 400 });
+      }
+
+      const updatedOrder = await prisma.order.update({
+        where: { id: orderId },
+        data: { paymentMode: newPaymentMode }
       });
       return NextResponse.json({ success: true, order: updatedOrder });
     }

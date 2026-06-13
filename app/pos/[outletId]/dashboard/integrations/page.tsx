@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { 
   Globe, Server, Activity, Power, Link as LinkIcon, Save, Key, RefreshCw, 
   Settings, ShoppingBag, Database, ShieldCheck, CheckCircle2, XCircle, AlertCircle, TrendingUp, Layers, Loader2,
-  Clock, CalendarClock, Store, MenuSquare, WifiOff
+  Clock, CalendarClock, Store, MenuSquare, WifiOff, Package
 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -18,12 +18,13 @@ export default function IntegrationHubPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
 
+  // 🔥 Mapped Strictly to Prisma Enums
   const [platforms, setPlatforms] = useState({
-    zomato: { name: "Zomato", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: true, schedule: { open: "10:00", close: "23:00" }, apiKey: "Loading...", color: "bg-red-500", light: "bg-red-50", text: "text-red-600", border: "border-red-200" },
-    swiggy: { name: "Swiggy", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: true, schedule: { open: "10:00", close: "23:00" }, apiKey: "Loading...", color: "bg-orange-500", light: "bg-orange-50", text: "text-orange-600", border: "border-orange-200" },
-    web: { name: "RamKesar Web", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: true, schedule: { open: "00:00", close: "23:59" }, apiKey: "Loading...", color: "bg-indigo-600", light: "bg-indigo-50", text: "text-indigo-600", border: "border-indigo-200" },
-    toing: { name: "Toing", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: false, schedule: { open: "10:00", close: "22:00" }, apiKey: "Loading...", color: "bg-pink-500", light: "bg-pink-50", text: "text-pink-600", border: "border-pink-200" },
-    club: { name: "Club", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: false, schedule: { open: "18:00", close: "04:00" }, apiKey: "Loading...", color: "bg-purple-600", light: "bg-purple-50", text: "text-purple-600", border: "border-purple-200" }
+    ZOMATO: { name: "Zomato", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: true, schedule: { open: "10:00", close: "23:00" }, apiKey: "zmt_live_xxx", color: "bg-red-500", light: "bg-red-50", text: "text-red-600", border: "border-red-200" },
+    SWIGGY: { name: "Swiggy", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: true, schedule: { open: "10:00", close: "23:00" }, apiKey: "swg_live_xxx", color: "bg-orange-500", light: "bg-orange-50", text: "text-orange-600", border: "border-orange-200" },
+    OWN_WEB: { name: "Direct Web Store", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: true, schedule: { open: "00:00", close: "23:59" }, apiKey: "web_api_xxx", color: "bg-indigo-600", light: "bg-indigo-50", text: "text-indigo-600", border: "border-indigo-200" },
+    MAGICPIN: { name: "MagicPin", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: false, schedule: { open: "10:00", close: "22:00" }, apiKey: "mgc_live_xxx", color: "bg-pink-500", light: "bg-pink-50", text: "text-pink-600", border: "border-pink-200" },
+    CLUB: { name: "Club Check-in", isConnected: true, isStoreOnline: false, autoAccept: false, menuSync: false, schedule: { open: "18:00", close: "04:00" }, apiKey: "clb_api_xxx", color: "bg-purple-600", light: "bg-purple-50", text: "text-purple-600", border: "border-purple-200" }
   });
 
   const [baseMenuItems, setBaseMenuItems] = useState<any[]>([]);
@@ -46,14 +47,14 @@ export default function IntegrationHubPage() {
     if (!session?.user) return;
     setIsLoading(true);
     try {
-      // 🔒 Removed IDs from all URL fetches
-      const invRes = await fetch(`/api/inventory`);
+      // Fetch Menu Items
+      const invRes = await fetch(`/api/menu`);
       if (invRes.ok) {
-        const data = await invRes.json();
-        const menuItems = data.inventory?.filter((i: any) => i.type === 'FINISHED_GOOD') || [];
-        setBaseMenuItems(menuItems);
+        const menuItems = await invRes.json();
+        setBaseMenuItems(menuItems || []);
       }
 
+      // Fetch Integrations Data
       const intRes = await fetch(`/api/integrations`);
       if (intRes.ok) {
         const intData = await intRes.json();
@@ -69,12 +70,7 @@ export default function IntegrationHubPage() {
           });
         }
         if (intData.mappings) setMenuMapping(intData.mappings);
-      }
-
-      const logsRes = await fetch(`/api/integrations/logs`);
-      if (logsRes.ok) {
-        const logsData = await logsRes.json();
-        setWebhookLogs(logsData);
+        if (intData.logs) setWebhookLogs(intData.logs);
       }
     } catch (e) {
       console.error("Database Connection Error:", e);
@@ -106,11 +102,11 @@ export default function IntegrationHubPage() {
         [platformKey]: { ...platforms[platformKey], [keyToToggle]: newValue }
       };
 
-      const res = await fetch("/api/integrations/mapping", {
+      const res = await fetch("/api/integrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // 🔒 Removed ids
         body: JSON.stringify({ 
+          action: "SYNC_MASTER",
           mappings: menuMapping, 
           platformsSettings: updatedPlatforms 
         })
@@ -119,14 +115,17 @@ export default function IntegrationHubPage() {
       if (!res.ok) throw new Error("DB Update Failed");
 
       if (keyToToggle === "isStoreOnline") {
-        await fetch("/api/integrations/logs", {
+        await fetch("/api/integrations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            platform: platforms[platformKey].name,
-            event: "STORE_STATUS_UPDATE",
-            status: "SUCCESS",
-            details: `Store toggled to ${newValue ? 'ONLINE' : 'OFFLINE'} via Command Center`
+            action: "ADD_LOG",
+            payload: {
+                platform: platforms[platformKey].name,
+                event: "STORE_STATUS_UPDATE",
+                status: "SUCCESS",
+                details: `Store toggled to ${newValue ? 'ONLINE' : 'OFFLINE'} via Command Center`
+            }
           })
         });
         loadDashboardData();
@@ -167,10 +166,11 @@ export default function IntegrationHubPage() {
     if (!isOnline) return alert("System Offline. Cannot save to cloud database.");
     setIsLoading(true);
     try {
-      const res = await fetch("/api/integrations/mapping", {
+      const res = await fetch("/api/integrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
+          action: "SYNC_MASTER",
           mappings: menuMapping, 
           platformsSettings: platforms 
         })
@@ -178,9 +178,9 @@ export default function IntegrationHubPage() {
       
       if (res.ok) {
         alert("🟢 Master Configuration & Menu Matrix Synced with Cloud Aggregators!");
-        await fetch("/api/integrations/logs", {
+        await fetch("/api/integrations", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ platform: "SYSTEM", event: "MASTER_SYNC", status: "SUCCESS", details: "Deep configuration and catalog pushed to remote APIs." })
+          body: JSON.stringify({ action: "ADD_LOG", payload: { platform: "SYSTEM", event: "MASTER_SYNC", status: "SUCCESS", details: "Deep configuration and catalog pushed to remote APIs." } })
         });
         loadDashboardData();
       } else {
@@ -198,9 +198,9 @@ export default function IntegrationHubPage() {
     setIsLoading(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 1500));
-      await fetch("/api/integrations/logs", {
+      await fetch("/api/integrations", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: "SYSTEM", event: "FORCE_SYNC", status: "SUCCESS", details: "Manual force sync completed for all active channels." })
+        body: JSON.stringify({ action: "ADD_LOG", payload: { platform: "SYSTEM", event: "FORCE_SYNC", status: "SUCCESS", details: "Manual force sync completed for all active channels." } })
       });
       alert("⚡ Enterprise Force-Sync complete. Stock, Prices & Schedules published globally.");
       loadDashboardData();
@@ -220,11 +220,9 @@ export default function IntegrationHubPage() {
 
   return (
     <>
-      {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss | Omnichannel Aggregator Integration</title>
       <meta name="description" content="Manage Zomato, Swiggy, and direct D2C channels from a single screen. Push catalog updates globally with ZedPoss integrations." />
-      <meta name="keywords" content="Zomato POS Integration, Swiggy Integration, Food Delivery App POS, Omni Channel POS, Aggregator Management Software, Cloud Kitchen Multi Brand, Menu Sync API, Restaurant Webhooks, Online Order Manager, Direct to Consumer Store, ZedPoss Channels, POS Integrations Hub, ZedooX Technologies, Push Menu Online, E-commerce Restaurant Store, Auto Accept KOT Delivery" />
-
+      
       <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden font-sans">
         
         {/* ------------------- DESKTOP HEADER & NAVIGATION ------------------- */}
@@ -387,7 +385,7 @@ export default function IntegrationHubPage() {
                   <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
                     <Database size={48} className="mb-4 opacity-20" />
                     <p className="font-bold uppercase tracking-widest">No Base Menu Items Found in DB</p>
-                    <p className="text-xs mt-1">Please ensure FINISHED_GOOD items exist in the central POS inventory.</p>
+                    <p className="text-xs mt-1">Please ensure MENU items exist in the central POS inventory.</p>
                   </div>
                 ) : (
                   <div className="overflow-y-auto overflow-x-auto custom-scrollbar">
@@ -398,15 +396,15 @@ export default function IntegrationHubPage() {
                           <th className="p-4 border-l border-red-200 bg-red-50 text-red-800 text-center" colSpan={3}>Zomato Channel</th>
                           <th className="p-4 border-l border-orange-200 bg-orange-50 text-orange-800 text-center" colSpan={3}>Swiggy Channel</th>
                           <th className="p-4 border-l border-indigo-200 bg-indigo-50 text-indigo-800 text-center" colSpan={3}>Web Store Channel</th>
-                          <th className="p-4 border-l border-pink-200 bg-pink-50 text-pink-800 text-center" colSpan={3}>Toing Channel</th>
+                          <th className="p-4 border-l border-pink-200 bg-pink-50 text-pink-800 text-center" colSpan={3}>MagicPin Channel</th>
                           <th className="p-4 border-l border-purple-200 bg-purple-50 text-purple-800 text-center" colSpan={3}>Club Channel</th>
                         </tr>
                         <tr className="text-[9px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-300">
                           <th className="p-3 bg-slate-200 border-r border-slate-300">SKU Description & ID</th>
                           
-                          {/* Headers Loop Helper */}
-                          {['zomato', 'swiggy', 'web', 'toing', 'club'].map((plat) => {
-                            const bg = plat === 'zomato' ? 'bg-red-50/50 border-red-100' : plat === 'swiggy' ? 'bg-orange-50/50 border-orange-100' : plat === 'web' ? 'bg-indigo-50/50 border-indigo-100' : plat === 'toing' ? 'bg-pink-50/50 border-pink-100' : 'bg-purple-50/50 border-purple-100';
+                          {/* Headers Loop Helper mapped to DB Enums */}
+                          {['ZOMATO', 'SWIGGY', 'OWN_WEB', 'MAGICPIN', 'CLUB'].map((plat) => {
+                            const bg = plat === 'ZOMATO' ? 'bg-red-50/50 border-red-100' : plat === 'SWIGGY' ? 'bg-orange-50/50 border-orange-100' : plat === 'OWN_WEB' ? 'bg-indigo-50/50 border-indigo-100' : plat === 'MAGICPIN' ? 'bg-pink-50/50 border-pink-100' : 'bg-purple-50/50 border-purple-100';
                             return (
                               <React.Fragment key={plat}>
                                 <th className={`p-2 border-l text-center ${bg}`}>ON</th>
@@ -431,17 +429,16 @@ export default function IntegrationHubPage() {
                                     <div className="font-black text-slate-900 text-xs uppercase">{item.itemName || item.name}</div>
                                     <div className="flex items-center space-x-2 mt-1">
                                       <span className="text-[9px] font-mono font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">ID: {item.id}</span>
-                                      <span className="text-[9px] font-black uppercase text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Unit: {item.unit}</span>
                                     </div>
                                   </div>
                                 </div>
                               </td>
 
                               {/* LOOP PLATFORMS MAPPING */}
-                              {['zomato', 'swiggy', 'web', 'toing', 'club'].map((plat) => {
+                              {['ZOMATO', 'SWIGGY', 'OWN_WEB', 'MAGICPIN', 'CLUB'].map((plat) => {
                                 const pData = mapping[plat] || { isEnabled: false, extId: '', price: 0 };
-                                const accent = plat === 'zomato' ? 'accent-red-500 focus:border-red-400 text-red-600' : plat === 'swiggy' ? 'accent-orange-500 focus:border-orange-400 text-orange-600' : plat === 'web' ? 'accent-indigo-600 focus:border-indigo-400 text-indigo-600' : plat === 'toing' ? 'accent-pink-500 focus:border-pink-400 text-pink-600' : 'accent-purple-600 focus:border-purple-400 text-purple-600';
-                                const bLeft = plat === 'zomato' ? 'border-red-100' : plat === 'swiggy' ? 'border-orange-100' : plat === 'web' ? 'border-indigo-100' : plat === 'toing' ? 'border-pink-100' : 'border-purple-100';
+                                const accent = plat === 'ZOMATO' ? 'accent-red-500 focus:border-red-400 text-red-600' : plat === 'SWIGGY' ? 'accent-orange-500 focus:border-orange-400 text-orange-600' : plat === 'OWN_WEB' ? 'accent-indigo-600 focus:border-indigo-400 text-indigo-600' : plat === 'MAGICPIN' ? 'accent-pink-500 focus:border-pink-400 text-pink-600' : 'accent-purple-600 focus:border-purple-400 text-purple-600';
+                                const bLeft = plat === 'ZOMATO' ? 'border-red-100' : plat === 'SWIGGY' ? 'border-orange-100' : plat === 'OWN_WEB' ? 'border-indigo-100' : plat === 'MAGICPIN' ? 'border-pink-100' : 'border-purple-100';
 
                                 return (
                                   <React.Fragment key={plat}>
@@ -495,7 +492,7 @@ export default function IntegrationHubPage() {
                         <div className="flex-1">
                           <div className="flex justify-between items-center mb-1">
                             <div className="flex items-center space-x-2">
-                              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${log.platform === 'Zomato' ? 'bg-red-500/20 text-red-400' : log.platform === 'Swiggy' ? 'bg-orange-500/20 text-orange-400' : log.platform === 'Toing' ? 'bg-pink-500/20 text-pink-400' : log.platform === 'Club' ? 'bg-purple-500/20 text-purple-400' : log.platform === 'SYSTEM' ? 'bg-slate-600/50 text-white' : 'bg-indigo-500/20 text-indigo-400'}`}>{log.platform}</span>
+                              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${log.platform === 'ZOMATO' ? 'bg-red-500/20 text-red-400' : log.platform === 'SWIGGY' ? 'bg-orange-500/20 text-orange-400' : log.platform === 'MAGICPIN' ? 'bg-pink-500/20 text-pink-400' : log.platform === 'CLUB' ? 'bg-purple-500/20 text-purple-400' : 'bg-indigo-500/20 text-indigo-400'}`}>{log.platform}</span>
                               <span className="text-xs font-black text-slate-200">[{log.event}]</span>
                             </div>
                             <span className="text-[10px] text-slate-500">{new Date(log.time).toLocaleTimeString('en-IN')}</span>

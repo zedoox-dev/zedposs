@@ -172,9 +172,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      <title>ZedPoss | ZedPoss By ZedooX</title>
-      <meta name="description" content="ZedPoss By ZedooX - The ultimate Cloud POS, Billing, and Restaurant Management software designed for modern outlets." />
-      <meta name="keywords" content="ZedPoss, ZedooX, POS Software, Retail POS, Restaurant POS, Cloud Billing, ZedPoss App, Smart POS, FSSAI POS, GST Billing Software, Outlet Management, KDS, ZedooX Technologies, Fast Checkout, Inventory Management, Cafe POS, QSR POS, Offline POS, Cloud Sync POS" />
+      <title>ZedPoss | Complete POS & Billing Management by ZedooX</title>
+      <meta name="description" content="ZedPoss by ZedooX is the ultimate Cloud POS, Billing, and Restaurant Management software. Seamlessly manage multi-outlet billing, inventory, and KDS operations." />
+      <meta name="keywords" content="ZedPoss, ZedooX, ZedPoss by ZedooX, POS Software, Retail POS, Restaurant POS, Cloud Billing, ZedPoss App, Smart POS, GST Billing Software, Outlet Management, Kitchen Display System, KDS, Fast Checkout POS, Inventory Management, Cafe POS Software, QSR POS, Offline POS Billing, Cloud Sync POS, ZedooX Technologies, SaaS POS, Multi-outlet POS, Restaurant Billing App, Food Court POS, Bakery POS Software, Touch Screen Billing, Mobile POS, Cloud Based Point of Sale, Omni-channel POS, Food Delivery Integration, Zomato Swiggy POS, Digital Billing System, Inventory Tracking, Retail Management Software, Web POS Management" />
       <meta name="author" content="ZedooX Technologies" />
       <meta name="robots" content="index, follow" />
 
@@ -218,11 +218,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             
             {/* 🔥 FIXED LOGO SIZE HERE */}
             <div className="flex items-center text-orange-500 shrink-0 cursor-pointer" onClick={() => router.push(`/pos/${outletId}/dashboard`)}>
-              <img src="/favicon.ico" alt="Favicon" className="w-8 h-8 sm:w-9 sm:h-9 mr-2.5 object-contain drop-shadow-md" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
-              <span className="font-black text-2xl sm:text-3xl tracking-widest drop-shadow-md">ZedPoss</span>
+              <img src="/favicon.ico" alt="Favicon" className="w-6 h-6 sm:w-7 sm:h-7 mr-1.5 object-contain drop-shadow-md" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
+              <span className="font-black text-lg sm:text-xl tracking-widest drop-shadow-md">ZedPoss</span>
             </div>
             
-            <div className="h-6 w-px bg-slate-700 mx-2 hidden md:block shrink-0"></div>
+            <div className="h-6 w-px bg-slate-700 mx-1 hidden md:block shrink-0"></div>
             
             <button onClick={handleNewOrder} className="h-10 hidden xl:flex bg-orange-500/20 text-orange-400 border border-orange-500/50 px-3 rounded-xl items-center text-xs font-black uppercase hover:bg-orange-500 hover:text-white transition-all active:scale-95 shrink-0">
               <Plus size={15} className="mr-1.5" /> New Order

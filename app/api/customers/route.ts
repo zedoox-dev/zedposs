@@ -3,11 +3,13 @@ import { prisma } from "../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/route";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || !session.user) return NextResponse.json({ error: "Unauthorized access." }, { status: 401 });
 
-  // 🔒 Multi-Tenant Lock Securely via Session
+  // 🔒 Multi-Tenant Lock Securely via Session (CRM applies across the Brand/Tenant)
   const secureTenantId = (session.user as any).tenantId;
 
   if (!secureTenantId) {
@@ -22,7 +24,8 @@ export async function GET(req: Request) {
       },
       include: {
         orders: { 
-          where: { isDeleted: false, status: { not: "CANCELLED" } } 
+          where: { isDeleted: false, status: { not: "CANCELLED" } },
+          select: { totalAmount: true } // Performance Optimization
         } 
       },
       orderBy: { loyaltyPoints: 'desc' }
@@ -34,11 +37,12 @@ export async function GET(req: Request) {
       phone: c.phone,
       loyaltyPoints: c.loyaltyPoints,
       totalVisits: c.orders.length,
-      totalSpend: c.orders.reduce((sum, order) => sum + order.totalAmount, 0)
+      totalSpend: c.orders.reduce((sum, order) => sum + (order.totalAmount || 0), 0)
     }));
 
     return NextResponse.json(formattedCustomers);
   } catch (error) {
+    console.error("CRM Fetch Error:", error);
     return NextResponse.json({ error: "Failed to fetch customers" }, { status: 500 });
   }
 }
@@ -60,17 +64,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Ye phone number is brand mein pehle se registered hai!" }, { status: 400 });
     }
 
-    const newCustomer = await prisma.customer.create({
-      data: { 
-        name, 
-        phone,
-        tenantId: secureTenantId, // 🔥 Locked to business owner securely 
-        loyaltyPoints: 50 
-      } 
+    // 🔥 Added Loyalty Transaction Logging via Prisma Transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const newCustomer = await tx.customer.create({
+        data: { 
+          name, 
+          phone,
+          tenantId: secureTenantId, // 🔒 Locked to business owner securely 
+          loyaltyPoints: 50 
+        } 
+      });
+
+      // Log Welcome Bonus in Passbook
+      await tx.loyaltyTransaction.create({
+        data: {
+          customerId: newCustomer.id,
+          type: "EARN",
+          points: 50,
+          notes: "Welcome VIP Bonus Registration"
+        }
+      });
+
+      return newCustomer;
     });
 
-    return NextResponse.json({ success: true, customer: newCustomer });
+    return NextResponse.json({ success: true, customer: result });
   } catch (error: any) {
+    console.error("Customer Add Error:", error);
     return NextResponse.json({ error: "Failed to add customer" }, { status: 500 });
   }
 }
@@ -90,11 +110,27 @@ export async function PUT(req: Request) {
         return NextResponse.json({ error: "Unauthorized modification blocked." }, { status: 403 });
       }
 
-      const customer = await prisma.customer.update({
-        where: { id: customerId },
-        data: { loyaltyPoints: { decrement: parseInt(pointsToDeduct) } }
+      // 🔥 Added Loyalty Transaction Logging via Prisma Transaction
+      const result = await prisma.$transaction(async (tx) => {
+        const customer = await tx.customer.update({
+          where: { id: customerId },
+          data: { loyaltyPoints: { decrement: parseInt(pointsToDeduct) } }
+        });
+
+        // Log Redemption in Passbook
+        await tx.loyaltyTransaction.create({
+          data: {
+            customerId: customerId,
+            type: "REDEEM",
+            points: parseInt(pointsToDeduct),
+            notes: "Manual Marketing Redemption via CRM"
+          }
+        });
+
+        return customer;
       });
-      return NextResponse.json({ success: true, customer });
+
+      return NextResponse.json({ success: true, customer: result });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

@@ -18,20 +18,28 @@ export async function GET(req: Request) {
       where: { id: secureOutletId }
     });
 
+    // Fetches Staff with their linked Role relation securely
     const staff = await prisma.user.findMany({
       where: { 
         tenantId: secureTenantId, 
         outletId: secureOutletId,
         isDeleted: false 
       },
-      select: { id: true, name: true, role: true, pin: true } 
+      include: { role: true } 
     });
+
+    const mappedStaff = staff.map(s => ({
+      id: s.id,
+      name: s.name,
+      pin: s.pin,
+      role: s.role?.name || "CASHIER"
+    }));
 
     return NextResponse.json({
       success: true,
       generalSettings: outlet?.generalSettings || null,
       printerSettings: outlet?.printerSettings || null,
-      staffList: staff
+      staffList: mappedStaff
     });
   } catch (error: any) {
     return NextResponse.json({ error: "Fetch Error", details: error.message }, { status: 500 });
@@ -49,6 +57,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, payload } = body;
 
+    // 🟢 1. SAVE GENERAL SETTINGS
     if (action === "SAVE_GENERAL") {
       await prisma.outlet.update({
         where: { id: secureOutletId },
@@ -57,6 +66,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
+    // 🟢 2. SAVE PRINTER CONFIGURATIONS
     if (action === "SAVE_PRINTER") {
       await prisma.outlet.update({
         where: { id: secureOutletId },
@@ -65,21 +75,37 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
+    // 🟢 3. ADD STAFF & ROLE MANAGEMENT
     if (action === "ADD_STAFF") {
       const dummyEmail = `staff_${Date.now()}@tenant${secureTenantId}.local`;
       
+      // Smart Auto-Healer: Find or create the specified Role in the DB
+      let dbRole = await prisma.role.findFirst({
+        where: { tenantId: secureTenantId, name: payload.role }
+      });
+
+      if (!dbRole) {
+        dbRole = await prisma.role.create({
+          data: { tenantId: secureTenantId, name: payload.role }
+        });
+      }
+
       const newStaff = await prisma.user.create({
         data: {
           name: payload.name,
           email: dummyEmail,
           password: payload.pin, 
           pin: payload.pin,
-          role: payload.role,
+          roleId: dbRole.id, // Strictly linked using relation
           tenantId: secureTenantId,
           outletId: secureOutletId
         }
       });
-      return NextResponse.json({ success: true, staff: { id: newStaff.id, name: newStaff.name, role: newStaff.role, pin: newStaff.pin } });
+      
+      return NextResponse.json({ 
+        success: true, 
+        staff: { id: newStaff.id, name: newStaff.name, role: payload.role, pin: newStaff.pin } 
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
@@ -106,7 +132,7 @@ export async function DELETE(req: Request) {
 
     await prisma.user.update({
       where: { id: id },
-      data: { isDeleted: true }
+      data: { isDeleted: true, isActive: false }
     });
 
     return NextResponse.json({ success: true });

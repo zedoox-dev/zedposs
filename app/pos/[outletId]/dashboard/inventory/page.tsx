@@ -65,6 +65,7 @@ export default function InventoryAndPurchaseERP() {
 
   const [isMobileMode, setIsMobileMode] = useState(false);
   const [mobileAccessDenied, setMobileAccessDenied] = useState(false);
+  const [mobileOutletName, setMobileOutletName] = useState("");
   const [qrToken, setQrToken] = useState("");
   const [qrImageUrl, setQrImageUrl] = useState("");
 
@@ -97,8 +98,20 @@ export default function InventoryAndPurchaseERP() {
       if (urlParams.get("view") === "purchase_mobile") {
         setIsMobileMode(true);
         const passedToken = urlParams.get("token");
-        const activeToken = localStorage.getItem(`zapped_qr_token_${outletId}`);
-        if (passedToken !== activeToken) setMobileAccessDenied(true);
+        
+        // Mobile Auth verification against API
+        fetch(`/api/inventory?formOnly=true&outletId=${outletId}&token=${passedToken}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.expired) setMobileAccessDenied(true);
+            else {
+              setMobileOutletName(data.outletName);
+              setQrToken(passedToken || "");
+              setInventory(data.inventory || []);
+              setVendors(data.vendors?.map((v:any) => v.name) || []);
+              setLoading(false);
+            }
+          }).catch(() => setMobileAccessDenied(true));
       } else {
         generateOrLoadQRToken();
       }
@@ -111,21 +124,28 @@ export default function InventoryAndPurchaseERP() {
   }, [outletId]);
 
   useEffect(() => {
-    if (session?.user) {
+    if (!isMobileMode && session?.user) {
       fetchInventoryAndProduction();
     }
-  }, [session, outletId, dateFilter, customStartDate, customEndDate, isOnline]);
+  }, [session, outletId, dateFilter, customStartDate, customEndDate, isOnline, isMobileMode]);
 
   const triggerOfflineQueueSync = async () => {
     console.log("Syncing offline cache logic running...");
   };
 
-  const generateOrLoadQRToken = (forceNew = false) => {
+  const generateOrLoadQRToken = async (forceNew = false) => {
     if (typeof window === "undefined") return;
     let token = localStorage.getItem(`zapped_qr_token_${outletId}`);
+    
     if (!token || forceNew) {
       token = Math.random().toString(36).substring(2, 15);
       localStorage.setItem(`zapped_qr_token_${outletId}`, token);
+      
+      // Update Backend to expire old links instantly
+      await fetch("/api/inventory", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "REGENERATE_TOKEN", newToken: token, outletId })
+      });
     }
     setQrToken(token);
     const currentUrl = `${window.location.origin}${window.location.pathname}?view=purchase_mobile&token=${token}`;
@@ -197,7 +217,7 @@ export default function InventoryAndPurchaseERP() {
 
   const submitPurchaseEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user) return;
+    if (!isMobileMode && !session?.user) return;
     if (!purchaseItem || parseFloat(purchaseQty) <= 0 || !purchaseDoar) return alert("Select item, quantity and operator verification dropdown.");
     
     setIsSaving(true);
@@ -209,7 +229,9 @@ export default function InventoryAndPurchaseERP() {
     const payload = {
       action: "ADD_PURCHASE",
       itemId: purchaseItem,
-      addedQty: purchaseQty,
+      outletId,
+      isMobileEntry: isMobileMode,
+      token: qrToken,
       purchaseData: {
         rate: isHQ ? "0" : purchaseRate,
         qty: purchaseQty,
@@ -225,14 +247,17 @@ export default function InventoryAndPurchaseERP() {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      if (res.ok) {
+      const data = await res.json();
+      if (res.ok && data.success) {
         alert("GRN Confirmed & Stock Incremented via Cloud!");
         setPurchaseItem(""); setPurchaseQty(""); setPurchaseRate(""); setPurchaseGst("0");
         setPurchaseRef(""); setPurchaseNotes(""); setProofUrl(""); setIsUrgent(false);
         setPurchaseDoar(""); setPurchaseVendor(""); setPurchasePayment("CASH");
         if (!isMobileMode) fetchInventoryAndProduction();
+      } else {
+        alert(data.error || "Purchase Registration Failed.");
       }
-    } catch (err) { alert("Purchase Registration Failed."); } finally { setIsSaving(false); }
+    } catch (err) { alert("Network Error."); } finally { setIsSaving(false); }
   };
 
   const handleCreateVendor = async (e: React.FormEvent) => {
@@ -282,9 +307,19 @@ export default function InventoryAndPurchaseERP() {
     setShowIndentModal(false); setIndentQty("");
   };
 
-  const handlePayOutstandingDues = () => {
-    alert("💸 Vendor Ledger Outstandings Settled! (Local UI Only)");
-    setShowPayDueModal(false); setPayDueAmount("");
+  const handlePayOutstandingDues = async () => {
+    if(!payDueAmount || parseFloat(payDueAmount) <= 0) return alert("Enter valid amount");
+    try {
+      const res = await fetch("/api/inventory", {
+        method: "PUT", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ action: "PAY_VENDOR_DUE", vendorId: selectedVendorForPay.id, payAmount: payDueAmount })
+      });
+      if(res.ok) {
+        alert("💸 Vendor Ledger Outstandings Settled & Logged!");
+        setShowPayDueModal(false); setPayDueAmount("");
+        fetchInventoryAndProduction();
+      }
+    } catch(e) { alert("Failed to settle dues."); }
   };
 
   const isLogWithinDate = (dateStr: string) => {
@@ -369,7 +404,6 @@ export default function InventoryAndPurchaseERP() {
 
   const spendByCash = filteredPurchaseLogs.filter(l => l.paymentMode === "CASH").reduce((s, l) => s + l.total, 0);
   const spendByCredit = filteredPurchaseLogs.filter(l => l.paymentMode === "CREDIT").reduce((s, l) => s + l.total, 0);
-  const spendByOnline = filteredPurchaseLogs.filter(l => l.paymentMode === "UPI" || l.paymentMode === "CHEQUE").reduce((s, l) => s + l.total, 0);
   const urgentConsignmentsCount = filteredPurchaseLogs.filter(l => l.isUrgent).length;
 
   const itemSpendMap: Record<string, number> = {};
@@ -378,6 +412,7 @@ export default function InventoryAndPurchaseERP() {
     ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] 
     : "NONE";
 
+  // 🔥 PUBLIC MOBILE ENTRY FORM (QR SCANNED)
   if (isMobileMode) {
     if (mobileAccessDenied) {
       return (
@@ -388,11 +423,14 @@ export default function InventoryAndPurchaseERP() {
         </div>
       );
     }
+    
+    if (loading) return <div className="h-screen bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-white" size={40}/></div>;
+
     return (
       <div className="min-h-[100dvh] w-full overflow-y-auto bg-slate-100 p-4 font-sans pb-40">
         <div className="bg-white rounded-3xl p-5 shadow-xl border border-slate-200 mb-20">
           <div className="text-center mb-6 border-b border-slate-100 pb-4">
-            <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight flex justify-center items-center"><Truck size={20} className="mr-2 text-indigo-600"/> Rapid GRN Desk</h2>
+            <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight flex justify-center items-center"><Truck size={20} className="mr-2 text-indigo-600"/> {mobileOutletName} GRN</h2>
             <p className="text-[10px] text-slate-400 font-bold mt-1 tracking-widest">SECURE MOBILE PURCHASE GATEWAY</p>
           </div>
           <form onSubmit={submitPurchaseEntry} className="space-y-4">
@@ -468,7 +506,6 @@ export default function InventoryAndPurchaseERP() {
     <>
       <title>ZedPoss | Inventory & Supply Chain Management</title>
       <meta name="description" content="Master Inventory Control, Stock Ledger, GRN Purchase Orders, and Vendor Accounts for your restaurant. Secure cloud supply chain by ZedooX Technologies." />
-      <meta name="keywords" content="Restaurant Inventory, POS Stock Ledger, Material Procurement, Recipe BOM Tracking, Purchase Orders POS, Vendor Ledger Management, Smart Inventory Software, ZedPoss Inventory, Stock Alert POS, Retail Supply Chain, Fast GRN Entry, Barcode Inventory, Cloud Stock Manager, Raw Material Tracker, Zero Wastage POS, QSR Stock App, ZedooX Technologies, Mobile GRN Scanner, Food Costing Software, Cloud Kitchen Inventory, Outlet Stock Sync, Inventory Analytics, Dynamic Cost Control, Advanced Inventory POS, Central Kitchen Stock, Stock Transfer Software, Supplier Payments Tracker, Warehouse Inventory POS, Inventory Tax Reporting, Inventory Valuation POS" />
 
       <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden print:h-auto print:overflow-visible print:bg-white">
         

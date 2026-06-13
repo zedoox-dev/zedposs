@@ -28,7 +28,7 @@ export async function GET(req: Request) {
       },
       include: {
         items: {
-          include: { menuItem: true }
+          include: { menuItem: true } // Fetches the actual dish names & details
         }
       },
       orderBy: { createdAt: 'desc' } 
@@ -57,9 +57,10 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Forbidden modification." }, { status: 403 });
     }
 
+    // Updated to "READY" to strictly match Prisma OrderStatus Enum
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
-      data: { status: "SERVED" } 
+      data: { status: "READY" } 
     });
 
     return NextResponse.json({ success: true, order: updatedOrder });

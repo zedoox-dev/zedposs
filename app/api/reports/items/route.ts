@@ -11,9 +11,8 @@ export async function GET(req: Request) {
   }
 
   const secureOutletId = (session.user as any).outletId;
-  const secureTenantId = (session.user as any).tenantId;
 
-  if (!secureOutletId || !secureTenantId) {
+  if (!secureOutletId) {
     return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
   }
 
@@ -45,14 +44,19 @@ export async function GET(req: Request) {
   try {
     const orders = await prisma.order.findMany({
       where: { 
-        outletId: secureOutletId, 
-        tenantId: secureTenantId, // 🔒 Data Isolated securely 
+        outletId: secureOutletId, // 🔒 Data Isolated securely to the Outlet
         createdAt: dateQuery,
         status: { not: "CANCELLED" },
         isDeleted: false 
       },
       include: {
-        items: { include: { menuItem: true } }
+        items: { 
+          include: { 
+            menuItem: {
+              include: { category: true } // Fetches the actual category name string
+            } 
+          } 
+        }
       }
     });
 
@@ -67,10 +71,11 @@ export async function GET(req: Request) {
       order.items.forEach((item) => {
         const id = item.menuItemId;
         const name = item.menuItem?.name || "Unknown Item";
-        const category = item.menuItem?.category || "General";
+        const category = item.menuItem?.category?.name || "General"; // Maps to the relation
         const qty = item.quantity;
         
-        const rev = isComp ? 0 : (item.price * item.quantity);
+        // Maps to the new unitPrice/totalPrice schema logic
+        const rev = isComp ? 0 : (item.totalPrice || (item.unitPrice * item.quantity));
 
         if (!itemMap[id]) itemMap[id] = { id, name, category, qty: 0, revenue: 0 };
         itemMap[id].qty += qty;

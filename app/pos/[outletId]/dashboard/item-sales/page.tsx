@@ -58,7 +58,6 @@ export default function ItemSalesPage() {
     }
 
     setLoading(true);
-    // 🔒 Removed IDs from URL
     let url = `/api/reports/items?date=${dateFilter}`;
     if (dateFilter === "custom" && customStartDate && customEndDate) {
       url += `&startDate=${customStartDate}&endDate=${customEndDate}`;
@@ -94,7 +93,6 @@ export default function ItemSalesPage() {
 
   return (
     <>
-      {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss | Item Sales Velocity & Analytics</title>
       <meta name="description" content="Track top-selling items, category leaders, and dead stock accurately with ZedPoss product velocity analytics." />
       <meta name="keywords" content="Restaurant Item Sales, Top Selling Menu Items, ZedPoss Analytics, Retail Product Velocity, Sales Performance POS, Cafe Menu Analytics, Slow Moving Stock, Fast Moving Items POS, Category Leader Revenue, Food Beverage Analytics, QSR Sales Data, Store Performance Software, Digital Restaurant Ledger, Cloud Analytics Dashboard, ZedooX Technologies Product CRM" />

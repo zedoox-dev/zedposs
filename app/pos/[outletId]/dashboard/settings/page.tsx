@@ -44,6 +44,7 @@ const defaultGeneralConfig = {
   
   autoRoundOff: true,
   lowStockAlerts: true,
+  showAllFilter: true, // Synced globally now
   
   requirePinForCancel: true,
   requirePinForDiscount: true,
@@ -58,8 +59,6 @@ export default function SettingsPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("general"); 
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
-  
-  const [showAllFilter, setShowAllFilter] = useState(true);
   
   const [generalSettings, setGeneralSettings] = useState(defaultGeneralConfig);
   const [isSavingGeneral, setIsSavingGeneral] = useState(false);
@@ -77,10 +76,6 @@ export default function SettingsPage() {
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-
-    const secureOutletId = (session?.user as any)?.outletId || outletId;
-    const savedToggle = localStorage.getItem(`zapped_show_all_filter_${secureOutletId}`);
-    if (savedToggle !== null) setShowAllFilter(savedToggle === "true");
 
     setIsMounted(true); 
 
@@ -113,7 +108,6 @@ export default function SettingsPage() {
     }
 
     try {
-      // 🔒 APIs no longer need IDs in query string for authenticated endpoints.
       const res = await fetch(`/api/settings`);
       const data = await res.json();
       
@@ -121,6 +115,7 @@ export default function SettingsPage() {
         if (data.generalSettings) {
           setGeneralSettings({ ...defaultGeneralConfig, ...data.generalSettings });
           localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(data.generalSettings));
+          localStorage.setItem(`zapped_show_all_filter`, String(data.generalSettings.showAllFilter));
         }
         if (data.printerSettings) {
           setPrinterSettings({ ...defaultPrinterConfig, ...data.printerSettings });
@@ -136,17 +131,11 @@ export default function SettingsPage() {
     }
   };
 
-  const handleToggleAllFilter = () => {
-    const newValue = !showAllFilter;
-    setShowAllFilter(newValue);
-    const secureOutletId = (session?.user as any)?.outletId || outletId;
-    localStorage.setItem(`zapped_show_all_filter_${secureOutletId}`, String(newValue));
-  };
-
   const handleSaveGeneralSettings = async () => {
     setIsSavingGeneral(true);
     const secureOutletId = (session?.user as any)?.outletId || outletId;
     localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(generalSettings));
+    localStorage.setItem(`zapped_show_all_filter`, String(generalSettings.showAllFilter));
     
     if (!navigator.onLine) {
       setTimeout(() => {
@@ -257,10 +246,8 @@ export default function SettingsPage() {
 
   return (
     <>
-      {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss | System Settings & Hardware Configurations</title>
       <meta name="description" content="Configure POS Printers, Store Identity, Staff Access Roles, and Automation Rules seamlessly with ZedPoss Settings Manager." />
-      <meta name="keywords" content="POS System Settings, POS Hardware Config, POS Printer Setup, Cloud Printer Integration, ZedPoss Settings, ZedooX POS Hardware, Cashier Access Control, Staff Security Management, POS Role Base Access, KDS Routing System, Store Operation Configurations, Retail Billing Setup, SMS Gateway API Setup, WhatsApp CRM Integration, Automated POS Triggers, Business Identity Settings, GST Configuration Software, Day Closure Setup" />
 
       <div className="p-6 h-full flex flex-col bg-slate-50 overflow-y-auto custom-scrollbar">
         <div className="mb-6 flex justify-between items-start">
@@ -344,8 +331,8 @@ export default function SettingsPage() {
                           <h4 className="font-bold text-sm text-slate-800">'ALL' Menu Filter</h4>
                           <p className="text-[9px] font-bold text-slate-400 mt-0.5">Show "ALL" category button in billing screen.</p>
                         </div>
-                        <button onClick={handleToggleAllFilter}>
-                          {showAllFilter ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                        <button onClick={() => setGeneralSettings({...generalSettings, showAllFilter: !generalSettings.showAllFilter})}>
+                          {generalSettings.showAllFilter ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
                         </button>
                       </div>
 
