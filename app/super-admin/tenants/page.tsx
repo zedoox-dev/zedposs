@@ -1,4 +1,4 @@
-"use client";
+k"use client";
 import { useState, useEffect } from "react";
 import { 
   Building2, Plus, Search, Loader2, X, Crown, 
@@ -108,7 +108,6 @@ export default function SuperAdminTenantsPage() {
     setShowPasswordMap(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Utility to calculate days left
   const getValidityDetails = (createdAt: string) => {
     const createdDate = new Date(createdAt);
     const validTill = new Date(createdDate.setDate(createdDate.getDate() + 30));
@@ -223,7 +222,7 @@ export default function SuperAdminTenantsPage() {
                           </div>
                         </div>
 
-                        {/* Owner Credentials Area with Edit & View Password */}
+                        {/* Owner Credentials Area */}
                         <div className="w-[40%] flex flex-col justify-center border-l border-r border-slate-100 px-6">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center text-xs font-black text-slate-800 uppercase">
@@ -261,7 +260,7 @@ export default function SuperAdminTenantsPage() {
                         </div>
                       </div>
 
-                      {/* Expandable Outlets Sub-Table (A to Z Details) */}
+                      {/* Expandable Outlets Sub-Table */}
                       {expandedTenantId === tenant.id && (
                         <div className="bg-slate-50 border-t border-slate-100 p-5">
                           <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 flex items-center mb-4">
@@ -375,7 +374,6 @@ export default function SuperAdminTenantsPage() {
               </div>
               
               <form onSubmit={handleOnboardBrand} className="flex-1 overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-6">
-                {/* Same Onboarding Form Logic from Previous Iteration */}
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-4 flex items-center"><Building2 size={12} className="mr-1.5"/> 1. Company Information</h3>
                   <div>

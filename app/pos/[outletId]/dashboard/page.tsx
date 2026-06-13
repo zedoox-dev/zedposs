@@ -1,9 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Search, ShoppingBag, Loader2, CheckCircle2, Printer, Plus, Minus, UtensilsCrossed, ConciergeBell, CreditCard, Banknote, SplitSquareHorizontal, Gift, PauseCircle, Send, ChevronDown, ChevronUp, Wifi, WifiOff, Percent, DollarSign } from "lucide-react";
+import { Search, ShoppingBag, Loader2, CheckCircle2, Printer, Plus, Minus, UtensilsCrossed, ConciergeBell, CreditCard, Banknote, SplitSquareHorizontal, Gift, PauseCircle, Send, ChevronDown, ChevronUp, Wifi, WifiOff, Percent, DollarSign, Image as ImageIcon } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { localDB } from "@/lib/localDb"; // 🔥 DEPLOYED DEXIE ENGINE
+import { localDB } from "@/lib/localDb"; 
 
 export default function BillingPage() {
   const params = useParams();
@@ -31,7 +31,6 @@ export default function BillingPage() {
   const [showTaxDropdown, setShowTaxDropdown] = useState(false);
   const [showAdjustments, setShowAdjustments] = useState(false);
 
-  // --- 🔥 NEW: Coupon States ---
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
@@ -49,7 +48,6 @@ export default function BillingPage() {
 
   useEffect(() => {
     if (!session?.user) return;
-    // We now rely on outletId for strict isolation
     const secureOutletId = (session.user as any).outletId || outletId;
 
     const handleOnline = () => { setIsOnline(true); triggerOfflineQueueSync(); };
@@ -78,23 +76,19 @@ export default function BillingPage() {
     if (pConf) setPrinterConfig(JSON.parse(pConf));
     else setPrinterConfig({ printerSize: "80mm", headerName: "ZAPPED POS", headerSize: "text-lg", subHeader: "Premium Quality", subHeaderSize: "text-[10px]", kotDineIn: true, kotDelivery: true, kotPickUp: false });
 
-    // 🔥 THE DEXIE ENGINE: Fetching Data
     const loadMenu = async () => {
       try {
         if (navigator.onLine) {
-          // Online: Backend is strictly locked, no need to pass ID in URL
           const res = await fetch(`/api/menu`); 
           const data = await res.json();
           const menuData = Array.isArray(data) ? data : [];
           
-          await localDB.menuItems.clear(); // Clear old offline cache
+          await localDB.menuItems.clear(); 
           if (menuData.length > 0) {
             await localDB.menuItems.bulkPut(menuData);
           }
-          
           processMenuData(menuData);
         } else {
-          // Offline: Fetch straight from Local DB via outletId
           const localMenuData = await localDB.menuItems.where('outletId').equals(secureOutletId).toArray();
           processMenuData(localMenuData);
         }
@@ -173,6 +167,7 @@ export default function BillingPage() {
     setCouponCode("");
   };
 
+  // 🔥 Precision Calculations
   const itemTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const baseTotal = itemTotal / 1.05;
   const cgst = baseTotal * 0.025;
@@ -184,7 +179,9 @@ export default function BillingPage() {
   const packingAmt = packing.mode === "PERCENT" ? (itemTotal * (packing.value / 100)) : packing.value;
   const deliveryAmt = delivery.mode === "PERCENT" ? (itemTotal * (delivery.value / 100)) : delivery.value;
 
-  const grandTotal = Math.max(0, Math.round(itemTotal - discountAmt + packingAmt + deliveryAmt));
+  const exactTotal = itemTotal - discountAmt + packingAmt + deliveryAmt;
+  const grandTotal = Math.max(0, Math.round(exactTotal));
+  const roundOff = grandTotal - exactTotal;
 
   const filteredMenu = menuItems.filter(item => {
     if (searchQuery.trim() !== "") return item.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -192,19 +189,16 @@ export default function BillingPage() {
   });
 
   const dispatchEBills = (billNo: any, total: number, phone: string, name: string) => {
-    const msg = `Dear ${name || 'Guest'}, Your bill #${billNo} for ₹${total} is generated at ${printerConfig?.headerName || 'Our Outlet'}.`;
+    const msg = `Dear ${name || 'Guest'}, Your bill #${billNo} for ₹${total.toFixed(2)} is generated.`;
     let dispatched = false;
-    if (printerConfig?.enableSms && printerConfig?.smsGatewayUrl && printerConfig?.smsApiKey) { console.log(`📡 SMS Request targeted`); dispatched = true; }
-    if (printerConfig?.enableWhatsapp && printerConfig?.whatsappApiKey) { console.log(`📱 WhatsApp API Targeted`); dispatched = true; }
+    if (printerConfig?.enableSms && printerConfig?.smsGatewayUrl && printerConfig?.smsApiKey) dispatched = true;
+    if (printerConfig?.enableWhatsapp && printerConfig?.whatsappApiKey) dispatched = true;
     if (dispatched) alert(`API Gateway Triggered! E-Bill successfully dispatched to +91 ${phone}.`);
     else alert(`⚠️ E-Bill Gateway configuration fields missing inside system settings dashboard.`);
   };
 
   const handleCheckout = async (actionType: "PRINT" | "EBILL" | "SAVE" | "HOLD") => {
     if (cart.length === 0 || !session?.user) return;
-    
-    // We NO LONGER pass outletId/tenantId in the payload! The API will fetch it securely from the Session Token.
-    // We just send the business data.
 
     if (actionType === "EBILL" && (customerPhone.length !== 10 || !customerName.trim())) return alert("Valid 10-digit number & Customer Name required for E-Bill Dispatch!");
     if (paymentMode === "COMPLEMENTARY" && compPassword !== "1234") return alert("Invalid PIN!");
@@ -228,15 +222,15 @@ export default function BillingPage() {
       isComplementary: paymentMode === "COMPLEMENTARY", 
       compReason: paymentMode === "COMPLEMENTARY" ? compReason : null,
       customerPhone: customerPhone.length === 10 ? customerPhone : null, customerName: customerPhone.length === 10 ? customerName : null,
-      discount: discountAmt, packingCharges: packingAmt, deliveryCharges: deliveryAmt, cgst: cgst, sgst: sgst
+      subtotal: itemTotal, discount: discountAmt, packingCharges: packingAmt, deliveryCharges: deliveryAmt, 
+      cgst: cgst, sgst: sgst, roundOff: roundOff
     };
 
-    // 🔥 OFFLINE LOGIC
     if (!navigator.onLine) {
       const savedQueue = localStorage.getItem(`zapped_offline_orders_queue_${outletId}`) ? JSON.parse(localStorage.getItem(`zapped_offline_orders_queue_${outletId}`)!) : [];
       localStorage.setItem(`zapped_offline_orders_queue_${outletId}`, JSON.stringify([...savedQueue, payload]));
       
-      setLastPrintedOrder({ billNumber: "OFF-SYNC", date: new Date().toLocaleString('en-IN'), cart: [...cart], itemTotal, discountAmt, packingAmt, deliveryAmt, grandTotal, baseTotal, cgst, sgst, orderType, tableNo, paymentMode, customerPhone, customerName });
+      setLastPrintedOrder({ billNumber: "OFF-SYNC", date: new Date().toLocaleString('en-IN'), cart: [...cart], itemTotal, discountAmt, packingAmt, deliveryAmt, grandTotal, baseTotal, cgst, sgst, roundOff, orderType, tableNo, paymentMode, customerPhone, customerName });
       
       if (actionType === "PRINT") setTimeout(() => { window.print(); }, 150);
       
@@ -252,7 +246,7 @@ export default function BillingPage() {
       const data = await response.json();
       if (data.success) {
         setLastBillNo(data.order.billNumber);
-        setLastPrintedOrder({ billNumber: data.order.billNumber, date: new Date().toLocaleString('en-IN'), cart: [...cart], itemTotal, discountAmt, packingAmt, deliveryAmt, grandTotal, baseTotal, cgst, sgst, orderType, tableNo, paymentMode, customerPhone, customerName });
+        setLastPrintedOrder({ billNumber: data.order.billNumber, date: new Date().toLocaleString('en-IN'), cart: [...cart], itemTotal, discountAmt, packingAmt, deliveryAmt, grandTotal, baseTotal, cgst, sgst, roundOff, orderType, tableNo, paymentMode, customerPhone, customerName });
 
         if (actionType === "PRINT") setTimeout(() => { window.print(); }, 150);
         else if (actionType === "EBILL") dispatchEBills(data.order.billNumber, grandTotal, customerPhone, customerName);
@@ -270,12 +264,9 @@ export default function BillingPage() {
 
   return (
     <>
-      {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss Billing Terminal | Smart Cloud POS</title>
-      <meta name="description" content="ZedPoss Billing Dashboard. The most advanced Cloud POS system for quick checkouts, KOT management, and restaurant billing by ZedooX Technologies." />
-      <meta name="keywords" content="ZedPoss, ZedPoss By ZedooX, POS Software, Restaurant POS, Cloud POS, Billing Software, Retail POS, Fast Billing POS, GST Software, E-Bill System, Inventory Management, QSR Software, Bakery POS, Cafe POS System, Fine Dine POS, Food Truck Billing, ZedooX Technologies, Offline POS, Cloud Sync POS, Restaurant KDS, Smart Terminal, Table Management System, Touch POS, Cloud Kitchen Software, Supermarket POS, Quick Billing App, Store Operations, Sales CRM, Mobile POS, Secure POS Terminal" />
-      <meta name="author" content="ZedooX Technologies" />
-      <meta name="robots" content="noindex, nofollow" /> {/* Intentionally noindex for the secure internal dashboard page */}
+      <meta name="description" content="ZedPoss Billing Dashboard. The most advanced Cloud POS system." />
+      <meta name="robots" content="noindex, nofollow" /> 
 
       <div className="flex h-full relative overflow-hidden print:overflow-visible">
         <div className="flex h-full w-full print:hidden">
@@ -303,11 +294,19 @@ export default function BillingPage() {
 
             <div className="flex-1 overflow-y-auto p-6 pt-2 custom-scrollbar">
               {loading ? <div className="flex-1 h-full flex justify-center items-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
                   {filteredMenu.map((item) => (
-                    <button key={item.id} onClick={() => addToCart(item)} className="bg-white p-4 rounded-2xl border border-slate-200/60 hover:border-orange-400 text-left flex flex-col justify-between h-28 active:scale-95 shadow-sm transition-all overflow-hidden uppercase">
-                      <h3 className="font-black text-slate-900 text-base tracking-tight line-clamp-2 leading-tight">{item.name}</h3>
-                      <div className="text-base font-black text-slate-900 font-mono">₹{item.price}</div>
+                    // 🔥 UI FIX 2: Images added properly inside boxes
+                    <button key={item.id} onClick={() => addToCart(item)} className="bg-white p-2.5 rounded-2xl border border-slate-200/60 hover:border-orange-400 text-left flex flex-col h-[130px] active:scale-95 shadow-sm transition-all overflow-hidden relative group">
+                      <div className="w-full h-14 bg-slate-100 rounded-xl overflow-hidden mb-2 shrink-0 flex items-center justify-center relative">
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                        ) : (
+                          <UtensilsCrossed size={20} className="text-slate-300 group-hover:text-orange-300 transition-colors" />
+                        )}
+                      </div>
+                      <h3 className="font-black text-slate-900 text-[11px] uppercase line-clamp-2 leading-tight flex-1">{item.name}</h3>
+                      <div className="text-sm font-black text-slate-900 font-mono mt-1">₹{item.price.toFixed(2)}</div>
                     </button>
                   ))}
                 </div>
@@ -315,6 +314,7 @@ export default function BillingPage() {
             </div>
           </div>
 
+          {/* BILLING SECTION */}
           <div className="w-[495px] bg-white border-l border-slate-200 flex flex-col z-10 shadow-2xl shrink-0 h-full">
             <div className="p-2 bg-slate-900 flex space-x-1.5 shrink-0">
               {["DINE_IN", "DELIVERY", "PICK_UP"].map((type) => (
@@ -345,7 +345,7 @@ export default function BillingPage() {
                     <span className="font-black text-xs w-3 text-center text-slate-800">{item.qty}</span>
                     <button onClick={() => addToCart(item)} className="w-5 h-5 flex justify-center items-center bg-orange-500 text-white rounded shadow-xs"><Plus size={10}/></button>
                   </div>
-                  <div className="text-right shrink-0 pl-4 min-w-[70px] font-black text-slate-900 text-sm font-mono">₹{item.price * item.qty}</div>
+                  <div className="text-right shrink-0 pl-4 min-w-[70px] font-black text-slate-900 text-sm font-mono">₹{(item.price * item.qty).toFixed(2)}</div>
                 </div>
               ))}
             </div>
@@ -356,7 +356,9 @@ export default function BillingPage() {
                 <div className="space-y-1.5 mb-2 text-xs font-bold text-slate-400 border-b border-solid border-slate-200 pb-2.5">
                   <div className="flex justify-between text-slate-600"><span>BASE AMOUNT</span><span className="font-mono">₹{baseTotal.toFixed(2)}</span></div>
                   <div className="flex justify-between"><span>CGST @ 2.5%</span><span className="font-mono">+ ₹{cgst.toFixed(2)}</span></div>
-                  <div className="flex justify-between border-b border-slate-100 pb-1"><span>SGST @ 2.5%</span><span className="font-mono">+ ₹{sgst.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span>SGST @ 2.5%</span><span className="font-mono">+ ₹{sgst.toFixed(2)}</span></div>
+                  {/* 🔥 UI FIX 4: Round Off added to taxes list */}
+                  <div className="flex justify-between border-t border-slate-100 mt-1 pt-1 text-slate-500"><span>Round Off</span><span className="font-mono">{roundOff > 0 ? '+' : ''}{roundOff.toFixed(2)}</span></div>
 
                   <div className="mt-2 pt-2 border-t border-slate-100">
                     <div className="flex items-center space-x-2">
@@ -392,7 +394,7 @@ export default function BillingPage() {
                               {discount.mode === "PERCENT" ? <Percent size={11}/> : "₹"}
                             </button>
                           </div>
-                          <span className="text-red-500 w-16 text-right font-mono text-[11px]">-₹{manualDiscountAmt.toFixed(0)}</span>
+                          <span className="text-red-500 w-16 text-right font-mono text-[11px]">-₹{manualDiscountAmt.toFixed(2)}</span>
                         </div>
 
                         <div className="flex items-center justify-between gap-1">
@@ -403,7 +405,7 @@ export default function BillingPage() {
                               {packing.mode === "PERCENT" ? <Percent size={11}/> : "₹"}
                             </button>
                           </div>
-                          <span className="text-slate-700 w-16 text-right font-mono text-[11px]">+₹{packingAmt.toFixed(0)}</span>
+                          <span className="text-slate-700 w-16 text-right font-mono text-[11px]">+₹{packingAmt.toFixed(2)}</span>
                         </div>
 
                         <div className="flex items-center justify-between gap-1">
@@ -414,37 +416,42 @@ export default function BillingPage() {
                               {delivery.mode === "PERCENT" ? <Percent size={11}/> : "₹"}
                             </button>
                           </div>
-                          <span className="text-slate-700 w-16 text-right font-mono text-[11px]">+₹{deliveryAmt.toFixed(0)}</span>
+                          <span className="text-slate-700 w-16 text-right font-mono text-[11px]">+₹{deliveryAmt.toFixed(2)}</span>
                         </div>
                       </div>
                     )}
                   </div>
                 </div>
               )}
-              <div className="flex justify-between items-end"><span className="text-slate-800 font-black text-sm uppercase">Grand Total Amount</span><span className="text-3xl font-black text-slate-900 font-mono">₹{grandTotal}</span></div>
+              {/* 🔥 UI FIX 4: .00 added to grand total */}
+              <div className="flex justify-between items-end"><span className="text-slate-800 font-black text-sm uppercase">Grand Total Amount</span><span className="text-3xl font-black text-slate-900 font-mono">₹{grandTotal.toFixed(2)}</span></div>
             </div>
 
-            <div className="p-3 bg-slate-50 border-t border-slate-200 shrink-0 space-y-2.5">
-              <div className="flex space-x-1.5">
+            <div className="p-3 bg-slate-50 border-t border-slate-200 shrink-0 space-y-2">
+              {/* 🔥 UI FIX 3: Buttons Size Matched cleanly */}
+              <div className="grid grid-cols-4 gap-1.5">
                 {[ { id: "CASH", icon: <Banknote size={14}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={14}/>, label: "Card/UPI" }, { id: "PART", icon: <SplitSquareHorizontal size={14}/>, label: "Part" }, { id: "COMPLEMENTARY", icon: <Gift size={14}/>, label: "Comp" }].map(mode => (
-                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex-1 flex flex-col items-center py-1.5 rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-xs" : "bg-white border-slate-200 text-slate-500"}`}><div className="scale-90">{mode.icon}</div><span className="text-[9px] font-black uppercase mt-0.5">{mode.label}</span></button>
+                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center h-11 rounded-lg border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-xs" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
+                    <div className="scale-90 mb-0.5">{mode.icon}</div>
+                    <span className="text-[9px] font-black uppercase">{mode.label}</span>
+                  </button>
                 ))}
               </div>
 
               {paymentMode === "PART" && <div className="flex space-x-2"><input type="number" placeholder="Cash ₹" value={partCash} onChange={e=>setPartCash(e.target.value)} className="w-1/2 p-2 rounded-lg border text-xs font-bold text-center bg-white" /><input type="number" placeholder="Card/UPI ₹" value={partCard} onChange={e=>setPartCard(e.target.value)} className="w-1/2 p-2 rounded-lg border text-xs font-bold text-center bg-white" /></div>}
               {paymentMode === "COMPLEMENTARY" && <div className="flex space-x-2"><input type="password" placeholder="PIN" value={compPassword} onChange={e=>setCompPassword(e.target.value)} className="w-1/3 p-2 rounded-lg border text-xs font-bold text-center bg-white" /><input type="text" placeholder="Reason" value={compReason} onChange={e=>setCompReason(e.target.value)} className="w-2/3 p-2 rounded-lg border text-xs font-bold bg-white" /></div>}
 
-              <div className="grid grid-cols-4 gap-1">
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase py-2 rounded-lg active:scale-95 text-center px-1">SAVE</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-slate-900 text-white font-black text-[9px] uppercase py-2 rounded-lg active:scale-95 shadow-md text-center px-1">SAVE & PRINT</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("EBILL")} className="bg-orange-500 text-white font-black text-[9px] uppercase py-2 rounded-lg active:scale-95 shadow-md text-center px-1">SAVE & EBILL</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("HOLD")} className="bg-amber-100 text-amber-700 border border-amber-300 font-black text-[9px] uppercase py-2 rounded-lg active:scale-95 text-center px-1">HOLD</button>
+              <div className="grid grid-cols-4 gap-1.5">
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 hover:bg-slate-300 transition-colors text-center px-1">SAVE</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-slate-900 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-black transition-colors text-center px-1">SAVE & PRINT</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("EBILL")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center px-1">SAVE & EBILL</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("HOLD")} className="bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 transition-colors text-center px-1">HOLD</button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ------------------- ENTERPRISE PRINTER LAYER (PETPOOJA STYLED & LOCKED) ------------------- */}
+        {/* ------------------- ENTERPRISE PRINTER LAYER ------------------- */}
         <div 
           id="enterprise-receipt-print-area" 
           className="print:block absolute opacity-0 print:opacity-100 top-0 left-0 bg-white text-black font-mono z-[-50] print:z-[9999] text-center w-full"
@@ -489,8 +496,8 @@ export default function BillingPage() {
                     <tr key={idx} className="border-b border-solid border-slate-300">
                       <td className="py-1 text-left uppercase pl-1 leading-tight">{item.name}</td>
                       <td className="py-1 text-center font-mono">{item.qty}</td>
-                      <td className="py-1 text-center font-mono">₹{item.price.toFixed(0)}</td>
-                      <td className="py-1 text-right pr-1 font-mono tracking-tight whitespace-nowrap">₹{(item.price * item.qty).toFixed(0)}</td>
+                      <td className="py-1 text-center font-mono">₹{item.price.toFixed(2)}</td>
+                      <td className="py-1 text-right pr-1 font-mono tracking-tight whitespace-nowrap">₹{(item.price * item.qty).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -501,14 +508,15 @@ export default function BillingPage() {
                 <div className="flex justify-between"><span>CGST @ 2.5%</span><span>₹{lastPrintedOrder.cgst?.toFixed(2)}</span></div>
                 <div className="flex justify-between"><span>SGST @ 2.5%</span><span>₹{lastPrintedOrder.sgst?.toFixed(2)}</span></div>
                 
-                {lastPrintedOrder.discountAmt > 0 && <div className="flex justify-between text-red-700 border-t border-dotted border-black/30 mt-0.5 pt-0.5"><span>Discount Applied</span><span>-₹{lastPrintedOrder.discountAmt?.toFixed(0)}</span></div>}
-                {lastPrintedOrder.packingAmt > 0 && <div className="flex justify-between"><span>Packing Charge</span><span>+₹{lastPrintedOrder.packingAmt?.toFixed(0)}</span></div>}
-                {lastPrintedOrder.deliveryAmt > 0 && <div className="flex justify-between"><span>Delivery Charge</span><span>+₹{lastPrintedOrder.deliveryAmt?.toFixed(0)}</span></div>}
+                {lastPrintedOrder.discountAmt > 0 && <div className="flex justify-between text-red-700 border-t border-dotted border-black/30 mt-0.5 pt-0.5"><span>Discount Applied</span><span>-₹{lastPrintedOrder.discountAmt?.toFixed(2)}</span></div>}
+                {lastPrintedOrder.packingAmt > 0 && <div className="flex justify-between"><span>Packing Charge</span><span>+₹{lastPrintedOrder.packingAmt?.toFixed(2)}</span></div>}
+                {lastPrintedOrder.deliveryAmt > 0 && <div className="flex justify-between"><span>Delivery Charge</span><span>+₹{lastPrintedOrder.deliveryAmt?.toFixed(2)}</span></div>}
+                {lastPrintedOrder.roundOff !== 0 && <div className="flex justify-between"><span>Round Off</span><span>{lastPrintedOrder.roundOff > 0 ? '+' : ''}{lastPrintedOrder.roundOff?.toFixed(2)}</span></div>}
               </div>
 
               <div className="w-full flex justify-between font-black text-[13px] border-b border-solid border-black pb-1 px-1">
                 <span>GRAND TOTAL</span>
-                <span>₹{lastPrintedOrder.grandTotal}</span>
+                <span>₹{lastPrintedOrder.grandTotal.toFixed(2)}</span>
               </div>
               
               <div className="w-full text-center font-bold text-[10px] pb-1 px-1 mt-1 border-b border-solid border-black">

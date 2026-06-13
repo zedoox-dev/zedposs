@@ -5,7 +5,6 @@ import { authOptions } from "../auth/[...nextauth]/route";
 
 export async function POST(req: Request) {
   try {
-    // 🔒 STRICT SECURITY: FETCH IDs FROM BACKEND SESSION TOKEN
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized terminal access blocked." }, { status: 401 });
@@ -22,7 +21,7 @@ export async function POST(req: Request) {
     const { 
       cart, totalAmount, paymentMode, 
       orderType, tableNo, partCash, partCard, isComplementary, compReason,
-      customerPhone, customerName,
+      customerPhone, customerName, subtotal, roundOff,
       discount, packingCharges, deliveryCharges, cgst, sgst 
     } = body;
 
@@ -57,39 +56,42 @@ export async function POST(req: Request) {
       customerId = customer.id;
     }
 
-    // Bill number calculated based on secureOutletId only
     const count = await prisma.order.count({
       where: { outletId: secureOutletId }
     });
     const billNumber = 10000 + count + 1; 
 
+    // 🔥 100% Matching with schema.prisma structure
     const newOrder = await prisma.order.create({
       data: {
         billNumber: billNumber, 
-        outletId: secureOutletId, // 🔒 Strictly Locked
+        outletId: secureOutletId,
         customerId, 
-        totalAmount: isComplementary ? 0 : totalAmount, 
-        paymentMode, 
         orderType,
-        tableNo: tableNo || null,
+        status: "COMPLETED",
+        paymentMode, 
+        platform: "POS", 
+        
+        subtotal: parseFloat(subtotal) || 0,
+        discountAmount: parseFloat(discount) || 0,
+        packingCharges: parseFloat(packingCharges) || 0,
+        deliveryCharges: parseFloat(deliveryCharges) || 0,
+        cgst: parseFloat(cgst) || 0,
+        sgst: parseFloat(sgst) || 0,
+        roundOff: parseFloat(roundOff) || 0,
+        totalAmount: isComplementary ? 0 : parseFloat(totalAmount),
+        
         partCash: parseFloat(partCash) || 0,
         partCard: parseFloat(partCard) || 0,
         isComplementary: isComplementary || false,
         compReason: compReason || null,
         
-        discount: parseFloat(discount) || 0,
-        packingCharges: parseFloat(packingCharges) || 0,
-        deliveryCharges: parseFloat(deliveryCharges) || 0,
-        cgst: parseFloat(cgst) || 0,
-        sgst: parseFloat(sgst) || 0,
-
-        platform: "POS", 
-        status: "COMPLETED",
         items: {
           create: cart.map((item: any) => ({
             menuItemId: item.id, 
             quantity: item.qty, 
-            price: item.price,
+            unitPrice: item.price,
+            totalPrice: item.price * item.qty
           })),
         },
       },
@@ -101,7 +103,6 @@ export async function POST(req: Request) {
   }
 }
 
-// 🟢 GET: Filter orders by Date (Strictly locked to Session Outlet ID)
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -132,7 +133,6 @@ export async function GET(req: Request) {
     dateQuery = { gte: new Date(startDate), lte: end };
   }
 
-  // Soft Delete check & Secure Outlet Lock
   const whereClause: any = { outletId: secureOutletId, isDeleted: false };
   if (Object.keys(dateQuery).length > 0) {
     whereClause.createdAt = dateQuery;
@@ -150,14 +150,12 @@ export async function GET(req: Request) {
   }
 }
 
-// 🔴 PUT: Cancel Order with PIN verification
 export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     
     const secureOutletId = (session.user as any).outletId;
-
     const body = await req.json();
     const { orderId, pin, action } = body;
 
@@ -165,7 +163,6 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Invalid Authorization PIN" }, { status: 403 });
     }
 
-    // Prevent cancelling orders from other outlets (IDOR protection)
     const existingOrder = await prisma.order.findUnique({ where: { id: orderId } });
     if (!existingOrder || existingOrder.outletId !== secureOutletId) {
       return NextResponse.json({ error: "Unauthorized order modification blocked." }, { status: 403 });

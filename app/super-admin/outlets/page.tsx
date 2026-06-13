@@ -24,7 +24,6 @@ interface Outlet {
       maxOutlets: number;
       price: number;
     } | null;
-    users: any[];
   };
   createdAt: string;
 }
@@ -48,17 +47,14 @@ export default function OutletsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Modal Controls
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editOutletData, setEditOutletData] = useState<Outlet | null>(null);
 
-  // Add Form State (Strictly holds selected planId now)
   const [formData, setFormData] = useState({
     name: "", address: "", email: "", password: "", tenantId: "", planId: "", phone: "", gst: "", fssai: ""
   });
 
-  // Edit Form State
   const [editFormData, setEditFormData] = useState({
     name: "", address: "", email: "", password: "", phone: "", gst: "", fssai: "", isActive: true
   });
@@ -74,10 +70,10 @@ export default function OutletsPage() {
       const data = await res.json();
       if (data.success) {
         setOutlets(data.outlets);
-        setPlans(data.subscriptionPlans || []); // Loading DB driven plans list
+        setPlans(data.subscriptionPlans || []); 
       }
     } catch (error) {
-      console.error("Failed to map base stack channels");
+      console.error("Failed to load outlets");
     } finally {
       setIsLoading(false);
     }
@@ -89,7 +85,7 @@ export default function OutletsPage() {
       const data = await res.json();
       if (data.success) setTenants(data.tenants);
     } catch (error) {
-      console.error("Failed to fetch tenants stack matrix");
+      console.error("Failed to fetch tenants");
     }
   };
 
@@ -110,7 +106,7 @@ export default function OutletsPage() {
         fetchInitialData();
         alert(`✅ Outlet deployed with unique 7-Digit ID: ${data.outlet.id}`);
       } else {
-        alert("⚠️ Authorization Error: " + data.error);
+        alert("⚠️ Error: " + data.error);
       }
     } catch (error) {
       alert("Network Connection Refused");
@@ -133,7 +129,7 @@ export default function OutletsPage() {
       if (data.success) {
         setEditOutletData(null);
         fetchInitialData();
-        alert("✅ Configuration profiles customized successfully.");
+        alert("✅ Configuration customized successfully.");
       } else {
         alert("⚠️ Update Denied: " + data.error);
       }
@@ -311,7 +307,7 @@ export default function OutletsPage() {
         </div>
       </div>
 
-      {/* --- ADD OUTLET MODAL WITH MANDATORY SUBSCRIPTION PLAN DROPDOWN --- */}
+      {/* --- ADD OUTLET MODAL --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden border-t-8 border-blue-600 flex flex-col max-h-[90vh]">
@@ -332,20 +328,17 @@ export default function OutletsPage() {
                   <label className="block text-[10px] font-black uppercase tracking-widest text-blue-800 mb-1.5 flex items-center">
                     <Building2 size={12} className="mr-1"/> 1. Link to Brand ID *
                   </label>
-                  <input 
+                  <select 
                     required
-                    list="tenant-options"
-                    placeholder="Enter 5-Digit Brand ID..."
                     value={formData.tenantId}
                     onChange={(e) => setFormData({...formData, tenantId: e.target.value})}
                     className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-xs font-mono font-bold outline-none focus:border-blue-500 transition-all"
-                  />
-                  <datalist id="tenant-options">
+                  >
+                    <option value="" disabled>Select Brand...</option>
                     {tenants.map(t => <option key={t.id} value={t.id}>{t.businessName} (ID: {t.id})</option>)}
-                  </datalist>
+                  </select>
                 </div>
 
-                {/* 🔥 MANDATORY SUBSCRIPTION PLAN DROPDOWN */}
                 <div>
                   <label className="block text-[10px] font-black uppercase tracking-widest text-blue-800 mb-1.5 flex items-center">
                     <CreditCard size={12} className="mr-1"/> 2. Purchase Subscription Plan *
@@ -422,7 +415,6 @@ export default function OutletsPage() {
             
             <form onSubmit={handleUpdateOutlet} className="p-6 overflow-y-auto custom-scrollbar space-y-6">
               
-              {/* Parent Tenant Metadata */}
               <div className="bg-slate-900 rounded-2xl p-5 text-white flex flex-col md:flex-row gap-4 items-center justify-between shadow-lg">
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Parent Brand (Tenant)</p>
@@ -431,7 +423,7 @@ export default function OutletsPage() {
                 <div className="h-8 w-px bg-slate-700 hidden md:block"></div>
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Owner Registry Connection</p>
-                  <div className="font-mono text-xs flex items-center"><Crown size={14} className="mr-2 text-amber-400"/> {editOutletData.tenant?.users?.[0]?.email || editOutletData.tenant?.ownerEmail}</div>
+                  <div className="font-mono text-xs flex items-center"><Crown size={14} className="mr-2 text-amber-400"/> {editOutletData.tenant?.ownerEmail}</div>
                 </div>
                 <div className="h-8 w-px bg-slate-700 hidden md:block"></div>
                 <div>

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { CreditCard, Plus, Loader2, Zap, Check, X, Building2, Store, Users, IndianRupee, Power, ShieldCheck } from "lucide-react";
+import { CreditCard, Plus, Loader2, Zap, Check, X, Building2, Store, Users, IndianRupee, Power } from "lucide-react";
 
 export default function SubscriptionPlansPage() {
   const [plans, setPlans] = useState<any[]>([]);
@@ -59,7 +59,7 @@ export default function SubscriptionPlansPage() {
       if (res.ok && data.success) {
         alert(`✅ Pricing Plan "${formData.name}" successfully launched!`);
         setShowAddModal(false);
-        setFormData({ name: "", price: "", billingCycle: "MONTHLY", maxOutlets: "1", maxUsers: "3", featuresRaw: "" });
+        setFormData({ name: "", price: "", billingCycle: "MONTHLY", maxOutlets: "1", maxUsers: "3", featuresRaw: "Core POS System\nBasic Reporting\nEmail Support" });
         fetchPlans();
       } else {
         alert(`⚠️ Error: ${data.error}`);
@@ -80,8 +80,11 @@ export default function SubscriptionPlansPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, isActive: !currentStatus })
       });
-      if (res.ok) {
+      const data = await res.json();
+      if (res.ok && data.success) {
         setPlans(plans.map(p => p.id === id ? { ...p, isActive: !currentStatus } : p));
+      } else {
+          alert("Update failed: " + data.error);
       }
     } catch (e) {
       alert("Failed to update status");

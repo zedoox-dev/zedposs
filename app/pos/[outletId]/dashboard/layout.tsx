@@ -91,7 +91,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!navigator.onLine) return;
     setIsSyncing(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 150)); // Made it extremely fast (reduced from 800ms)
     } catch (error) {
       console.error("Sync failed:", error);
     } finally {
@@ -216,13 +216,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Menu size={24} />
             </button>
             
-            {/* Connected to favicon.ico dynamically */}
+            {/* 🔥 FIXED LOGO SIZE HERE */}
             <div className="flex items-center text-orange-500 shrink-0 cursor-pointer" onClick={() => router.push(`/pos/${outletId}/dashboard`)}>
-              <img src="/favicon.ico" alt="Favicon" className="w-5 h-5 mr-2 object-contain" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
-              <span className="font-black text-xl sm:text-2xl tracking-widest drop-shadow-md">ZedPoss</span>
+              <img src="/favicon.ico" alt="Favicon" className="w-8 h-8 sm:w-9 sm:h-9 mr-2.5 object-contain drop-shadow-md" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
+              <span className="font-black text-2xl sm:text-3xl tracking-widest drop-shadow-md">ZedPoss</span>
             </div>
             
-            <div className="h-6 w-px bg-slate-700 mx-1 hidden md:block shrink-0"></div>
+            <div className="h-6 w-px bg-slate-700 mx-2 hidden md:block shrink-0"></div>
             
             <button onClick={handleNewOrder} className="h-10 hidden xl:flex bg-orange-500/20 text-orange-400 border border-orange-500/50 px-3 rounded-xl items-center text-xs font-black uppercase hover:bg-orange-500 hover:text-white transition-all active:scale-95 shrink-0">
               <Plus size={15} className="mr-1.5" /> New Order

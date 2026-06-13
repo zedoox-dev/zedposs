@@ -12,14 +12,17 @@ const generate5DigitId = () => {
 export async function GET() {
   try {
     const tenants = await prisma.tenant.findMany({
+      where: { isDeleted: false }, // Fixed: Sirf active non-deleted tenants layega
       include: {
-        outlets: true, // Fetching complete outlet details including password/email
+        outlets: {
+          where: { isDeleted: false } // Fixed: Sirf active outlets layega
+        }, 
         _count: {
-          select: { outlets: true, users: true }
+          select: { outlets: { where: { isDeleted: false } }, users: true }
         },
         users: {
-          where: { role: { name: "Brand Owner" } },
-          select: { id: true, name: true, email: true, password: true }, // Added password for Super Admin View
+          where: { role: { name: "Brand Owner" }, isDeleted: false },
+          select: { id: true, name: true, email: true, password: true }, 
           take: 1
         }
       },
@@ -53,11 +56,12 @@ export async function POST(req: Request) {
         existingTenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       }
 
-      // 2. Create the Tenant (Brand) - Only ID, Name, Email
+      // 2. Create the Tenant (Brand)
       const newTenant = await tx.tenant.create({
         data: { 
           id: tenantId,
           businessName: brandName,
+          ownerName: ownerName, // Fixed: Added ownerName to DB
           ownerEmail: ownerEmail
         } 
       });

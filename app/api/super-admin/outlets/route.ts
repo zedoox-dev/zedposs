@@ -20,11 +20,6 @@ export async function GET() {
             businessName: true,
             ownerEmail: true,
             plan: true,
-            users: {
-              where: { role: { name: "Brand Owner" } },
-              select: { name: true, email: true },
-              take: 1
-            }
           },
         },
       },
@@ -52,7 +47,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { name, address, email, password, phone, gst, fssai, tenantId, planId } = body;
 
-    // Strict fields validation including the plan verification
     if (!name || !address || !tenantId || !planId) {
       return NextResponse.json(
         { success: false, error: "Name, address, Tenant ID, and Subscription Plan are strictly required." },
@@ -61,7 +55,6 @@ export async function POST(req: Request) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Verify the selected subscription plan exists in DB
       const selectedPlan = await tx.subscriptionPlan.findFirst({
         where: { id: planId, isDeleted: false }
       });
@@ -70,7 +63,6 @@ export async function POST(req: Request) {
         throw new Error("The selected Subscription Plan is invalid or inactive.");
       }
 
-      // 2. Fetch tenant workspace
       const tenant = await tx.tenant.findUnique({
         where: { id: tenantId },
         include: {
@@ -78,22 +70,18 @@ export async function POST(req: Request) {
         }
       });
 
-      if (!tenant) {
-        throw new Error("Brand/Tenant ID not found in database registry.");
-      }
+      if (!tenant) throw new Error("Brand/Tenant ID not found in database registry.");
 
-      // 3. Enforce plan limit checks before provisioning the outlet
       if (tenant._count.outlets >= selectedPlan.maxOutlets) {
-        throw new Error(`Subscription Allocation Failed! The ${selectedPlan.name} plan restricts allocation to a maximum of ${selectedPlan.maxOutlets} outlet(s).`);
+        throw new Error(`Allocation Failed! ${selectedPlan.name} plan restricts allocation to max ${selectedPlan.maxOutlets} outlet(s).`);
       }
 
-      // 4. Update the Tenant structure to anchor this current active Plan
+      // Ensure tenant is linked to this plan
       await tx.tenant.update({
         where: { id: tenantId },
         data: { planId: selectedPlan.id }
       });
 
-      // 5. Generate unique 7-Digit Numeric ID
       let newOutletId = generate7DigitId();
       let existing = await tx.outlet.findUnique({ where: { id: newOutletId } });
       while (existing) {
@@ -101,7 +89,6 @@ export async function POST(req: Request) {
         existing = await tx.outlet.findUnique({ where: { id: newOutletId } });
       }
 
-      // 6. Create the physical store instance with attached settings payload
       const newOutlet = await tx.outlet.create({
         data: {
           id: newOutletId,
@@ -121,10 +108,31 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, outlet: result });
   } catch (error: any) {
-    console.error("Error creating subscription bound outlet:", error);
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to process core outlet onboarding" },
-      { status: 400 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, name, address, email, password, phone, gst, fssai, isActive } = body;
+
+    if (!id) return NextResponse.json({ success: false, error: "Outlet ID is required" }, { status: 400 });
+
+    const updatedOutlet = await prisma.outlet.update({
+      where: { id },
+      data: {
+        name,
+        address,
+        email: email || null,
+        password: password || null,
+        isActive,
+        generalSettings: { phone, gstNumber: gst, fssaiNumber: fssai },
+      }
+    });
+
+    return NextResponse.json({ success: true, outlet: updatedOutlet });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
 }
