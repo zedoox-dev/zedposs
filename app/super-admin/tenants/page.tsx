@@ -1,4 +1,4 @@
-k"use client";
+"use client";
 import { useState, useEffect } from "react";
 import { 
   Building2, Plus, Search, Loader2, X, Crown, 
