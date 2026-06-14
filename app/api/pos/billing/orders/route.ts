@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../api/auth/[...nextauth]/route"; 
+import { authOptions } from "../../../auth/[...nextauth]/route"; 
 
 export async function POST(req: Request) {
   try {
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
         customerId, 
         orderType,
         status: "COMPLETED",
-        paymentMode: paymentMode, // Safely using mapped Enums from UI
+        paymentMode: paymentMode, 
         platform: "POS", 
         
         subtotal: parseFloat(subtotal) || 0,
