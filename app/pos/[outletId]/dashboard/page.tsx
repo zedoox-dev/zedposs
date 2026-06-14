@@ -22,6 +22,8 @@ export default function BillingPage() {
   const [tableNo, setTableNo] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
+  
+  // 🔥 Fixed Enums to match Schema exactly (MIXED instead of PART, COMPLIMENTARY instead of COMPLEMENTARY)
   const [paymentMode, setPaymentMode] = useState("CASH"); 
   const [partCash, setPartCash] = useState("");
   const [partCard, setPartCard] = useState("");
@@ -40,10 +42,8 @@ export default function BillingPage() {
   const [delivery, setDelivery] = useState({ value: 0, mode: "PERCENT" });
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showReceipt, setShowReceipt] = useState(false);
-  const [lastBillNo, setLastBillNo] = useState("");
-
   const [printerConfig, setPrinterConfig] = useState<any>(null);
+  const [generalSettings, setGeneralSettings] = useState<any>({ autoRoundOff: true });
   const [lastPrintedOrder, setLastPrintedOrder] = useState<any>(null);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export default function BillingPage() {
     const handleClearCart = () => {
       setCart([]); setCustomerPhone(""); setCustomerName(""); setTableNo("");
       setDiscount({ value: 0, mode: "PERCENT" }); setPacking({ value: 0, mode: "PERCENT" }); setDelivery({ value: 0, mode: "PERCENT" });
-      setCouponCode(""); setCouponDiscount(0);
+      setCouponCode(""); setCouponDiscount(0); setPartCash(""); setPartCard(""); setCompPassword(""); setCompReason("");
     };
     window.addEventListener("zapped_clear_cart", handleClearCart);
 
@@ -76,10 +76,15 @@ export default function BillingPage() {
     if (pConf) setPrinterConfig(JSON.parse(pConf));
     else setPrinterConfig({ printerSize: "80mm", headerName: "ZAPPED POS", headerSize: "text-lg", subHeader: "Premium Quality", subHeaderSize: "text-[10px]", kotDineIn: true, kotDelivery: true, kotPickUp: false });
 
+    // Fetch Auto Round Off config
+    const gConf = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
+    if (gConf) setGeneralSettings(JSON.parse(gConf));
+
     const loadMenu = async () => {
       try {
         if (navigator.onLine) {
-          const res = await fetch(`/api/menu`); 
+          // 🔥 NEW DEDICATED BILLING MENU API
+          const res = await fetch(`/api/pos/billing/menu`); 
           const data = await res.json();
           const menuData = Array.isArray(data) ? data : [];
           
@@ -102,9 +107,8 @@ export default function BillingPage() {
     const processMenuData = (menuData: any[]) => {
       setMenuItems(menuData);
       const uniqueDbCats = Array.from(new Set(menuData.map((item: any) => item.category))) as string[];
-      const savedToggle = localStorage.getItem("zapped_show_all_filter");
-      const keepAll = savedToggle === null ? true : savedToggle === "true";
-      const finalCategories = keepAll ? ["ALL", ...uniqueDbCats] : uniqueDbCats;
+      const savedToggle = localStorage.getItem(`zapped_show_all_filter`) !== "false";
+      const finalCategories = savedToggle ? ["ALL", ...uniqueDbCats] : uniqueDbCats;
       setDbCategories(finalCategories);
       if (finalCategories.length > 0) setSelectedCategory(finalCategories[0]);
     };
@@ -128,7 +132,7 @@ export default function BillingPage() {
     const remaining: any[] = [];
     for (const order of queue) {
       try {
-        const res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order) });
+        const res = await fetch("/api/pos/billing/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order) });
         if (!res.ok) remaining.push(order);
       } catch (err) { remaining.push(order); }
     }
@@ -167,7 +171,7 @@ export default function BillingPage() {
     setCouponCode("");
   };
 
-  // 🔥 Precision Calculations
+  // 🔥 Smart Settings-Connected Precision Calculations
   const itemTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const baseTotal = itemTotal / 1.05;
   const cgst = baseTotal * 0.025;
@@ -180,7 +184,9 @@ export default function BillingPage() {
   const deliveryAmt = delivery.mode === "PERCENT" ? (itemTotal * (delivery.value / 100)) : delivery.value;
 
   const exactTotal = itemTotal - discountAmt + packingAmt + deliveryAmt;
-  const grandTotal = Math.max(0, Math.round(exactTotal));
+  
+  const autoRoundOffEnabled = generalSettings.autoRoundOff !== false;
+  const grandTotal = autoRoundOffEnabled ? Math.max(0, Math.round(exactTotal)) : parseFloat(Math.max(0, exactTotal).toFixed(2));
   const roundOff = grandTotal - exactTotal;
 
   const filteredMenu = menuItems.filter(item => {
@@ -201,26 +207,24 @@ export default function BillingPage() {
     if (cart.length === 0 || !session?.user) return;
 
     if (actionType === "EBILL" && (customerPhone.length !== 10 || !customerName.trim())) return alert("Valid 10-digit number & Customer Name required for E-Bill Dispatch!");
-    if (paymentMode === "COMPLEMENTARY" && compPassword !== "1234") return alert("Invalid PIN!");
-    if (paymentMode === "PART" && ((parseFloat(partCash) || 0) + (parseFloat(partCard) || 0)) !== grandTotal) return alert("Split mismatch!");
+    if (paymentMode === "COMPLIMENTARY" && !compPassword) return alert("Terminal Password required for Complimentary Order!");
+    if (paymentMode === "MIXED" && ((parseFloat(partCash) || 0) + (parseFloat(partCard) || 0)) !== grandTotal) return alert("Split mismatch! Mixed amounts must equal Grand Total.");
 
     if (actionType === "HOLD") {
       const savedHolds = localStorage.getItem(`zapped_held_orders_${outletId}`) ? JSON.parse(localStorage.getItem(`zapped_held_orders_${outletId}`)!) : [];
       const holdItem = { holdId: `HLD-${Date.now().toString().slice(-4)}`, cart: [...cart], orderType, tableNo, customerPhone, customerName, time: new Date().toLocaleTimeString() };
       localStorage.setItem(`zapped_held_orders_${outletId}`, JSON.stringify([...savedHolds, holdItem]));
-      
-      setCart([]); setCustomerPhone(""); setCustomerName(""); setTableNo("");
-      setDiscount({ value: 0, mode: "PERCENT" }); setPacking({ value: 0, mode: "PERCENT" }); setDelivery({ value: 0, mode: "PERCENT" });
-      setCouponCode(""); setCouponDiscount(0); 
+      window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
       return; 
     }
 
     const payload = {
       cart, totalAmount: grandTotal, paymentMode, orderType,
       tableNo: orderType === "DINE_IN" ? tableNo : null,
-      partCash: paymentMode === "PART" ? partCash : "0", partCard: paymentMode === "PART" ? partCard : "0",
-      isComplementary: paymentMode === "COMPLEMENTARY", 
-      compReason: paymentMode === "COMPLEMENTARY" ? compReason : null,
+      partCash: paymentMode === "MIXED" ? partCash : "0", partCard: paymentMode === "MIXED" ? partCard : "0",
+      isComplementary: paymentMode === "COMPLIMENTARY", 
+      compReason: paymentMode === "COMPLIMENTARY" ? compReason : null,
+      compPassword: paymentMode === "COMPLIMENTARY" ? compPassword : null,
       customerPhone: customerPhone.length === 10 ? customerPhone : null, customerName: customerPhone.length === 10 ? customerName : null,
       subtotal: itemTotal, discount: discountAmt, packingCharges: packingAmt, deliveryCharges: deliveryAmt, 
       cgst: cgst, sgst: sgst, roundOff: roundOff
@@ -233,16 +237,14 @@ export default function BillingPage() {
       setLastPrintedOrder({ billNumber: "OFF-SYNC", date: new Date().toLocaleString('en-IN'), cart: [...cart], itemTotal, discountAmt, packingAmt, deliveryAmt, grandTotal, baseTotal, cgst, sgst, roundOff, orderType, tableNo, paymentMode, customerPhone, customerName });
       
       if (actionType === "PRINT") setTimeout(() => { window.print(); }, 150);
-      
-      setCart([]); setCustomerPhone(""); setCustomerName(""); setTableNo(""); setCompPassword(""); setCompReason(""); setPartCash(""); setPartCard(""); 
-      setDiscount({ value: 0, mode: "PERCENT" }); setPacking({ value: 0, mode: "PERCENT" }); setDelivery({ value: 0, mode: "PERCENT" });
-      setCouponCode(""); setCouponDiscount(0); 
+      window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
       return;
     }
 
     setIsProcessing(true);
     try {
-      const response = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      // 🔥 NEW DEDICATED BILLING ORDERS API
+      const response = await fetch("/api/pos/billing/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (data.success) {
         setLastBillNo(data.order.billNumber);
@@ -250,11 +252,9 @@ export default function BillingPage() {
 
         if (actionType === "PRINT") setTimeout(() => { window.print(); }, 150);
         else if (actionType === "EBILL") dispatchEBills(data.order.billNumber, grandTotal, customerPhone, customerName);
-        else setShowReceipt(true);
-
-        setCart([]); setCustomerPhone(""); setCustomerName(""); setTableNo(""); setCompPassword(""); setCompReason(""); setPartCash(""); setPartCard(""); 
-        setDiscount({ value: 0, mode: "PERCENT" }); setPacking({ value: 0, mode: "PERCENT" }); setDelivery({ value: 0, mode: "PERCENT" });
-        setCouponCode(""); setCouponDiscount(0); 
+        
+        // Fast clear (No success modal pop-up delay anymore)
+        window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
       } else {
         alert(data.error || "Order Save Failed");
       }
@@ -296,7 +296,6 @@ export default function BillingPage() {
               {loading ? <div className="flex-1 h-full flex justify-center items-center"><Loader2 className="animate-spin text-orange-500" size={40} /></div> : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
                   {filteredMenu.map((item) => (
-                    // 🔥 UI FIX 2: Images added properly inside boxes
                     <button key={item.id} onClick={() => addToCart(item)} className="bg-white p-2.5 rounded-2xl border border-slate-200/60 hover:border-orange-400 text-left flex flex-col h-[130px] active:scale-95 shadow-sm transition-all overflow-hidden relative group">
                       <div className="w-full h-14 bg-slate-100 rounded-xl overflow-hidden mb-2 shrink-0 flex items-center justify-center relative">
                         {item.imageUrl ? (
@@ -357,8 +356,6 @@ export default function BillingPage() {
                   <div className="flex justify-between text-slate-600"><span>BASE AMOUNT</span><span className="font-mono">₹{baseTotal.toFixed(2)}</span></div>
                   <div className="flex justify-between"><span>CGST @ 2.5%</span><span className="font-mono">+ ₹{cgst.toFixed(2)}</span></div>
                   <div className="flex justify-between"><span>SGST @ 2.5%</span><span className="font-mono">+ ₹{sgst.toFixed(2)}</span></div>
-                  {/* 🔥 UI FIX 4: Round Off added to taxes list */}
-                  <div className="flex justify-between border-t border-slate-100 mt-1 pt-1 text-slate-500"><span>Round Off</span><span className="font-mono">{roundOff > 0 ? '+' : ''}{roundOff.toFixed(2)}</span></div>
 
                   <div className="mt-2 pt-2 border-t border-slate-100">
                     <div className="flex items-center space-x-2">
@@ -423,29 +420,35 @@ export default function BillingPage() {
                   </div>
                 </div>
               )}
-              {/* 🔥 UI FIX 4: .00 added to grand total */}
+              
+              {roundOff !== 0 && (
+                <div className="flex justify-end text-[10px] font-bold text-slate-400 mb-1">
+                  <span>Round Off: {roundOff > 0 ? '+' : ''}{roundOff.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-end"><span className="text-slate-800 font-black text-sm uppercase">Grand Total Amount</span><span className="text-3xl font-black text-slate-900 font-mono">₹{grandTotal.toFixed(2)}</span></div>
             </div>
 
             <div className="p-3 bg-slate-50 border-t border-slate-200 shrink-0 space-y-2">
-              {/* 🔥 UI FIX 3: Buttons Size Matched cleanly */}
-              <div className="grid grid-cols-4 gap-1.5">
-                {[ { id: "CASH", icon: <Banknote size={14}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={14}/>, label: "Card/UPI" }, { id: "PART", icon: <SplitSquareHorizontal size={14}/>, label: "Part" }, { id: "COMPLEMENTARY", icon: <Gift size={14}/>, label: "Comp" }].map(mode => (
-                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center h-11 rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-xs" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
-                    <div className="scale-90 mb-0.5">{mode.icon}</div>
-                    <span className="text-[9px] font-black uppercase">{mode.label}</span>
+              {/* 🔥 UI FIX: Small & Perfectly Rounded Gol Buttons */}
+              <div className="grid grid-cols-4 gap-2">
+                {[ { id: "CASH", icon: <Banknote size={14}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={14}/>, label: "Card/UPI" }, { id: "MIXED", icon: <SplitSquareHorizontal size={14}/>, label: "Mixed" }, { id: "COMPLIMENTARY", icon: <Gift size={14}/>, label: "Comp" }].map(mode => (
+                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center h-10 rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
+                    <div className="scale-75 mb-0.5">{mode.icon}</div>
+                    <span className="text-[8px] font-black uppercase leading-none">{mode.label}</span>
                   </button>
                 ))}
               </div>
 
-              {paymentMode === "PART" && <div className="flex space-x-2"><input type="number" placeholder="Cash ₹" value={partCash} onChange={e=>setPartCash(e.target.value)} className="w-1/2 p-2 rounded-lg border text-xs font-bold text-center bg-white" /><input type="number" placeholder="Card/UPI ₹" value={partCard} onChange={e=>setPartCard(e.target.value)} className="w-1/2 p-2 rounded-lg border text-xs font-bold text-center bg-white" /></div>}
-              {paymentMode === "COMPLEMENTARY" && <div className="flex space-x-2"><input type="password" placeholder="PIN" value={compPassword} onChange={e=>setCompPassword(e.target.value)} className="w-1/3 p-2 rounded-lg border text-xs font-bold text-center bg-white" /><input type="text" placeholder="Reason" value={compReason} onChange={e=>setCompReason(e.target.value)} className="w-2/3 p-2 rounded-lg border text-xs font-bold bg-white" /></div>}
+              {paymentMode === "MIXED" && <div className="flex space-x-2"><input type="number" placeholder="Cash ₹" value={partCash} onChange={e=>setPartCash(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /><input type="number" placeholder="Card/UPI ₹" value={partCard} onChange={e=>setPartCard(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /></div>}
+              {paymentMode === "COMPLIMENTARY" && <div className="flex space-x-2"><input type="password" placeholder="Terminal Password" value={compPassword} onChange={e=>setCompPassword(e.target.value)} className="w-1/3 p-2 rounded-xl border text-xs font-bold text-center bg-white border-red-200 focus:border-red-500 outline-none" /><input type="text" placeholder="Reason" value={compReason} onChange={e=>setCompReason(e.target.value)} className="w-2/3 p-2 rounded-xl border text-xs font-bold bg-white" /></div>}
 
-              <div className="grid grid-cols-4 gap-1.5">
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 hover:bg-slate-300 transition-colors text-center px-1">SAVE</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center px-1">SAVE & PRINT</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("EBILL")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center px-1">SAVE & EBILL</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("HOLD")} className="bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 transition-colors text-center px-1">HOLD</button>
+              {/* Smaller Checkout Action Buttons */}
+              <div className="grid grid-cols-4 gap-2 pt-1">
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase h-10 rounded-full active:scale-95 hover:bg-slate-300 transition-colors text-center shadow-sm">SAVE</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-10 rounded-full active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center">PRINT</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("EBILL")} className="bg-emerald-500 text-white font-black text-[9px] uppercase h-10 rounded-full active:scale-95 shadow-md hover:bg-emerald-600 transition-colors text-center">E-BILL</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("HOLD")} className="bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 font-black text-[9px] uppercase h-10 rounded-full active:scale-95 transition-colors text-center shadow-sm">HOLD</button>
               </div>
             </div>
           </div>
@@ -562,16 +565,6 @@ export default function BillingPage() {
           )}
         </div>
 
-        {showReceipt && (
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-6 rounded-3xl max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
-              <div className="mx-auto bg-green-100 w-12 h-12 rounded-full flex items-center justify-center mb-3"><CheckCircle2 size={24} className="text-green-500" /></div>
-              <h2 className="text-lg font-black text-slate-800">Bill Generated!</h2>
-              <p className="text-slate-500 mb-4 text-xs font-bold">Transaction Bill #{lastBillNo}</p>
-              <button onClick={() => setShowReceipt(false)} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-sm transition-colors active:scale-95">Dismiss</button>
-            </div>
-          </div>
-        )}
       </div>
     </>
   );
