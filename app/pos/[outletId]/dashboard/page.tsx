@@ -18,12 +18,13 @@ export default function BillingPage() {
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
 
   const [cart, setCart] = useState<any[]>([]);
+  // Changed "PICK_UP" to "TAKEAWAY" to strictly match DB Enum
   const [orderType, setOrderType] = useState("DINE_IN"); 
   const [tableNo, setTableNo] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
   
-  // 🔥 Fixed Enums to match Schema exactly (MIXED instead of PART, COMPLIMENTARY instead of COMPLEMENTARY)
+  // Mixed = Part, Complimentary = Comp
   const [paymentMode, setPaymentMode] = useState("CASH"); 
   const [partCash, setPartCash] = useState("");
   const [partCard, setPartCard] = useState("");
@@ -76,14 +77,12 @@ export default function BillingPage() {
     if (pConf) setPrinterConfig(JSON.parse(pConf));
     else setPrinterConfig({ printerSize: "80mm", headerName: "ZAPPED POS", headerSize: "text-lg", subHeader: "Premium Quality", subHeaderSize: "text-[10px]", kotDineIn: true, kotDelivery: true, kotPickUp: false });
 
-    // Fetch Auto Round Off config
     const gConf = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
     if (gConf) setGeneralSettings(JSON.parse(gConf));
 
     const loadMenu = async () => {
       try {
         if (navigator.onLine) {
-          // 🔥 NEW DEDICATED BILLING MENU API
           const res = await fetch(`/api/pos/billing/menu`); 
           const data = await res.json();
           const menuData = Array.isArray(data) ? data : [];
@@ -171,7 +170,6 @@ export default function BillingPage() {
     setCouponCode("");
   };
 
-  // 🔥 Smart Settings-Connected Precision Calculations
   const itemTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const baseTotal = itemTotal / 1.05;
   const cgst = baseTotal * 0.025;
@@ -221,7 +219,8 @@ export default function BillingPage() {
     const payload = {
       cart, totalAmount: grandTotal, paymentMode, orderType,
       tableNo: orderType === "DINE_IN" ? tableNo : null,
-      partCash: paymentMode === "MIXED" ? partCash : "0", partCard: paymentMode === "MIXED" ? partCard : "0",
+      partCash: paymentMode === "MIXED" ? (partCash || "0") : "0", 
+      partCard: paymentMode === "MIXED" ? (partCard || "0") : "0",
       isComplementary: paymentMode === "COMPLIMENTARY", 
       compReason: paymentMode === "COMPLIMENTARY" ? compReason : null,
       compPassword: paymentMode === "COMPLIMENTARY" ? compPassword : null,
@@ -243,17 +242,15 @@ export default function BillingPage() {
 
     setIsProcessing(true);
     try {
-      // 🔥 NEW DEDICATED BILLING ORDERS API
       const response = await fetch("/api/pos/billing/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (data.success) {
-        setLastBillNo(data.order.billNumber);
         setLastPrintedOrder({ billNumber: data.order.billNumber, date: new Date().toLocaleString('en-IN'), cart: [...cart], itemTotal, discountAmt, packingAmt, deliveryAmt, grandTotal, baseTotal, cgst, sgst, roundOff, orderType, tableNo, paymentMode, customerPhone, customerName });
 
         if (actionType === "PRINT") setTimeout(() => { window.print(); }, 150);
         else if (actionType === "EBILL") dispatchEBills(data.order.billNumber, grandTotal, customerPhone, customerName);
         
-        // Fast clear (No success modal pop-up delay anymore)
+        // Fast Clear. Removed the popup.
         window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
       } else {
         alert(data.error || "Order Save Failed");
@@ -316,7 +313,7 @@ export default function BillingPage() {
           {/* BILLING SECTION */}
           <div className="w-[495px] bg-white border-l border-slate-200 flex flex-col z-10 shadow-2xl shrink-0 h-full">
             <div className="p-2 bg-slate-900 flex space-x-1.5 shrink-0">
-              {["DINE_IN", "DELIVERY", "PICK_UP"].map((type) => (
+              {["DINE_IN", "DELIVERY", "TAKEAWAY"].map((type) => (
                 <button key={type} onClick={() => setOrderType(type)} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${orderType === type ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}>{type.replace("_", " ")}</button>
               ))}
             </div>
@@ -430,25 +427,25 @@ export default function BillingPage() {
             </div>
 
             <div className="p-3 bg-slate-50 border-t border-slate-200 shrink-0 space-y-2">
-              {/* 🔥 UI FIX: Small & Perfectly Rounded Gol Buttons */}
-              <div className="grid grid-cols-4 gap-2">
-                {[ { id: "CASH", icon: <Banknote size={14}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={14}/>, label: "Card/UPI" }, { id: "MIXED", icon: <SplitSquareHorizontal size={14}/>, label: "Mixed" }, { id: "COMPLIMENTARY", icon: <Gift size={14}/>, label: "Comp" }].map(mode => (
-                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center h-10 rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
-                    <div className="scale-75 mb-0.5">{mode.icon}</div>
+              {/* 🔥 UI FIX 1: PERFECT CIRCLE BUTTONS */}
+              <div className="grid grid-cols-4 gap-2 px-2">
+                {[ { id: "CASH", icon: <Banknote size={16}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={16}/>, label: "Card/UPI" }, { id: "MIXED", icon: <SplitSquareHorizontal size={16}/>, label: "Part" }, { id: "COMPLIMENTARY", icon: <Gift size={16}/>, label: "Comp" }].map(mode => (
+                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center w-16 h-16 mx-auto rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
+                    <div className="mb-0.5">{mode.icon}</div>
                     <span className="text-[8px] font-black uppercase leading-none">{mode.label}</span>
                   </button>
                 ))}
               </div>
 
-              {paymentMode === "MIXED" && <div className="flex space-x-2"><input type="number" placeholder="Cash ₹" value={partCash} onChange={e=>setPartCash(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /><input type="number" placeholder="Card/UPI ₹" value={partCard} onChange={e=>setPartCard(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /></div>}
-              {paymentMode === "COMPLIMENTARY" && <div className="flex space-x-2"><input type="password" placeholder="Terminal Password" value={compPassword} onChange={e=>setCompPassword(e.target.value)} className="w-1/3 p-2 rounded-xl border text-xs font-bold text-center bg-white border-red-200 focus:border-red-500 outline-none" /><input type="text" placeholder="Reason" value={compReason} onChange={e=>setCompReason(e.target.value)} className="w-2/3 p-2 rounded-xl border text-xs font-bold bg-white" /></div>}
+              {paymentMode === "MIXED" && <div className="flex space-x-2 pt-1"><input type="number" placeholder="Cash ₹" value={partCash} onChange={e=>setPartCash(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /><input type="number" placeholder="Card/UPI ₹" value={partCard} onChange={e=>setPartCard(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /></div>}
+              {paymentMode === "COMPLIMENTARY" && <div className="flex space-x-2 pt-1"><input type="password" placeholder="Terminal Password" value={compPassword} onChange={e=>setCompPassword(e.target.value)} className="w-1/3 p-2 rounded-xl border text-xs font-bold text-center bg-white border-red-200 focus:border-red-500 outline-none" /><input type="text" placeholder="Reason" value={compReason} onChange={e=>setCompReason(e.target.value)} className="w-2/3 p-2 rounded-xl border text-xs font-bold bg-white" /></div>}
 
-              {/* Smaller Checkout Action Buttons */}
+              {/* 🔥 UI FIX 2: BOTTOM BUTTON TEXT EXACTLY AS REQUESTED & SIZE RETAINED */}
               <div className="grid grid-cols-4 gap-2 pt-1">
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase h-10 rounded-full active:scale-95 hover:bg-slate-300 transition-colors text-center shadow-sm">SAVE</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-10 rounded-full active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center">PRINT</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("EBILL")} className="bg-emerald-500 text-white font-black text-[9px] uppercase h-10 rounded-full active:scale-95 shadow-md hover:bg-emerald-600 transition-colors text-center">E-BILL</button>
-                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("HOLD")} className="bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 font-black text-[9px] uppercase h-10 rounded-full active:scale-95 transition-colors text-center shadow-sm">HOLD</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 hover:bg-slate-300 transition-colors text-center shadow-sm">SAVE</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center">SAVE & PRINT</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("EBILL")} className="bg-emerald-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-emerald-600 transition-colors text-center">SAVE & EBILL</button>
+                <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("HOLD")} className="bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 transition-colors text-center shadow-sm">HOLD</button>
               </div>
             </div>
           </div>
@@ -532,7 +529,7 @@ export default function BillingPage() {
 
               {((lastPrintedOrder.orderType === "DINE_IN" && printerConfig?.kotDineIn) ||
                 (lastPrintedOrder.orderType === "DELIVERY" && printerConfig?.kotDelivery) ||
-                (lastPrintedOrder.orderType === "PICK_UP" && printerConfig?.kotPickUp)) && (
+                (lastPrintedOrder.orderType === "TAKEAWAY" && printerConfig?.kotPickUp)) && (
                 <div className="w-full border-t border-solid border-black pt-4 mt-6" style={{ pageBreakBefore: "always" }}>
                   <div className="text-center mb-3 pb-1 border-b border-solid border-black">
                     <h2 className="font-black text-2xl tracking-widest">KOT</h2>

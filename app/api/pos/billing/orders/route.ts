@@ -24,7 +24,8 @@ export async function POST(req: Request) {
     if (cart.length === 0) return NextResponse.json({ error: "Invalid Order Data" }, { status: 400 });
 
     // 🔥 COMPLIMENTARY PASSWORD SECURITY CHECK
-    if (paymentMode === "COMPLIMENTARY" || isComplementary) {
+    const isComp = paymentMode === "COMPLIMENTARY" || isComplementary === true;
+    if (isComp) {
       const dbOutlet = await prisma.outlet.findUnique({ where: { id: secureOutletId } });
       if (dbOutlet?.password !== compPassword) {
         return NextResponse.json({ error: "Invalid POS Login Password for Complimentary Bill!" }, { status: 403 });
@@ -32,9 +33,9 @@ export async function POST(req: Request) {
     }
 
     let customerId = null;
-    if (customerPhone && customerPhone.length === 10 && !isComplementary) {
+    if (customerPhone && customerPhone.length === 10 && !isComp) {
       let customer = await prisma.customer.findFirst({ where: { phone: customerPhone, tenantId: secureTenantId } });
-      const earnedPoints = Math.floor(totalAmount / 20);
+      const earnedPoints = Math.floor(parseFloat(totalAmount || "0") / 20);
 
       if (!customer) {
         customer = await prisma.customer.create({
@@ -52,37 +53,37 @@ export async function POST(req: Request) {
     const count = await prisma.order.count({ where: { outletId: secureOutletId } });
     const billNumber = 10000 + count + 1; 
 
-    // 🔥 Schema Enums mapped exactly (CASH, CARD, MIXED, COMPLIMENTARY)
+    // 🔥 Schema Enums mapped exactly & NaN Crash Prevention (|| "0")
     const newOrder = await prisma.order.create({
       data: {
         billNumber: billNumber, 
         outletId: secureOutletId,
         customerId, 
-        orderType,
+        orderType: orderType, // Must be exactly DINE_IN, TAKEAWAY, or DELIVERY
         status: "COMPLETED",
-        paymentMode: paymentMode, 
+        paymentMode: paymentMode, // CASH, CARD, MIXED, COMPLIMENTARY
         platform: "POS", 
         
-        subtotal: parseFloat(subtotal) || 0,
-        discountAmount: parseFloat(discount) || 0,
-        packingCharges: parseFloat(packingCharges) || 0,
-        deliveryCharges: parseFloat(deliveryCharges) || 0,
-        cgst: parseFloat(cgst) || 0,
-        sgst: parseFloat(sgst) || 0,
-        roundOff: parseFloat(roundOff) || 0,
-        totalAmount: isComplementary ? 0 : parseFloat(totalAmount),
+        subtotal: parseFloat(subtotal || "0"),
+        discountAmount: parseFloat(discount || "0"),
+        packingCharges: parseFloat(packingCharges || "0"),
+        deliveryCharges: parseFloat(deliveryCharges || "0"),
+        cgst: parseFloat(cgst || "0"),
+        sgst: parseFloat(sgst || "0"),
+        roundOff: parseFloat(roundOff || "0"),
+        totalAmount: isComp ? 0 : parseFloat(totalAmount || "0"),
         
-        partCash: parseFloat(partCash) || 0,
-        partCard: parseFloat(partCard) || 0,
-        isComplementary: isComplementary || false,
+        partCash: parseFloat(partCash || "0"),
+        partCard: parseFloat(partCard || "0"),
+        isComplementary: isComp,
         compReason: compReason || null,
         
         items: {
           create: cart.map((item: any) => ({
             menuItemId: item.id, 
             quantity: item.qty, 
-            unitPrice: item.price,
-            totalPrice: item.price * item.qty
+            unitPrice: parseFloat(item.price || "0"),
+            totalPrice: parseFloat(item.price || "0") * item.qty
           })),
         },
       },
@@ -91,6 +92,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, order: newOrder });
   } catch (error: any) {
     console.error("Order Save Error:", error);
-    return NextResponse.json({ error: "Order save failed in Database.", details: error.message }, { status: 500 });
+    return NextResponse.json({ error: `Database Error: ${error.message}` }, { status: 500 });
   }
 }
