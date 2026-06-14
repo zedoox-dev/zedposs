@@ -17,7 +17,7 @@ export default function MenuManagePage() {
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
 
   // Form State
-  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "" });
+  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "", hsnCode: "" });
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
 
@@ -125,20 +125,22 @@ export default function MenuManagePage() {
       return;
     }
 
-    const generatedItemId = Math.floor(1000 + Math.random() * 9000);
-
     const payload = {
       name: formData.name,
       finalPrice: formData.finalPrice,
       category: finalCategory,
-      imageUrl: formData.imageUrl
+      imageUrl: formData.imageUrl,
+      hsnCode: formData.hsnCode
     };
 
     const method = editingId ? "PUT" : "POST";
     
+    // Offline ID generation placeholder
+    const generatedItemId = Math.floor(10000 + Math.random() * 90000).toString();
+
     const bodyData = editingId 
       ? { id: editingId, ...payload } 
-      : { ...payload, id: `offline-${Date.now()}`, ItemId: generatedItemId };
+      : { ...payload, id: `offline-${Date.now()}` };
 
     if (!navigator.onLine) {
       const queue = JSON.parse(localStorage.getItem(`zapped_offline_menu_queue_${secureOutletId}`) || "[]");
@@ -150,11 +152,13 @@ export default function MenuManagePage() {
         price: parseFloat(payload.finalPrice), 
         outletId: secureOutletId,
         imageUrl: formData.imageUrl || null,
+        hsnCode: formData.hsnCode || null,
+        barcode: generatedItemId,
         isActive: true, 
         isDeleted: false 
       });
       
-      setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "" });
+      setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "" });
       setCustomCategoryName(""); setIsCustomCategory(false); setEditingId(null);
       fetchMenu();
       setIsSaving(false);
@@ -175,7 +179,7 @@ export default function MenuManagePage() {
           localStorage.setItem(`zapped_img_${data.item?.id || editingId}`, formData.imageUrl);
         }
         
-        setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "" });
+        setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "" });
         setCustomCategoryName("");
         setIsCustomCategory(false);
         setEditingId(null);
@@ -197,7 +201,8 @@ export default function MenuManagePage() {
       name: item.name,
       finalPrice: item.price.toString(),
       category: item.category,
-      imageUrl: item.imageUrl || localStorage.getItem(`zapped_img_${item.id}`) || ""
+      imageUrl: item.imageUrl || localStorage.getItem(`zapped_img_${item.id}`) || "",
+      hsnCode: item.hsnCode || ""
     });
   };
 
@@ -242,7 +247,7 @@ export default function MenuManagePage() {
       if (item.imageUrl) {
          localStorage.setItem(`zapped_img_${item.id}`, item.imageUrl);
       }
-      targetUrl = ""; // This sends an empty string, which the API converts to `null` in the DB
+      targetUrl = ""; 
     }
 
     try {
@@ -254,7 +259,8 @@ export default function MenuManagePage() {
           name: item.name,
           category: item.category,
           finalPrice: item.price,
-          imageUrl: targetUrl
+          imageUrl: targetUrl,
+          hsnCode: item.hsnCode
         })
       });
       if (res.ok) {
@@ -321,7 +327,13 @@ export default function MenuManagePage() {
               )}
             </div>
 
-            {/* 🔥 NEW IMAGE URL FIELD */}
+            {/* HSN CODE FIELD */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">HSN Code (Optional)</label>
+              <input type="text" placeholder="e.g., 210690" value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold" />
+            </div>
+
+            {/* IMAGE URL FIELD */}
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Image URL (Optional)</label>
               <div className="flex relative">
@@ -345,7 +357,7 @@ export default function MenuManagePage() {
 
             <div className="flex space-x-2 pt-2">
               {editingId && (
-                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: ""}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
+                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: ""}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
               )}
               <button disabled={isSaving} type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl flex justify-center items-center">
                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : editingId ? "Update Item" : "Add to Menu"}
@@ -383,14 +395,14 @@ export default function MenuManagePage() {
                     const gst = item.price - base;
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition-colors uppercase">
-                        <td className="p-4 font-mono font-bold text-slate-400 text-sm">#{item.ItemId || "----"}</td>
+                        {/* MAPS DIRECTLY TO DB BARCODE FOR 5 DIGIT ID */}
+                        <td className="p-4 font-mono font-bold text-slate-400 text-sm">#{item.barcode || "----"}</td>
                         <td className="p-4 font-black text-slate-900 text-base">{item.name}</td>
                         <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{item.category}</span></td>
                         <td className="p-4 font-mono text-sm">₹{base.toFixed(2)}</td>
                         <td className="p-4 font-mono text-xs text-slate-400">₹{gst.toFixed(2)}</td>
                         <td className="p-4 font-black text-slate-900 text-base">₹{item.price}</td>
                         
-                        {/* 🔥 IMAGE ON/OFF TOGGLE */}
                         <td className="p-4 text-center">
                           <label className="relative inline-flex items-center cursor-pointer" title="Toggle Dashboard Visibility">
                             <input 

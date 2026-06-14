@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
     const salesData: Record<string, { qty: number, revenue: number }> = {};
     orders.forEach(order => {
-      const isComp = order.paymentMode === "COMPLEMENTARY" || order.isComplementary;
+      const isComp = order.paymentMode === "COMPLIMENTARY" || order.isComplementary;
       order.items.forEach(item => {
         if (!salesData[item.menuItemId]) salesData[item.menuItemId] = { qty: 0, revenue: 0 };
         salesData[item.menuItemId].qty += item.quantity;
@@ -78,13 +78,12 @@ export async function GET(req: Request) {
       include: { rawMaterial: true } 
     });
 
-    // Add an alias 'finishedGoodId' for the frontend compatibility (since Schema uses menuItemId)
     const mappedRecipes = recipes.map(r => ({
       ...r,
       finishedGoodId: r.menuItemId
     }));
 
-    // 🔥 4. Production History
+    // 🔥 4. Production History (Added Raw Material Deduction Records for UI Print)
     const productionBatches = await prisma.productionBatch.findMany({
       where: { outletId: secureOutletId, date: dateQuery, isDeleted: false },
       include: { finishedGood: true, createdByUser: true },
@@ -93,10 +92,17 @@ export async function GET(req: Request) {
 
     const mappedBatches = productionBatches.map(b => {
       const menuMatch = b.batchNumber.match(/\[MENU:(.*?)\]/);
+      let rmDeductions = [];
+      try {
+        const rmMatch = b.batchNumber.match(/\[RM_LOG:(.*?)\]/);
+        if(rmMatch) rmDeductions = JSON.parse(rmMatch[1]);
+      } catch(e) {}
+
       return {
         ...b,
         mappedMenuItemId: menuMatch ? menuMatch[1] : b.finishedGoodId,
-        finishedGoodName: b.finishedGood?.itemName || "Unknown Item"
+        finishedGoodName: b.finishedGood?.itemName || "Unknown Item",
+        rawMaterialsLogged: rmDeductions
       };
     });
 
@@ -213,9 +219,23 @@ export async function POST(req: Request) {
           }
         }
 
-        // Guaranteed unique batch number
+        // Deduct raw material stock EXACTLY as provided by UI
+        const rmLogsForPrint = [];
+        for (const rm of actualMaterialsUsed) {
+          const netDeduction = parseFloat(rm.actualUsed || "0") + parseFloat(rm.rawWastage || "0");
+          if (netDeduction > 0) {
+            await tx.inventory.update({
+              where: { id: rm.rawMaterialId },
+              data: { stockLevel: { decrement: netDeduction } }
+            });
+            rmLogsForPrint.push({ id: rm.rawMaterialId, name: rm.name, unit: rm.unit, deducted: netDeduction });
+          }
+        }
+
+        // Guaranteed unique batch number with exact RM logs attached for ledger printing
         const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const structuredBatchNo = `PB-${Date.now().toString().slice(-6)}-${uniqueSuffix}[WASTE:${netWasted}][MENU:${menuItemId}]`;
+        const rmLogStr = JSON.stringify(rmLogsForPrint);
+        const structuredBatchNo = `PB-${Date.now().toString().slice(-6)}-${uniqueSuffix}[WASTE:${netWasted}][MENU:${menuItemId}][RM_LOG:${rmLogStr}]`;
 
         const batch = await tx.productionBatch.create({
           data: {
@@ -226,18 +246,6 @@ export async function POST(req: Request) {
             createdByUserId: dbUser.id 
           }
         });
-
-        // Deduct raw material stock accurately
-        for (const rm of actualMaterialsUsed) {
-          const netDeduction = parseFloat(rm.actualUsed || "0") + parseFloat(rm.rawWastage || "0");
-          if (netDeduction > 0) {
-            await tx.inventory.update({
-              where: { id: rm.rawMaterialId },
-              data: { stockLevel: { decrement: netDeduction } }
-            });
-            // Optional: You can create a StockLog record here for auditing
-          }
-        }
 
         return batch;
       });

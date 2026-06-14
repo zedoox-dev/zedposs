@@ -19,6 +19,7 @@ export default function ExpensesPage() {
 
   // Report Metrics
   const [cashCollected, setCashCollected] = useState(0);
+  const [lifetimeBalance, setLifetimeBalance] = useState(0); // 🔥 New state for lifetime balance
 
   // Forms Management States
   const [isSaving, setIsSaving] = useState(false);
@@ -117,6 +118,7 @@ export default function ExpensesPage() {
       if (expData.success) {
         setExpenses(expData.expenses || []);
         setCashCollected(expData.cashCollected || 0);
+        setLifetimeBalance(expData.lifetimeBalance || 0); // Set DB fetched exact lifetime cash
       } else {
         setExpenses(Array.isArray(expData) ? expData : []);
       }
@@ -323,7 +325,8 @@ export default function ExpensesPage() {
 
           {/* FINANCIAL DATA STATS */}
           <div className="flex flex-col xl:flex-row gap-4 mb-6">
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* GRID MOVED TO 4 COLUMNS TO INCLUDE LIFETIME CASH */}
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex flex-col justify-center">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Cash Collected</span>
                 <p className="text-xl font-mono font-black text-slate-900">₹{Number(cashCollected).toFixed(2)}</p>
@@ -335,6 +338,11 @@ export default function ExpensesPage() {
               <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-md flex flex-col justify-center">
                 <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block mb-1">Drawer Balance</span>
                 <p className="text-2xl font-mono font-black text-emerald-400">₹{Number(availableBalance).toFixed(2)}</p>
+              </div>
+              {/* 🔥 NEW LIFETIME BOX */}
+              <div className="bg-indigo-900 p-5 rounded-2xl border border-indigo-800 shadow-md flex flex-col justify-center">
+                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest block mb-1">Total Lifetime Cash</span>
+                <p className="text-2xl font-mono font-black text-indigo-400">₹{Number(lifetimeBalance).toFixed(2)}</p>
               </div>
             </div>
             

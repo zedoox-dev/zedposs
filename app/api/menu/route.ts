@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
     
     const body = await req.json();
-    const { name, finalPrice, category, imageUrl } = body;
+    const { name, finalPrice, category, imageUrl, hsnCode } = body;
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Check if the Category exists for this Tenant, if not Create it.
@@ -63,13 +63,18 @@ export async function POST(req: Request) {
         });
       }
 
-      // 2. Create the MenuItem using the categoryId
+      // 2. Generate 5-Digit Auto ID
+      const generatedItemId = Math.floor(10000 + Math.random() * 90000).toString();
+
+      // 3. Create the MenuItem using the categoryId
       const newItem = await tx.menuItem.create({
         data: {
           name,
           categoryId: categoryRecord.id, // Linked securely!
           price: parseFloat(finalPrice), 
           imageUrl: imageUrl === "" ? null : (imageUrl || null),
+          hsnCode: hsnCode === "" ? null : (hsnCode || null),
+          barcode: generatedItemId, // Saving 5-digit auto ID in DB
           tenantId: secureTenantId, 
           outletId: secureOutletId,
           isActive: true,
@@ -96,7 +101,7 @@ export async function PUT(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
 
     const body = await req.json();
-    const { id, name, finalPrice, category, imageUrl } = body;
+    const { id, name, finalPrice, category, imageUrl, hsnCode } = body;
 
     const existingItem = await prisma.menuItem.findUnique({ where: { id: id } });
     if (!existingItem || existingItem.outletId !== secureOutletId) {
@@ -121,7 +126,8 @@ export async function PUT(req: Request) {
           name,
           categoryId: categoryRecord.id,
           price: parseFloat(finalPrice),
-          imageUrl: imageUrl !== undefined ? (imageUrl === "" ? null : imageUrl) : existingItem.imageUrl
+          imageUrl: imageUrl !== undefined ? (imageUrl === "" ? null : imageUrl) : existingItem.imageUrl,
+          hsnCode: hsnCode !== undefined ? (hsnCode === "" ? null : hsnCode) : existingItem.hsnCode
         }
       });
     });

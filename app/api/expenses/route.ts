@@ -153,7 +153,7 @@ export async function GET(req: Request) {
 
     let calculatedCash = 0;
     
-    // 🔥 STRICT CASH CALCULATION (CASH OR PART/MIXED ONLY)
+    // 🔥 STRICT CASH CALCULATION (CASH OR PART/MIXED ONLY) FOR CURRENT FILTER
     orders.forEach(order => {
       if (order.paymentMode === "CASH") {
         calculatedCash += order.totalAmount;
@@ -162,6 +162,26 @@ export async function GET(req: Request) {
         calculatedCash += order.partCash;
       }
     });
+
+    // 🔥 LIFETIME CASH BALANCE CALCULATION (ALL TIME)
+    const lifetimeExpensesAgg = await prisma.expense.aggregate({
+      where: { outletId: secureOutletId, isDeleted: false },
+      _sum: { amount: true }
+    });
+
+    const lifetimeCashOrdersAgg = await prisma.order.aggregate({
+      where: { outletId: secureOutletId, isDeleted: false, status: "COMPLETED", paymentMode: "CASH" },
+      _sum: { totalAmount: true }
+    });
+
+    const lifetimeMixedOrdersAgg = await prisma.order.aggregate({
+      where: { outletId: secureOutletId, isDeleted: false, status: "COMPLETED", paymentMode: "MIXED" },
+      _sum: { partCash: true }
+    });
+
+    const totalLifetimeExpenses = lifetimeExpensesAgg._sum.amount || 0;
+    const totalLifetimeCash = (lifetimeCashOrdersAgg._sum.totalAmount || 0) + (lifetimeMixedOrdersAgg._sum.partCash || 0);
+    const lifetimeBalance = totalLifetimeCash - totalLifetimeExpenses;
 
     const totalCount = expenses.length;
     const mappedExpenses = expenses.map((exp, idx) => ({
@@ -176,7 +196,12 @@ export async function GET(req: Request) {
       proofUrl: exp.proofUrl || ""
     })).reverse(); 
 
-    return NextResponse.json({ success: true, expenses: mappedExpenses, cashCollected: calculatedCash });
+    return NextResponse.json({ 
+      success: true, 
+      expenses: mappedExpenses, 
+      cashCollected: calculatedCash,
+      lifetimeBalance: lifetimeBalance // Passed secure lifetime metric to UI
+    });
     
   } catch (error) {
     console.error("Expenses Fetch Error:", error);

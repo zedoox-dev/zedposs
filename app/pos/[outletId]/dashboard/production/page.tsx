@@ -109,7 +109,7 @@ export default function MegaProductionERP() {
         
         const sData: Record<string, { qty: number, revenue: number }> = {};
         localOrders.forEach(order => {
-          const isComp = order.paymentMode === "COMPLEMENTARY" || order.isComplementary;
+          const isComp = order.paymentMode === "COMPLIMENTARY" || order.isComplementary;
           order.items?.forEach((item: any) => {
             if (!sData[item.menuItemId]) sData[item.menuItemId] = { qty: 0, revenue: 0 };
             sData[item.menuItemId].qty += item.quantity;
@@ -318,7 +318,7 @@ export default function MegaProductionERP() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="p-2.5 border border-slate-200 rounded-xl font-black text-xs uppercase tracking-wider bg-white outline-none focus:border-indigo-500">
-                <option value="today">Today's Ledger</option><option value="yesterday">Yesterday's Ledger</option><option value="custom">Custom Range</option>
+                <option value="today">Today's Ledger</option><option value="yesterday">Yesterday's Ledger</option><option value="custom">Custom Range</option><option value="all_history">All Time History</option>
               </select>
               {dateFilter === "custom" && (
                 <div className="flex items-center gap-2 animate-in fade-in">
@@ -488,11 +488,15 @@ export default function MegaProductionERP() {
                 <div className="w-full lg:w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[650px]">
                   <div className="p-4 bg-slate-50 border-b border-slate-200"><h3 className="font-black text-slate-800 text-xs uppercase tracking-wider flex items-center"><History size={16} className="mr-2 text-slate-400"/> Active Shift Batches</h3></div>
                   <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                    {history.slice(0, 10).map((h, i) => {
+                    {history.slice(0, 50).map((h, i) => {
                       const waste = parseWastageFromBatchNo(h.batchNumber);
                       return (
                         <div key={i} className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex justify-between items-center">
-                          <div><span className="text-xs font-black text-slate-800 uppercase block">{h.finishedGoodName || "Item"}</span><span className="text-[10px] text-slate-500 font-bold">{h.batchNumber.split("[")[0]}</span></div>
+                          <div>
+                            <span className="text-xs font-black text-slate-800 uppercase block">{h.finishedGoodName || "Item"}</span>
+                            <span className="text-[9px] text-slate-500 font-bold block">{new Date(h.date).toLocaleString('en-IN', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</span>
+                            <span className="text-[8px] text-slate-400 font-bold">{h.batchNumber.split("[")[0]}</span>
+                          </div>
                           <div className="text-right">
                             <span className="text-base font-mono font-black text-indigo-600 block">+{h.quantityProduced} Serv.</span>
                             {waste > 0 && <span className="text-[9px] font-black bg-red-100 text-red-700 px-1.5 py-0.5 rounded uppercase">Wasted: {waste}</span>}
@@ -749,18 +753,23 @@ export default function MegaProductionERP() {
             {/* TAB 5: RECENT HISTORY PRINT */}
             {activeTab === "HISTORY" && (
               <table className="w-full text-[11px] mt-2 border-collapse">
-                <thead><tr className="border-b border-black text-left"><th>TIMESTAMP</th><th>ITEM NAME</th><th className="text-center">YIELD</th><th className="text-center">WASTE</th><th className="text-right">EFFICIENCY</th></tr></thead>
+                <thead><tr className="border-b border-black text-left"><th>TIMESTAMP</th><th>ITEM NAME</th><th className="text-center">YIELD</th><th className="text-center">WASTE</th><th className="text-right">RM DEDUCTIONS</th></tr></thead>
                 <tbody>
                   {history.map((h, i) => {
                     const waste = parseWastageFromBatchNo(h.batchNumber);
-                    const eff = (h.quantityProduced + waste) > 0 ? ((h.quantityProduced / (h.quantityProduced + waste)) * 100).toFixed(1) : "100.0";
                     return (
                       <tr key={i} className="border-b border-gray-200">
                         <td className="py-1">{new Date(h.date).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})}</td>
                         <td className="py-1 uppercase">{h.finishedGoodName || "Item"}</td>
                         <td className="py-1 text-center font-black">+{h.quantityProduced}</td>
-                        <td className="py-1 text-center text-red-600">{waste}</td>
-                        <td className="py-1 text-right font-black">{eff}%</td>
+                        <td className="py-1 text-center text-red-600">{waste > 0 ? waste : '-'}</td>
+                        <td className="py-1 text-right text-[8px] uppercase">
+                          {h.rawMaterialsLogged && h.rawMaterialsLogged.length > 0 ? (
+                            h.rawMaterialsLogged.map((rm:any, idx:number) => (
+                              <div key={idx}>{rm.name}: {rm.deducted} {rm.unit}</div>
+                            ))
+                          ) : "No RM Logs"}
+                        </td>
                       </tr>
                     );
                   })}

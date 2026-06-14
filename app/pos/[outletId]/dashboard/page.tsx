@@ -18,13 +18,11 @@ export default function BillingPage() {
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
 
   const [cart, setCart] = useState<any[]>([]);
-  // Changed "PICK_UP" to "TAKEAWAY" to strictly match DB Enum
   const [orderType, setOrderType] = useState("DINE_IN"); 
   const [tableNo, setTableNo] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
   
-  // Mixed = Part, Complimentary = Comp
   const [paymentMode, setPaymentMode] = useState("CASH"); 
   const [partCash, setPartCash] = useState("");
   const [partCard, setPartCard] = useState("");
@@ -250,7 +248,6 @@ export default function BillingPage() {
         if (actionType === "PRINT") setTimeout(() => { window.print(); }, 150);
         else if (actionType === "EBILL") dispatchEBills(data.order.billNumber, grandTotal, customerPhone, customerName);
         
-        // Fast Clear. Removed the popup.
         window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
       } else {
         alert(data.error || "Order Save Failed");
@@ -427,12 +424,12 @@ export default function BillingPage() {
             </div>
 
             <div className="p-3 bg-slate-50 border-t border-slate-200 shrink-0 space-y-2">
-              {/* 🔥 UI FIX 1: PERFECT CIRCLE BUTTONS */}
+              {/* 🔥 UI FIX 1: PERFECT CIRCLE BUTTONS (EVEN SMALLER w-12 h-12) */}
               <div className="grid grid-cols-4 gap-2 px-2">
-                {[ { id: "CASH", icon: <Banknote size={16}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={16}/>, label: "Card/UPI" }, { id: "MIXED", icon: <SplitSquareHorizontal size={16}/>, label: "Part" }, { id: "COMPLIMENTARY", icon: <Gift size={16}/>, label: "Comp" }].map(mode => (
-                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center w-16 h-16 mx-auto rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
+                {[ { id: "CASH", icon: <Banknote size={14}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={14}/>, label: "Card/UPI" }, { id: "MIXED", icon: <SplitSquareHorizontal size={14}/>, label: "Part" }, { id: "COMPLIMENTARY", icon: <Gift size={14}/>, label: "Comp" }].map(mode => (
+                  <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center w-12 h-12 mx-auto rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
                     <div className="mb-0.5">{mode.icon}</div>
-                    <span className="text-[8px] font-black uppercase leading-none">{mode.label}</span>
+                    <span className="text-[7px] font-black uppercase leading-none">{mode.label}</span>
                   </button>
                 ))}
               </div>
@@ -520,7 +517,8 @@ export default function BillingPage() {
               </div>
               
               <div className="w-full text-center font-bold text-[10px] pb-1 px-1 mt-1 border-b border-solid border-black">
-                PAY MODE: <span className="uppercase">{lastPrintedOrder.paymentMode}</span>
+                {/* 🔥 UI FIX: Print par "PART" dikhayega user ke liye, bhale DB mein "MIXED" ho */}
+                PAY MODE: <span className="uppercase">{lastPrintedOrder.paymentMode === 'MIXED' ? 'PART' : lastPrintedOrder.paymentMode === 'COMPLIMENTARY' ? 'COMP' : lastPrintedOrder.paymentMode}</span>
               </div>
               
               <div className="text-center font-bold w-full mt-3">

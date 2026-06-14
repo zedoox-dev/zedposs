@@ -16,13 +16,20 @@ export async function GET(req: Request) {
 
     const settings: any = out.generalSettings ? (typeof out.generalSettings === 'string' ? JSON.parse(out.generalSettings) : out.generalSettings) : {};
     
+    // Check if salt matches DB
     if (settings.qrPurchaseToken && settings.qrPurchaseToken !== urlToken) {
       return NextResponse.json({ expired: true });
     }
     
-    // Send inventory list for mobile dropdown
-    const inventory = await prisma.inventory.findMany({ where: { outletId: queryOutletId, isDeleted: false }, select: { id: true, itemName: true, unit: true } });
-    const vendors = await prisma.vendor.findMany({ where: { tenantId: out.tenantId, isDeleted: false }, select: { name: true } });
+    // Send inventory list for mobile dropdown (Strictly NO MENU ITEMS)
+    const inventory = await prisma.inventory.findMany({ 
+        where: { outletId: queryOutletId, isDeleted: false }, 
+        select: { id: true, itemName: true, unit: true } 
+    });
+    const vendors = await prisma.vendor.findMany({ 
+        where: { tenantId: out.tenantId, isDeleted: false }, 
+        select: { name: true } 
+    });
 
     return NextResponse.json({ success: true, outletName: out.name, inventory, vendors });
   }
@@ -41,7 +48,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 1. Fetch Inventory SKUs strictly for this outlet
+    // 1. Fetch Inventory SKUs strictly for this outlet (NO MENU ITEMS via DB model separation)
     const inventory = await prisma.inventory.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       orderBy: { itemName: 'asc' }
@@ -53,7 +60,6 @@ export async function GET(req: Request) {
       orderBy: { name: 'asc' }
     });
 
-    // Map `outstandingAmt` to `outstanding` for the frontend
     const mappedVendors = vendors.map(v => ({ ...v, outstanding: v.outstandingAmt }));
 
     // 3. Fetch Purchase Orders (GRN Logs) strictly for this outlet
@@ -63,8 +69,7 @@ export async function GET(req: Request) {
         vendor: true,
         items: { include: { inventory: true } } 
       },
-      orderBy: { date: 'desc' },
-      take: 200 
+      orderBy: { date: 'desc' } 
     });
 
     const purchaseLogs = purchases.flatMap(po => 
@@ -79,7 +84,8 @@ export async function GET(req: Request) {
         total: item.totalAmount,
         vendor: po.vendor?.name || "HQ / Unknown",
         paymentMode: po.paymentStatus === "UNPAID" ? "CREDIT" : "CASH", 
-        isUrgent: false // Can be mapped if added to schema
+        isUrgent: false,
+        doar: po.createdById ? "Authorized Staff" : "N/A" // Placeholder for DOAR
       }))
     );
 
@@ -124,7 +130,7 @@ export async function POST(req: Request) {
           outletId: secureOutletId,
           itemName: String(itemName).toUpperCase(),
           type: String(type) as any,
-          unit: String(unit),
+          unit: String(unit).toUpperCase(),
           stockLevel: parseFloat(stockLevel),
           minStock: parseFloat(minStock)
         }
@@ -195,22 +201,19 @@ export async function PUT(req: Request) {
 
     // 🔥 FULL PRISMA INTEGRATION FOR GRN (PURCHASE ENTRY)
     if (action === "ADD_PURCHASE") {
-      const { rate, qty, vendorName, invoiceNo, paymentMode, totalAmount } = purchaseData;
+      const { rate, qty, vendorName, invoiceNo, paymentMode, totalAmount, isUrgent } = purchaseData;
 
-      // Ensure IDOR safety
       const targetInventory = await prisma.inventory.findUnique({ where: { id: itemId } });
       if (!targetInventory || targetInventory.outletId !== secureOutletId) {
         return NextResponse.json({ error: "Unauthorized operation on SKU." }, { status: 403 });
       }
 
       const result = await prisma.$transaction(async (tx) => {
-        // 1. Increase Stock Level First
         const item = await tx.inventory.update({
           where: { id: itemId },
           data: { stockLevel: { increment: parseFloat(qty) } }
         });
 
-        // 2. Find or Create Vendor (HQ fallback)
         let targetVendor = await tx.vendor.findFirst({
           where: { tenantId: dbOutlet.tenantId, name: vendorName }
         });
@@ -221,7 +224,6 @@ export async function PUT(req: Request) {
           });
         }
 
-        // 3. Auto Increase Outstanding Debt if CREDIT
         if (paymentMode === "CREDIT" && targetVendor) {
           await tx.vendor.update({
             where: { id: targetVendor.id },
@@ -229,23 +231,23 @@ export async function PUT(req: Request) {
           });
         }
 
-        // 4. Create Official Purchase Order in DB
         const po = await tx.purchaseOrder.create({
           data: {
             outletId: secureOutletId,
-            vendorId: targetVendor?.id || (await tx.vendor.findFirst({where: {tenantId: dbOutlet.tenantId}}))!.id, // Failsafe
+            vendorId: targetVendor?.id || (await tx.vendor.findFirst({where: {tenantId: dbOutlet.tenantId}}))!.id, 
             invoiceNumber: invoiceNo || `GRN-${Date.now()}`,
             totalAmount: parseFloat(totalAmount),
-            netAmount: parseFloat(totalAmount), // Required by Schema
+            netAmount: parseFloat(totalAmount), 
             status: "RECEIVED", 
             paymentStatus: paymentMode === "CREDIT" ? "UNPAID" : "PAID",
             amountPaid: paymentMode === "CREDIT" ? 0 : parseFloat(totalAmount),
+            notes: isUrgent ? "URGENT" : "",
             items: {
               create: [{
                 inventoryId: itemId,
                 quantity: parseFloat(qty),
                 costPrice: parseFloat(rate),
-                totalAmount: parseFloat(qty) * parseFloat(rate) // Required by Schema
+                totalAmount: parseFloat(qty) * parseFloat(rate) 
               }]
             }
           }

@@ -95,11 +95,11 @@ export default function InventoryAndPurchaseERP() {
 
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
+      // Mobile Entry Overlay Trigger
       if (urlParams.get("view") === "purchase_mobile") {
         setIsMobileMode(true);
         const passedToken = urlParams.get("token");
         
-        // Mobile Auth verification against API
         fetch(`/api/inventory?formOnly=true&outletId=${outletId}&token=${passedToken}`)
           .then(res => res.json())
           .then(data => {
@@ -162,7 +162,6 @@ export default function InventoryAndPurchaseERP() {
     }
 
     try {
-      // 🔒 FETCH URL CLEANED (Backend pulls IDs from secure session token)
       const res = await fetch(`/api/inventory`);
       const data = await res.json();
       
@@ -171,10 +170,8 @@ export default function InventoryAndPurchaseERP() {
       setVendors(data.vendors?.map((v:any) => v.name) || []);
       setPurchaseLogs(data.purchaseLogs || []);
 
-      let prodUrl = `/api/production?date=${dateFilter}`;
-      if (dateFilter === "custom" && customStartDate && customEndDate) prodUrl += `&startDate=${customStartDate}&endDate=${customEndDate}`;
-      
-      const prodRes = await fetch(prodUrl);
+      // Pull Production Logs to calculate exact consumption
+      const prodRes = await fetch(`/api/production?date=all_history`);
       const prodData = await prodRes.json();
       if (prodData.success) {
         setRecipes(prodData.recipes || []);
@@ -238,7 +235,8 @@ export default function InventoryAndPurchaseERP() {
         vendorName: targetVendorName,
         invoiceNo: isHQ ? "HQ-TRANS" : purchaseRef,
         paymentMode: purchasePayment,
-        totalAmount: billTotal.toString()
+        totalAmount: billTotal.toString(),
+        isUrgent
       }
     };
 
@@ -285,15 +283,25 @@ export default function InventoryAndPurchaseERP() {
   };
 
   const handleDeleteSKU = async (itemId: string, itemName: string) => {
-    const adminPasswordInput = prompt(`⚠️ SECURE RECONCILIATION AUTHORIZATION KEY REQUIRED!\nAre you sure you want to delete "${itemName}" permanently?\nEnter your active POS Login Password to authorize removal:`);
-    const realTerminalSavedPass = localStorage.getItem("zapped_pos_login_password") || "RamKesarAdmin786";
-    if (adminPasswordInput === realTerminalSavedPass) {
-      setLoading(true);
-      setInventory(inventory.filter(i => i.id !== itemId));
-      alert("🟢 SKU Removed from terminal configurations cache successfully!");
+    if (!securityPasswordInput) return alert("PIN Required");
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/inventory?id=${itemId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        alert("🟢 SKU Removed from terminal configurations cache successfully!");
+        setShowDeleteAuthModal(false);
+        setSecurityPasswordInput("");
+        fetchInventoryAndProduction();
+      } else {
+         alert("❌ ACCESS DENIED! Invalid Terminal Security Authorization Credentials provided.");
+      }
+    } catch (e) {
+      alert("Error deleting SKU.");
+    } finally {
       setLoading(false);
-    } else if (adminPasswordInput !== null) {
-      alert("❌ ACCESS DENIED! Invalid Terminal Security Authorization Credentials provided.");
     }
   };
 
@@ -323,6 +331,8 @@ export default function InventoryAndPurchaseERP() {
   };
 
   const isLogWithinDate = (dateStr: string) => {
+    if (dateFilter === "all_history") return true; 
+
     const logDate = new Date(dateStr);
     const today = new Date();
     if (dateFilter === "today") return logDate.toDateString() === today.toDateString();
@@ -340,29 +350,23 @@ export default function InventoryAndPurchaseERP() {
 
   const filteredPurchaseLogs = purchaseLogs.filter(log => isLogWithinDate(log.date));
 
-  const parseWastageFromBatchNo = (batchStr: string) => {
-    if (!batchStr) return 0;
-    const match = batchStr.match(/\[WASTE:(.*?)\]/);
-    return match ? parseFloat(match[1]) : 0;
-  };
-
-  const parseMenuIdFromBatchNo = (batchStr: string) => {
-    if (!batchStr) return "";
-    const match = batchStr.match(/\[MENU:(.*?)\]/);
-    return match ? match[1] : "";
-  };
-
+  // Consumption Logic based strictly on BOM
   const calculateConsumedQuantity = (itemName: string) => {
     let totalConsumedVolume = 0;
     const currentInventoryAsset = inventory.find(i => i.itemName === itemName);
     if (!currentInventoryAsset) return 0;
 
     history.forEach(batch => {
-      const realMenuItemId = parseMenuIdFromBatchNo(batch.batchNumber) || batch.finishedGoodId;
+      // Find what finished good this batch produced
+      const realMenuItemId = batch.mappedMenuItemId || batch.finishedGoodId;
+      // Find recipes matching this finished good
       const linkedBOMRecipeItems = recipes.filter(r => r.finishedGoodId === realMenuItemId);
+      
       linkedBOMRecipeItems.forEach(recipe => {
         if (recipe.rawMaterialId === currentInventoryAsset.id || recipe.rawMaterial?.itemName === itemName) {
-          const totalProducedYield = batch.quantityProduced + parseWastageFromBatchNo(batch.batchNumber);
+          // Multiply recipe requirement * total yield (including waste)
+          const batchWaste = batch.batchNumber.match(/\[WASTE:(.*?)\]/) ? parseFloat(batch.batchNumber.match(/\[WASTE:(.*?)\]/)[1]) : 0;
+          const totalProducedYield = batch.quantityProduced + batchWaste;
           totalConsumedVolume += (recipe.quantityUsed * totalProducedYield);
         }
       });
@@ -412,11 +416,11 @@ export default function InventoryAndPurchaseERP() {
     ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] 
     : "NONE";
 
-  // 🔥 PUBLIC MOBILE ENTRY FORM (QR SCANNED)
+  // 🔥 PUBLIC MOBILE ENTRY FORM OVERLAY (Bypassing Layouts via Full Screen Fixed)
   if (isMobileMode) {
     if (mobileAccessDenied) {
       return (
-        <div className="min-h-[100dvh] bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+        <div className="fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
           <ShieldAlert size={80} className="text-red-500 mb-6 animate-pulse"/>
           <h1 className="text-2xl font-black text-white uppercase tracking-widest mb-2">Access Token Expired</h1>
           <p className="text-slate-400 font-bold text-sm">Security matrix has invalidated this QR session. Please request the Manager to regenerate the QR code on the desktop terminal.</p>
@@ -424,79 +428,85 @@ export default function InventoryAndPurchaseERP() {
       );
     }
     
-    if (loading) return <div className="h-screen bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-white" size={40}/></div>;
+    if (loading) return <div className="fixed inset-0 z-[99999] bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-white" size={40}/></div>;
 
     return (
-      <div className="min-h-[100dvh] w-full overflow-y-auto bg-slate-100 p-4 font-sans pb-40">
-        <div className="bg-white rounded-3xl p-5 shadow-xl border border-slate-200 mb-20">
-          <div className="text-center mb-6 border-b border-slate-100 pb-4">
-            <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight flex justify-center items-center"><Truck size={20} className="mr-2 text-indigo-600"/> {mobileOutletName} GRN</h2>
-            <p className="text-[10px] text-slate-400 font-bold mt-1 tracking-widest">SECURE MOBILE PURCHASE GATEWAY</p>
+      <div className="fixed inset-0 z-[99999] w-full overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
+        <div className="w-full max-w-md my-auto">
+          {/* Outlet Name Banner */}
+          <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-indigo-500 text-center shadow-lg mt-4">
+            <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center">
+              <Truck size={18} className="mr-2 text-indigo-500"/> {mobileOutletName || "ZAPPED OUTLET"}
+            </h1>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Mobile GRN Sync Portal</p>
           </div>
-          <form onSubmit={submitPurchaseEntry} className="space-y-4">
-            <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex justify-between items-center mb-2">
-              <span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider">Central HQ Supply Route</span>
-              <input type="checkbox" checked={isHQ} onChange={(e) => setIsHQ(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Received SKU</label>
-              <select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
-                <option value="" disabled>Choose material...</option>
-                {inventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+
+          <div className="bg-white rounded-b-3xl p-6 shadow-2xl animate-in fade-in zoom-in border border-slate-200">
+            <form onSubmit={submitPurchaseEntry} className="space-y-4">
+              <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex justify-between items-center mb-2">
+                <span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider">Central HQ Supply Route</span>
+                <input type="checkbox" checked={isHQ} onChange={(e) => setIsHQ(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
+              </div>
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Received Qty</label>
-                <div className="flex items-center">
-                  <input required type="number" step="any" min="0.01" placeholder="0" value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} className="w-full p-3 border border-slate-200 rounded-l-xl text-lg font-mono font-black outline-none focus:border-indigo-500" />
-                  <span className="bg-slate-100 border border-l-0 border-slate-200 p-3 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? inventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Received SKU</label>
+                <select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
+                  <option value="" disabled>Choose material...</option>
+                  {inventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Received Qty</label>
+                  <div className="flex items-center">
+                    <input required type="number" step="any" min="0.01" placeholder="0" value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} className="w-full p-3 border border-slate-200 rounded-l-xl text-lg font-mono font-black outline-none focus:border-indigo-500" />
+                    <span className="bg-slate-100 border border-l-0 border-slate-200 p-3 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? inventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span>
+                  </div>
                 </div>
+                {!isHQ && (
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Rate / Unit (₹)</label>
+                    <input required type="number" step="any" min="0" placeholder="0.00" value={purchaseRate} onChange={(e) => setPurchaseRate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-lg font-mono font-black text-emerald-600 outline-none focus:border-indigo-500" />
+                  </div>
+                )}
               </div>
               {!isHQ && (
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Rate / Unit (₹)</label>
-                  <input required type="number" step="any" min="0" placeholder="0.00" value={purchaseRate} onChange={(e) => setPurchaseRate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-lg font-mono font-black text-emerald-600 outline-none focus:border-indigo-500" />
-                </div>
-              )}
-            </div>
-            {!isHQ && (
-              <>
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Supplier / Vendor</label>
-                  <select required value={purchaseVendor} onChange={(e) => setPurchaseVendor(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
-                    <option value="" disabled>Select Vendor...</option>
-                    {vendors.map(v => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
+                <>
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Payment Mode</label>
-                    <select value={purchasePayment} onChange={(e) => setPurchasePayment(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none focus:border-indigo-500">
-                      <option value="CASH">Cash Paid</option><option value="UPI">UPI / Online</option><option value="CREDIT">On Credit</option><option value="CHEQUE">Bank Cheque</option>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Supplier / Vendor</label>
+                    <select required value={purchaseVendor} onChange={(e) => setPurchaseVendor(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
+                      <option value="" disabled>Select Vendor...</option>
+                      {vendors.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Ref / Bill No.</label>
-                    <input type="text" placeholder="Invoice ID" value={purchaseRef} onChange={(e) => setPurchaseRef(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Payment Mode</label>
+                      <select value={purchasePayment} onChange={(e) => setPurchasePayment(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none focus:border-indigo-500">
+                        <option value="CASH">Cash Paid</option><option value="UPI">UPI / Online</option><option value="CREDIT">On Credit</option><option value="CHEQUE">Bank Cheque</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Ref / Bill No.</label>
+                      <input type="text" placeholder="Invoice ID" value={purchaseRef} onChange={(e) => setPurchaseRef(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500" />
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
-            <div>
-              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Operator Name (Doar)</label>
-              <select required value={purchaseDoar} onChange={(e) => setPurchaseDoar(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-indigo-500 shadow-sm outline-none">
-                <option value="" disabled>Choose Personnel...</option>
-                {staffDoars.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            {!isHQ && parseFloat(purchaseQty)>0 && parseFloat(purchaseRate)>0 && (
-              <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center"><span className="text-[10px] uppercase font-black text-emerald-600 block mb-1">Total Bill Value</span><span className="text-2xl font-mono font-black text-emerald-700">₹{((parseFloat(purchaseQty) * parseFloat(purchaseRate)) * (1 + parseFloat(purchaseGst)/100)).toFixed(2)}</span></div>
-            )}
-            <button disabled={isSaving} type="submit" className="w-full bg-slate-900 text-white font-black uppercase tracking-widest py-4 rounded-xl text-xs flex justify-center items-center shadow-xl active:scale-95 transition-transform mt-6 mb-10">
-              {isSaving ? <Loader2 className="animate-spin" size={18}/> : "Submit Secure Mobile GRN"}
-            </button>
-          </form>
+                </>
+              )}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Operator Name (Doar)</label>
+                <select required value={purchaseDoar} onChange={(e) => setPurchaseDoar(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-indigo-500 shadow-sm outline-none">
+                  <option value="" disabled>Choose Personnel...</option>
+                  {staffDoars.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              {!isHQ && parseFloat(purchaseQty)>0 && parseFloat(purchaseRate)>0 && (
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center"><span className="text-[10px] uppercase font-black text-emerald-600 block mb-1">Total Bill Value</span><span className="text-2xl font-mono font-black text-emerald-700">₹{((parseFloat(purchaseQty) * parseFloat(purchaseRate)) * (1 + parseFloat(purchaseGst)/100)).toFixed(2)}</span></div>
+              )}
+              <button disabled={isSaving} type="submit" className="w-full bg-slate-900 text-white font-black uppercase tracking-widest py-4 rounded-xl text-xs flex justify-center items-center shadow-xl active:scale-95 transition-transform mt-6 mb-10">
+                {isSaving ? <Loader2 className="animate-spin" size={18}/> : "Submit Secure Mobile GRN"}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     );
@@ -531,6 +541,8 @@ export default function InventoryAndPurchaseERP() {
               {/* GLOBAL DATE FILTERS CONTROL BAR */}
               <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="p-2 border border-slate-200 rounded-lg font-black text-[10px] uppercase tracking-wider bg-white outline-none focus:border-indigo-500 shadow-sm mr-2">
                 <option value="today">Today's Ledger</option><option value="yesterday">Yesterday's Ledger</option><option value="custom">Custom Range</option>
+                {/* 🔥 NEW ALL HISTORY FILTER FOR PURCHASE LOGS & ANALYTICS */}
+                <option value="all_history">Till Now Accounts</option>
               </select>
               {dateFilter === "custom" && (
                 <div className="flex items-center gap-1 mr-2">
@@ -550,7 +562,7 @@ export default function InventoryAndPurchaseERP() {
               {/* Contextual Action Buttons */}
               {activeView === "INVENTORY" && (
                 <>
-                  <button onClick={fetchInventoryAndProduction} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg"><RefreshCcw size={16} /></button>
+                  <button onClick={fetchInventoryAndProduction} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg"><RefreshCcw size={16} className={loading ? "animate-spin" : ""} /></button>
                   <button onClick={handlePrint} className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-wider flex items-center shadow-xs"><Printer size={14} className="mr-1.5" /> Print Ledger</button>
                   <button onClick={() => setShowAddModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-wider flex items-center shadow-md shadow-blue-500/20"><Plus size={14} className="mr-1.5" /> New SKU</button>
                 </>
@@ -860,7 +872,7 @@ export default function InventoryAndPurchaseERP() {
         {/* ================= MODALS CLUSTER SYSTEM ================= */}
         
         {showAddModal && (
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
             <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-100">
               <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                 <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center"><Plus size={20} className="mr-2 text-blue-600"/> Add Inventory SKU</h2>

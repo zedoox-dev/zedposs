@@ -226,7 +226,7 @@ export default function IntegrationHubPage() {
       <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden font-sans">
         
         {/* ------------------- DESKTOP HEADER & NAVIGATION ------------------- */}
-        <div className="p-6 pb-0 bg-white border-b border-slate-200 shrink-0">
+        <div className="p-6 pb-0 bg-white border-b border-slate-200 shrink-0 z-10 relative shadow-sm">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <div>
               <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center">
@@ -237,10 +237,10 @@ export default function IntegrationHubPage() {
             </div>
             
             <div className="flex flex-wrap items-center gap-2">
-              <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 mr-2">
-                <button onClick={()=>setActiveTab("CHANNELS")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeTab==='CHANNELS' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>API Channels</button>
-                <button onClick={()=>setActiveTab("MENU_MAPPING")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeTab==='MENU_MAPPING' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Catalog Matrix</button>
-                <button onClick={()=>setActiveTab("WEBHOOK_LOGS")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeTab==='WEBHOOK_LOGS' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Traffic Logs</button>
+              <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 mr-2 overflow-x-auto max-w-full">
+                <button onClick={()=>setActiveTab("CHANNELS")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${activeTab==='CHANNELS' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>API Channels</button>
+                <button onClick={()=>setActiveTab("MENU_MAPPING")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${activeTab==='MENU_MAPPING' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Catalog Matrix</button>
+                <button onClick={()=>setActiveTab("WEBHOOK_LOGS")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${activeTab==='WEBHOOK_LOGS' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Traffic Logs</button>
               </div>
               <button onClick={loadDashboardData} disabled={isLoading || !isOnline} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors mr-2">
                  <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
@@ -268,7 +268,7 @@ export default function IntegrationHubPage() {
           </div>
         </div>
 
-        <div className="flex-1 p-6 overflow-hidden flex flex-col">
+        <div className="flex-1 p-6 overflow-hidden flex flex-col relative z-0">
           
           {/* ================= TAB 1: API CHANNELS & PRO STORE CONTROLS ================= */}
           {activeTab === "CHANNELS" && (
@@ -369,7 +369,7 @@ export default function IntegrationHubPage() {
 
           {/* ================= TAB 2: MENU MAPPING MATRIX (Ultra Wide) ================= */}
           {activeTab === "MENU_MAPPING" && (
-            <div className="flex flex-col h-full animate-in fade-in duration-200 overflow-hidden">
+            <div className="flex flex-col h-full animate-in fade-in duration-200 overflow-hidden pb-10">
               <div className="bg-slate-900 rounded-t-2xl p-4 flex justify-between items-center shrink-0">
                 <div>
                   <h3 className="text-white font-black text-sm uppercase tracking-wider flex items-center"><LinkIcon size={16} className="mr-2 text-indigo-400"/> Master Catalog Mapping & Pricing DB</h3>
@@ -388,8 +388,8 @@ export default function IntegrationHubPage() {
                     <p className="text-xs mt-1">Please ensure MENU items exist in the central POS inventory.</p>
                   </div>
                 ) : (
-                  <div className="overflow-y-auto overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left border-collapse min-w-[1800px]">
+                  <div className="overflow-y-auto overflow-x-auto custom-scrollbar flex-1 pb-4">
+                    <table className="w-full text-left border-collapse min-w-[1800px] mb-4">
                       <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200 shadow-sm">
                         <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                           <th className="p-4 w-72 bg-slate-800 text-white border-r border-slate-700">POS Base Master Item</th>
@@ -467,7 +467,7 @@ export default function IntegrationHubPage() {
 
           {/* ================= TAB 3: LIVE WEBHOOK LOGS ================= */}
           {activeTab === "WEBHOOK_LOGS" && (
-            <div className="flex-1 bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col animate-in fade-in duration-200">
+            <div className="flex-1 bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col animate-in fade-in duration-200 pb-10">
               <div className="p-5 bg-slate-950 flex justify-between items-center border-b border-slate-800 shrink-0">
                 <h3 className="font-black text-white text-sm uppercase tracking-widest flex items-center"><Activity size={18} className="mr-2 text-emerald-400 animate-pulse"/> API Traffic Terminal DB</h3>
                 <div className="flex items-center">
@@ -483,7 +483,7 @@ export default function IntegrationHubPage() {
                     <p className="font-black uppercase tracking-widest text-xs">No active webhook logs in DB.</p>
                   </div>
                 ) : (
-                  <div className="space-y-3 font-mono">
+                  <div className="space-y-3 font-mono pb-8">
                     {webhookLogs.map((log, index) => (
                       <div key={index} className="bg-slate-800/50 border border-slate-700 p-4 rounded-xl flex items-start">
                         <div className="mr-4 mt-1">
