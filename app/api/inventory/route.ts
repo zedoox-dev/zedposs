@@ -16,18 +16,17 @@ export async function GET(req: Request) {
 
     const settings: any = out.generalSettings ? (typeof out.generalSettings === 'string' ? JSON.parse(out.generalSettings) : out.generalSettings) : {};
     
-    // Check if salt matches DB
     if (settings.qrPurchaseToken && settings.qrPurchaseToken !== urlToken) {
       return NextResponse.json({ expired: true });
     }
     
-    // Send inventory list for mobile dropdown (Strictly NO MENU ITEMS)
     const inventory = await prisma.inventory.findMany({ 
-        where: { outletId: queryOutletId, isDeleted: false }, 
+        where: { outletId: queryOutletId, isDeleted: false, type: { not: "FINISHED_GOOD" } }, 
         select: { id: true, itemName: true, unit: true } 
     });
+    // 🔥 FIX: Fetching Vendors Outlet-Wise using tenantId field as a secure wrapper
     const vendors = await prisma.vendor.findMany({ 
-        where: { tenantId: out.tenantId, isDeleted: false }, 
+        where: { tenantId: queryOutletId, isDeleted: false }, 
         select: { name: true } 
     });
 
@@ -41,28 +40,25 @@ export async function GET(req: Request) {
   }
 
   const secureOutletId = (session.user as any).outletId;
-  const secureTenantId = (session.user as any).tenantId;
 
-  if (!secureOutletId || !secureTenantId) {
+  if (!secureOutletId) {
     return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
   }
 
   try {
-    // 1. Fetch Inventory SKUs strictly for this outlet (NO MENU ITEMS via DB model separation)
     const inventory = await prisma.inventory.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       orderBy: { itemName: 'asc' }
     });
 
-    // 2. Fetch Vendors strictly for this tenant
+    // 🔥 FIX: Fetch Vendors strictly for this OUTLET (Outlet-Wise Isolation)
     const vendors = await prisma.vendor.findMany({
-      where: { tenantId: secureTenantId, isDeleted: false },
+      where: { tenantId: secureOutletId, isDeleted: false },
       orderBy: { name: 'asc' }
     });
 
     const mappedVendors = vendors.map(v => ({ ...v, outstanding: v.outstandingAmt }));
 
-    // 3. Fetch Purchase Orders (GRN Logs) strictly for this outlet
     const purchases = await prisma.purchaseOrder.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       include: {
@@ -70,7 +66,7 @@ export async function GET(req: Request) {
         items: { include: { inventory: true } } 
       },
       orderBy: { date: 'desc' },
-      take: 200 
+      take: 500 
     });
 
     const purchaseLogs = purchases.flatMap(po => 
@@ -79,14 +75,15 @@ export async function GET(req: Request) {
         date: po.date,
         poNumber: po.invoiceNumber || "N/A",
         itemName: item.inventory?.itemName || "Unknown",
+        inventoryId: item.inventoryId, // Used for exact inward mapping
         unit: item.inventory?.unit || "UNIT",
         qty: item.quantity,
         rate: item.costPrice,
         total: item.totalAmount,
         vendor: po.vendor?.name || "HQ / Unknown",
         paymentMode: po.paymentStatus === "UNPAID" ? "CREDIT" : "CASH", 
-        isUrgent: false,
-        doar: po.createdById ? "Authorized Staff" : "N/A" // Placeholder for DOAR
+        isUrgent: po.notes === "URGENT",
+        doar: po.createdById ? "Authorized Staff" : "N/A" 
       }))
     );
 
@@ -101,7 +98,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, itemName, type, unit, stockLevel, minStock, vendorData, newToken, outletId } = body;
 
-    // 🟢 REGENERATE MOBILE GRN TOKEN
     if (action === "REGENERATE_TOKEN") {
       const session = await getServerSession(authOptions);
       if (!session || !session.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -122,9 +118,7 @@ export async function POST(req: Request) {
     if (!session || !session.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
     const secureOutletId = (session.user as any).outletId;
-    const secureTenantId = (session.user as any).tenantId;
 
-    // ACTION: ADD NEW INVENTORY SKU
     if (action === "ADD_SKU") {
       const item = await prisma.inventory.create({
         data: {
@@ -139,15 +133,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, item });
     }
 
-    // ACTION: ADD NEW VENDOR
     if (action === "ADD_VENDOR") {
       let creditDays = 0;
       if (vendorData.terms === "NET_15") creditDays = 15;
       else if (vendorData.terms === "NET_30") creditDays = 30;
 
+      // 🔥 FIX: Save Vendor mapped strictly to Outlet ID
       const newVendor = await prisma.vendor.create({
         data: {
-          tenantId: secureTenantId,
+          tenantId: secureOutletId, // Hacked tenantId to lock vendor per outlet
           name: String(vendorData.name).toUpperCase(),
           contactPerson: vendorData.contactPerson,
           phone: vendorData.phone,
@@ -183,7 +177,6 @@ export async function PUT(req: Request) {
     const dbOutlet = await prisma.outlet.findUnique({ where: { id: secureOutletId } });
     if (!dbOutlet) return NextResponse.json({ error: "Invalid Outlet." }, { status: 400 });
 
-    // Verify Mobile Token
     if (isMobileEntry) {
       const settings: any = dbOutlet.generalSettings ? (typeof dbOutlet.generalSettings === 'string' ? JSON.parse(dbOutlet.generalSettings) : dbOutlet.generalSettings) : {};
       if (settings.qrPurchaseToken !== token) {
@@ -191,7 +184,6 @@ export async function PUT(req: Request) {
       }
     }
 
-    // 💰 ACTION: SETTLE VENDOR DUES
     if (action === "PAY_VENDOR_DUE" && session?.user) {
       const updatedVendor = await prisma.vendor.update({
         where: { id: vendorId },
@@ -200,7 +192,6 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: true, vendor: updatedVendor });
     }
 
-    // 🔥 FULL PRISMA INTEGRATION FOR GRN (PURCHASE ENTRY)
     if (action === "ADD_PURCHASE") {
       const { rate, qty, vendorName, invoiceNo, paymentMode, totalAmount, isUrgent } = purchaseData;
 
@@ -215,13 +206,14 @@ export async function PUT(req: Request) {
           data: { stockLevel: { increment: parseFloat(qty) } }
         });
 
+        // Search Vendor per Outlet
         let targetVendor = await tx.vendor.findFirst({
-          where: { tenantId: dbOutlet.tenantId, name: vendorName }
+          where: { tenantId: secureOutletId, name: vendorName }
         });
 
         if (!targetVendor && vendorName !== "HQ") {
           targetVendor = await tx.vendor.create({
-            data: { tenantId: dbOutlet.tenantId, name: vendorName, phone: "N/A" }
+            data: { tenantId: secureOutletId, name: vendorName, phone: "N/A" }
           });
         }
 
@@ -235,7 +227,7 @@ export async function PUT(req: Request) {
         const po = await tx.purchaseOrder.create({
           data: {
             outletId: secureOutletId,
-            vendorId: targetVendor?.id || (await tx.vendor.findFirst({where: {tenantId: dbOutlet.tenantId}}))!.id, 
+            vendorId: targetVendor?.id || (await tx.vendor.findFirst({where: {tenantId: secureOutletId}}))?.id || "TEMP", 
             invoiceNumber: invoiceNo || `GRN-${Date.now()}`,
             totalAmount: parseFloat(totalAmount),
             netAmount: parseFloat(totalAmount), 
@@ -264,5 +256,32 @@ export async function PUT(req: Request) {
   } catch (error: any) {
     console.error("Purchase Error:", error);
     return NextResponse.json({ error: "Update Error", details: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    
+    const secureOutletId = (session.user as any).outletId;
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+
+    const existingItem = await prisma.inventory.findUnique({ where: { id: id } });
+    if (!existingItem || existingItem.outletId !== secureOutletId) {
+       return NextResponse.json({ error: "Unauthorized deletion attempt blocked." }, { status: 403 });
+    }
+
+    await prisma.inventory.update({
+      where: { id: id },
+      data: { isDeleted: true }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: "Secure delete failed" }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Package, Plus, AlertCircle, Loader2, X, Scale, Search, Filter, Printer, Layers, RefreshCcw, CheckCircle2, AlertTriangle, ArrowRightLeft, Building2, Truck, QrCode, Lock, ShieldAlert, FileSpreadsheet, Calculator, History, IndianRupee, Tag, UserCheck, CreditCard, Upload, FileText, Star, Activity, LineChart, PieChart, Coins, Trash2, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Package, Plus, AlertCircle, Loader2, X, Scale, Search, Filter, Printer, Layers, RefreshCcw, CheckCircle2, AlertTriangle, ArrowRightLeft, Building2, Truck, QrCode, Lock, ShieldAlert, FileSpreadsheet, Calculator, History, IndianRupee, Tag, UserCheck, CreditCard, Upload, FileText, Star, Activity, LineChart, PieChart, Coins, Trash2, LockKeyhole, ShieldCheck, Soup } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
@@ -10,9 +10,9 @@ export default function InventoryAndPurchaseERP() {
   const outletId = params.outletId as string;
   const { data: session } = useSession();
 
-  // --- Core States ---
   const [isMounted, setIsMounted] = useState(false);
-  const [activeView, setActiveView] = useState<"INVENTORY" | "PURCHASE" | "VENDORS" | "PURCHASE_ANALYTICS">("INVENTORY");
+  // 🔥 Added PRODUCED Tab
+  const [activeView, setActiveView] = useState<"INVENTORY" | "PRODUCED" | "PURCHASE" | "VENDORS" | "PURCHASE_ANALYTICS">("INVENTORY");
   const [inventory, setInventory] = useState<any[]>([]);
   const [recipes, setRecipes] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
@@ -20,12 +20,10 @@ export default function InventoryAndPurchaseERP() {
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
   const [printerConfig, setPrinterConfig] = useState<any>({ printerSize: "80mm", headerName: "RAMKESAR POS" });
 
-  // --- Date Filters ---
   const [dateFilter, setDateFilter] = useState("today"); 
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
 
-  // --- Inventory Filters & Modals ---
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [stockLedgerView, setStockLedgerView] = useState<"LIVE" | "OPENING" | "INWARD" | "CONSUMED" | "CLOSING">("LIVE");
@@ -44,7 +42,6 @@ export default function InventoryAndPurchaseERP() {
   const [deleteItemTarget, setDeleteItemTarget] = useState<any>(null);
   const [securityPasswordInput, setSecurityPasswordInput] = useState("");
 
-  // --- Purchase Module States ---
   const [purchaseItem, setPurchaseItem] = useState("");
   const [purchaseQty, setPurchaseQty] = useState("");
   const [purchaseRate, setPurchaseRate] = useState("");
@@ -129,9 +126,7 @@ export default function InventoryAndPurchaseERP() {
     }
   }, [session, outletId, dateFilter, customStartDate, customEndDate, isOnline, isMobileMode]);
 
-  const triggerOfflineQueueSync = async () => {
-    console.log("Syncing offline cache logic running...");
-  };
+  const triggerOfflineQueueSync = async () => {};
 
   const generateOrLoadQRToken = async (forceNew = false) => {
     if (typeof window === "undefined") return;
@@ -141,7 +136,6 @@ export default function InventoryAndPurchaseERP() {
       token = Math.random().toString(36).substring(2, 15);
       localStorage.setItem(`zapped_qr_token_${outletId}`, token);
       
-      // Update Backend to expire old links instantly
       await fetch("/api/inventory", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "REGENERATE_TOKEN", newToken: token, outletId })
@@ -170,7 +164,6 @@ export default function InventoryAndPurchaseERP() {
       setVendors(data.vendors?.map((v:any) => v.name) || []);
       setPurchaseLogs(data.purchaseLogs || []);
 
-      // Pull Production Logs to calculate exact consumption
       const prodRes = await fetch(`/api/production?date=all_history`);
       const prodData = await prodRes.json();
       if (prodData.success) {
@@ -350,32 +343,26 @@ export default function InventoryAndPurchaseERP() {
 
   const filteredPurchaseLogs = purchaseLogs.filter(log => isLogWithinDate(log.date));
 
-  // Consumption Logic based strictly on BOM
-  const calculateConsumedQuantity = (itemName: string) => {
+  // 🔥 1. EXACT CONSUMPTION MATH USING [RM_LOG] FROM DB
+  const calculateConsumedQuantity = (inventoryId: string) => {
     let totalConsumedVolume = 0;
-    const currentInventoryAsset = inventory.find(i => i.itemName === itemName);
-    if (!currentInventoryAsset) return 0;
-
     history.forEach(batch => {
-      // Find what finished good this batch produced
-      const realMenuItemId = batch.mappedMenuItemId || batch.finishedGoodId;
-      // Find recipes matching this finished good
-      const linkedBOMRecipeItems = recipes.filter(r => r.finishedGoodId === realMenuItemId);
-      
-      linkedBOMRecipeItems.forEach(recipe => {
-        if (recipe.rawMaterialId === currentInventoryAsset.id || recipe.rawMaterial?.itemName === itemName) {
-          // Multiply recipe requirement * total yield (including waste)
-          const batchWaste = batch.batchNumber.match(/\[WASTE:(.*?)\]/) ? parseFloat(batch.batchNumber.match(/\[WASTE:(.*?)\]/)[1]) : 0;
-          const totalProducedYield = batch.quantityProduced + batchWaste;
-          totalConsumedVolume += (recipe.quantityUsed * totalProducedYield);
+      try {
+        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/);
+        if(rmMatch) {
+          const logs = JSON.parse(rmMatch[1]);
+          const found = logs.find((l:any) => l.id === inventoryId);
+          if (found) {
+            totalConsumedVolume += parseFloat(found.deducted);
+          }
         }
-      });
+      } catch(e) {}
     });
     return totalConsumedVolume;
   };
 
-  const calculateInwardQuantity = (itemName: string) => {
-    return filteredPurchaseLogs.filter(l => l.itemName === itemName).reduce((sum, l) => sum + parseFloat(l.qty || "0"), 0);
+  const calculateInwardQuantity = (inventoryId: string) => {
+    return filteredPurchaseLogs.filter(l => l.inventoryId === inventoryId).reduce((sum, l) => sum + parseFloat(l.qty || "0"), 0);
   };
 
   const simulateInvoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -386,7 +373,11 @@ export default function InventoryAndPurchaseERP() {
 
   const handlePrint = () => { setTimeout(() => { window.print(); }, 150); };
 
-  const filteredInventory = inventory.filter(item => {
+  // 🔥 2. STRICT SEPARATION OF RAW MATERIALS AND PRODUCED SERVINGS
+  const rawInventory = inventory.filter(i => i.type !== "FINISHED_GOOD");
+  const producedInventory = inventory.filter(i => i.type === "FINISHED_GOOD");
+
+  const filteredRawInventory = rawInventory.filter(item => {
     const matchSearch = item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
     if (typeFilter === "LOW_STOCK") return matchSearch && (item.stockLevel > 0 && item.stockLevel <= item.minStock);
     if (typeFilter === "OUT_OF_STOCK") return matchSearch && (item.stockLevel <= 0);
@@ -394,9 +385,13 @@ export default function InventoryAndPurchaseERP() {
     return matchSearch && matchType;
   });
 
-  const totalSKUs = inventory.length;
-  const lowStockCount = inventory.filter(i => i.stockLevel > 0 && i.stockLevel <= i.minStock).length;
-  const outOfStockCount = inventory.filter(i => i.stockLevel <= 0).length;
+  const filteredProducedInventory = producedInventory.filter(item => {
+    return item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  const totalSKUs = rawInventory.length;
+  const lowStockCount = rawInventory.filter(i => i.stockLevel > 0 && i.stockLevel <= i.minStock).length;
+  const outOfStockCount = rawInventory.filter(i => i.stockLevel <= 0).length;
   const totalProcurementFiltered = filteredPurchaseLogs.reduce((sum, log) => sum + log.total, 0);
   const totalMarketUdhaari = vendorList.reduce((sum, v) => sum + v.outstanding, 0);
   
@@ -416,11 +411,12 @@ export default function InventoryAndPurchaseERP() {
     ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] 
     : "NONE";
 
-  // 🔥 PUBLIC MOBILE ENTRY FORM OVERLAY (Bypassing Layouts via Full Screen Fixed)
+  // 🔥 3. STRICT ISOLATION FOR MOBILE QR GRN VIEW
   if (isMobileMode) {
     if (mobileAccessDenied) {
       return (
-        <div className="fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+        <div className="mobile-grn-portal fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+          <style>{`body > div:first-child, header, nav, aside { display: none !important; }`}</style>
           <ShieldAlert size={80} className="text-red-500 mb-6 animate-pulse"/>
           <h1 className="text-2xl font-black text-white uppercase tracking-widest mb-2">Access Token Expired</h1>
           <p className="text-slate-400 font-bold text-sm">Security matrix has invalidated this QR session. Please request the Manager to regenerate the QR code on the desktop terminal.</p>
@@ -428,13 +424,14 @@ export default function InventoryAndPurchaseERP() {
       );
     }
     
-    if (loading) return <div className="fixed inset-0 z-[99999] bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-white" size={40}/></div>;
+    if (loading) return <div className="mobile-grn-portal fixed inset-0 z-[99999] bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-white" size={40}/><style>{`body > div:first-child, header, nav, aside { display: none !important; }`}</style></div>;
 
     return (
-      <div className="fixed inset-0 z-[99999] w-full overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
-        <div className="w-full max-w-md mt-10 mb-auto">
+      <div className="mobile-grn-portal fixed inset-0 z-[99999] w-full h-[100dvh] overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
+        <style>{`body > div:first-child, header, nav, aside { display: none !important; }`}</style>
+        <div className="w-full max-w-md mt-6 mb-auto relative z-[100000]">
           {/* Outlet Name Banner */}
-          <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-indigo-500 text-center shadow-lg mt-4">
+          <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-indigo-500 text-center shadow-lg">
             <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center">
               <Truck size={18} className="mr-2 text-indigo-500"/> {mobileOutletName || "ZAPPED OUTLET"}
             </h1>
@@ -451,7 +448,7 @@ export default function InventoryAndPurchaseERP() {
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Received SKU</label>
                 <select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
                   <option value="" disabled>Choose material...</option>
-                  {inventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
+                  {rawInventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -459,7 +456,7 @@ export default function InventoryAndPurchaseERP() {
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Received Qty</label>
                   <div className="flex items-center">
                     <input required type="number" step="any" min="0.01" placeholder="0" value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} className="w-full p-3 border border-slate-200 rounded-l-xl text-lg font-mono font-black outline-none focus:border-indigo-500" />
-                    <span className="bg-slate-100 border border-l-0 border-slate-200 p-3 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? inventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span>
+                    <span className="bg-slate-100 border border-l-0 border-slate-200 p-3 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? rawInventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span>
                   </div>
                 </div>
                 {!isHQ && (
@@ -538,10 +535,8 @@ export default function InventoryAndPurchaseERP() {
             </div>
             
             <div className="flex flex-wrap items-center gap-2">
-              {/* GLOBAL DATE FILTERS CONTROL BAR */}
               <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="p-2 border border-slate-200 rounded-lg font-black text-[10px] uppercase tracking-wider bg-white outline-none focus:border-indigo-500 shadow-sm mr-2">
                 <option value="today">Today's Ledger</option><option value="yesterday">Yesterday's Ledger</option><option value="custom">Custom Range</option>
-                {/* 🔥 NEW ALL HISTORY FILTER FOR PURCHASE LOGS & ANALYTICS */}
                 <option value="all_history">Till Now Accounts</option>
               </select>
               {dateFilter === "custom" && (
@@ -554,13 +549,14 @@ export default function InventoryAndPurchaseERP() {
               {/* QUAD-TAB PANEL INTERFACE HEADERS */}
               <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 mr-2">
                 <button onClick={()=>setActiveView("INVENTORY")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='INVENTORY' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Stock Ledger</button>
+                <button onClick={()=>setActiveView("PRODUCED")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='PRODUCED' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Produced Items</button>
                 <button onClick={()=>setActiveView("PURCHASE")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='PURCHASE' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Purchase Desk</button>
                 <button onClick={()=>setActiveView("PURCHASE_ANALYTICS")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='PURCHASE_ANALYTICS' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}>Analytics Logs</button>
                 <button onClick={()=>setActiveView("VENDORS")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='VENDORS' ? 'bg-white shadow-sm text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}>Vendor Accounts</button>
               </div>
 
               {/* Contextual Action Buttons */}
-              {activeView === "INVENTORY" && (
+              {(activeView === "INVENTORY" || activeView === "PRODUCED") && (
                 <>
                   <button onClick={fetchInventoryAndProduction} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg"><RefreshCcw size={16} className={loading ? "animate-spin" : ""} /></button>
                   <button onClick={handlePrint} className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-wider flex items-center shadow-xs"><Printer size={14} className="mr-1.5" /> Print Ledger</button>
@@ -579,7 +575,7 @@ export default function InventoryAndPurchaseERP() {
           </div>
 
           {/* METRICS ROW STATUS CARDS STRIP */}
-          {(activeView === "INVENTORY" || activeView === "VENDORS") && (
+          {(activeView === "INVENTORY" || activeView === "VENDORS" || activeView === "PRODUCED") && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex items-center justify-between"><div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total Vault SKU Items</span><p className="text-2xl font-mono font-black text-slate-900">{totalSKUs}</p></div><Layers size={32} className="text-blue-100" /></div>
               <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex items-center justify-between"><div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Procurement Spent Capital</span><p className="text-xl font-mono font-black text-emerald-600">₹{totalProcurementFiltered.toFixed(2)}</p></div><Truck size={32} className="text-emerald-100" /></div>
@@ -610,21 +606,21 @@ export default function InventoryAndPurchaseERP() {
                   <table className="w-full text-left border-collapse min-w-[950px]">
                     <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200">
                       <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                        <th className="p-4 w-12 text-center">#</th><th className="p-4">SKU Description Identifier</th>
+                        <th className="p-4 w-12 text-center">#</th><th className="p-4">RAW MATERIAL SKU IDENTIFIER</th>
                         {stockLedgerView === 'LIVE' && (<><th className="p-4 text-center">Alert Barrier</th><th className="p-4 text-center bg-blue-50/50 text-blue-800 border-x border-slate-200">Live Quantity Stock</th><th className="p-4 text-center">Health Status</th></>)}
                         {stockLedgerView === 'OPENING' && <th className="p-4 text-center bg-indigo-50/50 text-indigo-800">Opening Volume Dynamic</th>}
                         {stockLedgerView === 'INWARD' && <th className="p-4 text-center bg-emerald-50/50 text-emerald-800">Inward Procurement Volume (GRN)</th>}
                         {stockLedgerView === 'CONSUMED' && <th className="p-4 text-center bg-orange-50/50 text-orange-800">BOM Actual Recipe Consumption</th>}
-                        {stockLedgerView === 'CLOSING' && <th className="p-4 text-center bg-blue-50/50 text-blue-800">Closing Calculated Yield Balance</th>}
+                        {stockLedgerView === 'CLOSING' && <th className="p-4 text-center bg-blue-50/50 text-blue-800">Closing Calculated Balance</th>}
                         <th className="p-4 text-center w-48">Operations Action Room</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
-                      {filteredInventory.map((item, idx) => {
+                      {filteredRawInventory.map((item, idx) => {
                         const isOutOfStock = item.stockLevel <= 0;
                         const isLowStock = item.stockLevel > 0 && item.stockLevel <= item.minStock;
-                        const inwardQty = calculateInwardQuantity(item.itemName);
-                        const consumedQty = calculateConsumedQuantity(item.itemName);
+                        const inwardQty = calculateInwardQuantity(item.id);
+                        const consumedQty = calculateConsumedQuantity(item.id);
                         const calculatedOpening = item.stockLevel - inwardQty + consumedQty;
 
                         return (
@@ -652,6 +648,52 @@ export default function InventoryAndPurchaseERP() {
                           </tr>
                         );
                       })}
+                      {filteredRawInventory.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-slate-400 font-bold uppercase tracking-wider">No Raw Material SKUs Found.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= VIEW 1.5: PRODUCED ITEMS (FINISHED GOODS) ================= */}
+          {activeView === "PRODUCED" && (
+            <div className="flex flex-col h-full animate-in fade-in">
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 shrink-0 bg-white p-2 border border-slate-200 rounded-xl shadow-sm">
+                <div className="flex items-center flex-1 w-full gap-3">
+                  <div className="relative max-w-xs flex-1"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={14} /><input type="text" placeholder="Search Finished Good..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg outline-none font-bold text-xs focus:border-orange-500 bg-slate-50" /></div>
+                </div>
+              </div>
+
+              <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="overflow-y-auto custom-scrollbar">
+                  <table className="w-full text-left border-collapse min-w-[700px]">
+                    <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200">
+                      <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                        <th className="p-4 w-12 text-center">#</th>
+                        <th className="p-4">Finished Good Description</th>
+                        <th className="p-4 text-center bg-orange-50/50 text-orange-800 border-x border-slate-200">Available Servings Yield</th>
+                        <th className="p-4 text-center w-48">Operations Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
+                      {filteredProducedInventory.map((item, idx) => {
+                        return (
+                          <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="p-4 text-center font-black text-slate-400">{idx + 1}</td>
+                            <td className="p-4 font-black text-slate-900 uppercase">
+                              <div className="flex items-center">
+                                <Soup size={16} className="text-orange-500 mr-2"/> {item.itemName}
+                              </div>
+                            </td>
+                            <td className="p-4 text-center font-mono font-black text-orange-600 text-lg border-x border-slate-100">{parseFloat(item.stockLevel).toFixed(0)} <span className="text-[9px] uppercase font-bold text-slate-400">SERVINGS</span></td>
+                            <td className="p-4 text-center">
+                              <button onClick={()=>{setDeleteItemTarget(item); setShowDeleteAuthModal(true);}} className="text-[9px] font-black text-red-600 bg-red-50 hover:bg-red-600 hover:text-white border border-red-100 px-2.5 py-1.5 rounded uppercase transition-all inline-flex items-center"><Trash2 size={10} className="mr-0.5"/> Delete Yield Data</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredProducedInventory.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-400 font-bold uppercase tracking-wider">No Produced Items Yields Logged.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -674,7 +716,7 @@ export default function InventoryAndPurchaseERP() {
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Received SKU</label>
                         <select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500 shadow-sm">
                           <option value="" disabled>Choose material...</option>
-                          {inventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
+                          {rawInventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
                         </select>
                       </div>
                       <div className="w-24 flex flex-col items-center">
@@ -883,7 +925,7 @@ export default function InventoryAndPurchaseERP() {
                   <div className="col-span-2"><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">SKU / Item Name</label><input required type="text" placeholder="e.g., Maida, Samosa Box" value={formData.itemName} onChange={(e) => setFormData({...formData, itemName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-sm font-bold uppercase" /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Classification Type</label><select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white uppercase"><option value="RAW_MATERIAL">Raw Material</option><option value="VEGETABLES">Vegetables</option><option value="DAIRY">Dairy</option><option value="SPICES">Spices</option><option value="PACKAGING">Packaging</option><option value="FINISHED_GOOD">Finished Good</option></select></div>
+                  <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Classification Type</label><select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white uppercase"><option value="RAW_MATERIAL">Raw Material</option><option value="VEGETABLES">Vegetables</option><option value="DAIRY">Dairy</option><option value="SPICES">Spices</option><option value="PACKAGING">Packaging</option></select></div>
                   <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">UOM Unit</label><select value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white uppercase"><option value="KG">Kilograms (KG)</option><option value="LITRE">Litres (L)</option><option value="PIECES">Pieces (Pcs)</option><option value="GRAMS">Grams (g)</option></select></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -973,6 +1015,7 @@ export default function InventoryAndPurchaseERP() {
             <h2 className="font-black text-xl uppercase tracking-tight">{printerConfig.headerName || "RAMKESAR POS"}</h2>
             <p className="text-[11px] font-black tracking-widest text-center w-full mt-1">
               {activeView === 'INVENTORY' && `** MASTER INVENTORY LOG [${stockLedgerView}] **`}
+              {activeView === 'PRODUCED' && "** MASTER FINISHED GOODS YIELD **"}
               {activeView === 'PURCHASE' && "** DAILY GOODS RECEIVED NOTE (GRN) RECORDS **"}
               {activeView === 'PURCHASE_ANALYTICS' && "** PROCUREMENT ANALYTICS REPORT **"}
               {activeView === 'VENDORS' && "** APPROVED VENDORS CREDIT OUTSTANDING RECORD **"}
@@ -988,9 +1031,9 @@ export default function InventoryAndPurchaseERP() {
               <table className="w-full text-[11px] mt-2 border-collapse">
                 <thead><tr className="border-b-2 border-black text-left"><th className="pb-1 w-10">S.NO</th><th className="pb-1">SKU INVENTORY ITEMS DESCRIPTION</th><th className="pb-1 text-right">QUANTITY VALUE</th></tr></thead>
                 <tbody>
-                  {filteredInventory.map((item, idx) => {
-                    const inwardQty = calculateInwardQuantity(item.itemName);
-                    const consumedQty = calculateConsumedQuantity(item.itemName);
+                  {filteredRawInventory.map((item, idx) => {
+                    const inwardQty = calculateInwardQuantity(item.id);
+                    const consumedQty = calculateConsumedQuantity(item.id);
                     const calculatedOpening = item.stockLevel - inwardQty + consumedQty;
                     let printValue = "";
                     if(stockLedgerView==='LIVE') printValue = `${parseFloat(item.stockLevel).toFixed(2)} ${item.unit}`;
@@ -1007,6 +1050,21 @@ export default function InventoryAndPurchaseERP() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            )}
+
+            {activeView === 'PRODUCED' && (
+              <table className="w-full text-[11px] mt-2 border-collapse">
+                <thead><tr className="border-b-2 border-black text-left"><th className="pb-1 w-10">S.NO</th><th className="pb-1">FINISHED GOOD DESCRIPTION</th><th className="pb-1 text-right">SERVINGS YIELD</th></tr></thead>
+                <tbody>
+                  {filteredProducedInventory.map((item, idx) => (
+                    <tr key={item.id} className="border-b border-gray-300">
+                      <td className="py-2">{idx + 1}.</td>
+                      <td className="py-2 font-black uppercase text-xs">{item.itemName}</td>
+                      <td className="py-2 text-right font-mono font-black">{parseFloat(item.stockLevel).toFixed(0)} SERVINGS</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}

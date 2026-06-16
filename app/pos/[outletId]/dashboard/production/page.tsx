@@ -553,14 +553,11 @@ export default function MegaProductionERP() {
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-100/50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                      <tr><th className="p-4">Batch Timeline</th><th className="p-4">Item Formulated</th><th className="p-4 text-center">Net Yield</th><th className="p-4 text-center">Waste Lost</th><th className="p-4 text-center">Yield Efficiency</th><th className="p-4 text-right">Batch Status</th></tr>
+                      <tr><th className="p-4">Batch Timeline</th><th className="p-4">Item Formulated</th><th className="p-4 text-center">Net Yield</th><th className="p-4 text-center">Waste Lost</th><th className="p-4 text-right">Raw Material Deductions Log</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
                       {history.map((h, i) => {
                         const waste = parseWastageFromBatchNo(h.batchNumber);
-                        const totalMaterialAttempted = h.quantityProduced + waste;
-                        const efficiency = totalMaterialAttempted > 0 ? ((h.quantityProduced / totalMaterialAttempted) * 100).toFixed(1) : "100.0";
-                        
                         return (
                           <tr key={i} className="hover:bg-slate-50/50">
                             <td className="p-4">
@@ -570,12 +567,14 @@ export default function MegaProductionERP() {
                             <td className="p-4 font-black text-slate-700 uppercase">{h.finishedGoodName || "Item"}</td>
                             <td className="p-4 text-center font-mono font-black text-emerald-600">+{h.quantityProduced}</td>
                             <td className="p-4 text-center font-mono font-bold text-red-500">{waste > 0 ? waste : "-"}</td>
-                            <td className="p-4 text-center">
-                              <span className="font-mono font-black text-slate-700 text-xs">{efficiency}%</span>
-                              <div className="w-16 h-1.5 bg-slate-200 rounded-full mt-1 mx-auto overflow-hidden"><div className={`h-full ${parseFloat(efficiency) > 90 ? 'bg-emerald-500' : 'bg-red-500'}`} style={{width: `${efficiency}%`}}></div></div>
-                            </td>
-                            <td className="p-4 text-right">
-                              {waste > 0 ? <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] px-2 py-1 rounded uppercase tracking-wider font-black">High Waste</span> : <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] px-2 py-1 rounded uppercase tracking-wider font-black">Perfect Batch</span>}
+                            <td className="p-4 text-right text-[10px] uppercase font-bold text-slate-500">
+                              {h.rawMaterialsLogged && h.rawMaterialsLogged.length > 0 ? (
+                                <div className="space-y-0.5">
+                                  {h.rawMaterialsLogged.map((rm:any, idx:number) => (
+                                    <div key={idx}>{rm.name}: <span className="text-slate-800 font-black">-{rm.deducted} {rm.unit}</span></div>
+                                  ))}
+                                </div>
+                              ) : "No Mapping Log"}
                             </td>
                           </tr>
                         );

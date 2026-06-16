@@ -9,7 +9,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
   }
 
-  // 🔒 Secure Extraction from Session Only
   const secureOutletId = (session.user as any).outletId;
   const secureTenantId = (session.user as any).tenantId;
 
@@ -43,7 +42,6 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 🔥 1. Sales Data Extraction (Strictly Outlet Wise)
     const orders = await prisma.order.findMany({
       where: { outletId: secureOutletId, createdAt: dateQuery, status: { not: "CANCELLED" }, isDeleted: false },
       include: { items: true }
@@ -59,7 +57,6 @@ export async function GET(req: Request) {
       });
     });
 
-    // 🔥 2. Menu Items (Strictly Outlet Wise)
     const menuItems = await prisma.menuItem.findMany({ 
       where: { 
         outletId: secureOutletId,
@@ -68,7 +65,6 @@ export async function GET(req: Request) {
       } 
     });
 
-    // 🔥 3. Raw Materials & Recipes
     const rawMaterials = await prisma.inventory.findMany({ 
       where: { outletId: secureOutletId, type: "RAW_MATERIAL", isDeleted: false } 
     });
@@ -83,7 +79,7 @@ export async function GET(req: Request) {
       finishedGoodId: r.menuItemId
     }));
 
-    // 🔥 4. Production History (Added Raw Material Deduction Records for UI Print)
+    // 🔥 4. Fetch Exact Deduction Logic for Print Views
     const productionBatches = await prisma.productionBatch.findMany({
       where: { outletId: secureOutletId, date: dateQuery, isDeleted: false },
       include: { finishedGood: true, createdByUser: true },
@@ -133,7 +129,6 @@ export async function POST(req: Request) {
     const dbOutlet = await prisma.outlet.findUnique({ where: { id: secureOutletId } });
     if (!dbOutlet) return NextResponse.json({ error: "Invalid Outlet." }, { status: 400 });
 
-    // 🟢 SMART USER AUTO-HEALER LOGIC
     const sessionUserId = (session.user as any).id;
     const sessionEmail = session.user.email || `outlet_${secureOutletId}@system.local`;
 
@@ -154,7 +149,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // 🟢 ACTION: SAVE YIELD MAPPING (BOM)
     if (action === "SAVE_MAPPING") {
       const { menuItemId, baseQty, materials } = mappingData; 
       
@@ -179,7 +173,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, message: "BOM Locked!" });
     }
 
-    // 🟢 ACTION: LOG BATCH & DEDUCT INVENTORY
     if (action === "RECORD_PRODUCTION") {
       const { menuItemId, producedQty, finishedWastage, actualMaterialsUsed } = productionData;
 
@@ -197,7 +190,6 @@ export async function POST(req: Request) {
         const netWasted = parseFloat(finishedWastage || "0");
         const addedToStock = netProduced - netWasted;
 
-        // Auto-create finished good in inventory if it doesn't exist
         if (!invItem) {
           invItem = await tx.inventory.create({
             data: {
@@ -210,7 +202,6 @@ export async function POST(req: Request) {
             }
           });
         } else {
-          // Increment stock by produced amount (minus waste)
           if (addedToStock > 0) {
             await tx.inventory.update({
               where: { id: invItem.id },
@@ -219,7 +210,7 @@ export async function POST(req: Request) {
           }
         }
 
-        // Deduct raw material stock EXACTLY as provided by UI
+        // 🔥 EXACT GRAM-TO-GRAM DEDUCTION LOGIC
         const rmLogsForPrint = [];
         for (const rm of actualMaterialsUsed) {
           const netDeduction = parseFloat(rm.actualUsed || "0") + parseFloat(rm.rawWastage || "0");
@@ -232,7 +223,6 @@ export async function POST(req: Request) {
           }
         }
 
-        // Guaranteed unique batch number with exact RM logs attached for ledger printing
         const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
         const rmLogStr = JSON.stringify(rmLogsForPrint);
         const structuredBatchNo = `PB-${Date.now().toString().slice(-6)}-${uniqueSuffix}[WASTE:${netWasted}][MENU:${menuItemId}][RM_LOG:${rmLogStr}]`;
