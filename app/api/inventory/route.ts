@@ -69,7 +69,8 @@ export async function GET(req: Request) {
         vendor: true,
         items: { include: { inventory: true } } 
       },
-      orderBy: { date: 'desc' } 
+      orderBy: { date: 'desc' },
+      take: 200 
     });
 
     const purchaseLogs = purchases.flatMap(po => 

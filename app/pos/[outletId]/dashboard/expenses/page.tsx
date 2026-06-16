@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { WalletCards, Plus, Loader2, ReceiptText, ArrowRightLeft, UserCircle, Upload, FileText, QrCode, Phone, RefreshCw, Trash2, X, Store } from "lucide-react";
+import { WalletCards, Plus, Loader2, ReceiptText, ArrowRightLeft, UserCircle, Upload, FileText, QrCode, Phone, RefreshCw, Trash2, X, Store, ShieldAlert } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -19,7 +19,7 @@ export default function ExpensesPage() {
 
   // Report Metrics
   const [cashCollected, setCashCollected] = useState(0);
-  const [lifetimeBalance, setLifetimeBalance] = useState(0); // 🔥 New state for lifetime balance
+  const [lifetimeBalance, setLifetimeBalance] = useState(0);
 
   // Forms Management States
   const [isSaving, setIsSaving] = useState(false);
@@ -65,20 +65,21 @@ export default function ExpensesPage() {
           } catch (e) {
             setIsExpired(true);
           }
+          setIsCheckingRoute(false);
+          return; // STOP EXECUTION HERE FOR MOBILE
         } 
+        
         // Dashboard Flow
-        else {
-          let activeSalt = localStorage.getItem(`zap_qr_salt_${outletId}`);
-          if (!activeSalt) {
-            activeSalt = Date.now().toString();
-            localStorage.setItem(`zap_qr_salt_${outletId}`, activeSalt);
-            // Sync initial salt to DB
-            fetch("/api/expenses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "REGENERATE_SALT", newSalt: activeSalt }) });
-          }
-          setQrSalt(activeSalt);
-          const currentUrl = `${window.location.origin}${window.location.pathname}?view=form-only&salt=${activeSalt}`;
-          setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(currentUrl)}`);
+        let activeSalt = localStorage.getItem(`zap_qr_salt_${outletId}`);
+        if (!activeSalt) {
+          activeSalt = Date.now().toString();
+          localStorage.setItem(`zap_qr_salt_${outletId}`, activeSalt);
+          fetch("/api/expenses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "REGENERATE_SALT", newSalt: activeSalt }) });
         }
+        setQrSalt(activeSalt);
+        const currentUrl = `${window.location.origin}${window.location.pathname}?view=form-only&salt=${activeSalt}`;
+        setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(currentUrl)}`);
+        
         setIsCheckingRoute(false);
       }
 
@@ -118,7 +119,7 @@ export default function ExpensesPage() {
       if (expData.success) {
         setExpenses(expData.expenses || []);
         setCashCollected(expData.cashCollected || 0);
-        setLifetimeBalance(expData.lifetimeBalance || 0); // Set DB fetched exact lifetime cash
+        setLifetimeBalance(expData.lifetimeBalance || 0);
       } else {
         setExpenses(Array.isArray(expData) ? expData : []);
       }
@@ -228,13 +229,13 @@ export default function ExpensesPage() {
     );
   }
 
-  // 🔥 PUBLIC MOBILE ENTRY FORM (QR SCANNED)
+  // 🔥 PUBLIC MOBILE ENTRY FORM (QR SCANNED) - STRICTLY ISOLATED VIEW
   if (isFormOnlyMode) {
     if (isExpired) {
       return (
-        <div className="fixed inset-0 z-[9999] bg-slate-900 flex flex-col items-center justify-center p-4">
+        <div className="fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center animate-in fade-in zoom-in">
-            <X size={50} className="mx-auto text-red-500 mb-4" />
+            <ShieldAlert size={50} className="mx-auto text-red-500 mb-4" />
             <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-2">Link Expired</h2>
             <p className="text-sm font-bold text-slate-500">This entry link is no longer valid. Please scan the new QR code from the POS terminal.</p>
           </div>
@@ -243,8 +244,8 @@ export default function ExpensesPage() {
     }
 
     return (
-      <div className="fixed inset-0 z-[9999] bg-slate-50 flex flex-col items-center p-4 overflow-y-auto custom-scrollbar">
-        <div className="w-full max-w-md my-auto">
+      <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col items-center p-4 overflow-y-auto custom-scrollbar h-[100dvh] w-screen top-0 left-0">
+        <div className="w-full max-w-md mt-10 mb-auto">
           {/* Outlet Name Banner */}
           <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-red-500 text-center shadow-lg">
             <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center">
@@ -258,14 +259,14 @@ export default function ExpensesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Expenses Type</label>
-                  <select required value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50">
+                  <select required value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50 outline-none focus:border-red-500">
                     <option value="" disabled>Select Type...</option>
                     {expenseTypes.map(type => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Doar (Exp By)</label>
-                  <select required value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50">
+                  <select required value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50 outline-none focus:border-red-500">
                     <option value="" disabled>Select Person...</option>
                     {doars.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
@@ -273,8 +274,8 @@ export default function ExpensesPage() {
               </div>
 
               <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Amount (₹)</label><input required type="number" min="1" step="any" placeholder="0.00" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-red-500 font-mono font-black text-red-600 text-2xl text-center bg-slate-50" /></div>
-              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Paid To</label><input required type="text" placeholder="Vendor / Staff Name" value={formData.paidTo} onChange={(e) => setFormData({...formData, paidTo: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50" /></div>
-              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Narration</label><textarea required rows={2} placeholder="Reason detail..." value={formData.narration} onChange={(e) => setFormData({...formData, narration: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold resize-none bg-slate-50" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Paid To</label><input required type="text" placeholder="Vendor / Staff Name" value={formData.paidTo} onChange={(e) => setFormData({...formData, paidTo: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-red-500 bg-slate-50" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Narration</label><textarea required rows={2} placeholder="Reason detail..." value={formData.narration} onChange={(e) => setFormData({...formData, narration: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold resize-none outline-none focus:border-red-500 bg-slate-50" /></div>
 
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Upload Receipt Image</label>
@@ -325,7 +326,6 @@ export default function ExpensesPage() {
 
           {/* FINANCIAL DATA STATS */}
           <div className="flex flex-col xl:flex-row gap-4 mb-6">
-            {/* GRID MOVED TO 4 COLUMNS TO INCLUDE LIFETIME CASH */}
             <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex flex-col justify-center">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Cash Collected</span>
@@ -339,7 +339,6 @@ export default function ExpensesPage() {
                 <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block mb-1">Drawer Balance</span>
                 <p className="text-2xl font-mono font-black text-emerald-400">₹{Number(availableBalance).toFixed(2)}</p>
               </div>
-              {/* 🔥 NEW LIFETIME BOX */}
               <div className="bg-indigo-900 p-5 rounded-2xl border border-indigo-800 shadow-md flex flex-col justify-center">
                 <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest block mb-1">Total Lifetime Cash</span>
                 <p className="text-2xl font-mono font-black text-indigo-400">₹{Number(lifetimeBalance).toFixed(2)}</p>

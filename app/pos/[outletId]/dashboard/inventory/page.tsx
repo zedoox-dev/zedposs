@@ -432,7 +432,7 @@ export default function InventoryAndPurchaseERP() {
 
     return (
       <div className="fixed inset-0 z-[99999] w-full overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
-        <div className="w-full max-w-md my-auto">
+        <div className="w-full max-w-md mt-10 mb-auto">
           {/* Outlet Name Banner */}
           <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-indigo-500 text-center shadow-lg mt-4">
             <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center">
