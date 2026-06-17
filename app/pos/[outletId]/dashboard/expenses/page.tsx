@@ -29,10 +29,8 @@ export default function ExpensesPage() {
   const [doars, setDoars] = useState<string[]>([]);
   
   const [newMasterType, setNewMasterType] = useState("");
-  const [newMasterDoar, setNewMasterDoar] = useState("");
 
   const [isAddingType, setIsAddingType] = useState(false);
-  const [isAddingDoar, setIsAddingDoar] = useState(false);
 
   const [isFormOnlyMode, setIsFormOnlyMode] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
@@ -84,13 +82,14 @@ export default function ExpensesPage() {
       }
 
       const savedTypes = localStorage.getItem(`zapped_exp_types_${outletId}`);
+      // 🔥 FIX: Strict Fetching of Doars (no fallback array)
       const savedDoars = localStorage.getItem(`zapped_doars_${outletId}`);
       
       if (savedTypes) setExpenseTypes(JSON.parse(savedTypes));
       else setExpenseTypes(["STAFF FOOD", "RAW MATERIAL", "MAINTENANCE", "ELECTRICITY", "GENERAL"]);
 
       if (savedDoars) setDoars(JSON.parse(savedDoars));
-      else setDoars(["Admin", "Manager", "Deepak", "Chotu", "Varinder", "Raju"]);
+      else setDoars([]);
     };
 
     initializePage();
@@ -132,7 +131,7 @@ export default function ExpensesPage() {
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.expenseType || !formData.doar) return alert("Please select Type and Doar");
+    if (!formData.expenseType || !formData.doar) return alert("Please select Type and Operator");
     
     setIsSaving(true);
     try {
@@ -169,35 +168,24 @@ export default function ExpensesPage() {
     }
   };
 
-  const addMasterDataInline = (type: "TYPE" | "DOAR") => {
+  const addMasterDataInline = (type: "TYPE") => {
     if (type === "TYPE" && newMasterType.trim()) {
       const updated = [...expenseTypes, newMasterType.trim().toUpperCase()];
       setExpenseTypes(updated);
       localStorage.setItem(`zapped_exp_types_${outletId}`, JSON.stringify(updated));
       setFormData({ ...formData, expenseType: newMasterType.trim().toUpperCase() });
       setNewMasterType("");
-    } else if (type === "DOAR" && newMasterDoar.trim()) {
-      const updated = [...doars, newMasterDoar.trim()];
-      setDoars(updated);
-      localStorage.setItem(`zapped_doars_${outletId}`, JSON.stringify(updated));
-      setFormData({ ...formData, doar: newMasterDoar.trim() });
-      setNewMasterDoar("");
-    }
+    } 
   };
 
-  const removeMasterItem = (type: "TYPE" | "DOAR", val: string) => {
+  const removeMasterItem = (type: "TYPE", val: string) => {
     if (!val) return;
     if (type === "TYPE") {
       const updated = expenseTypes.filter(t => t !== val);
       setExpenseTypes(updated);
       localStorage.setItem(`zapped_exp_types_${outletId}`, JSON.stringify(updated));
       setFormData({ ...formData, expenseType: "" });
-    } else if (type === "DOAR") {
-      const updated = doars.filter(d => d !== val);
-      setDoars(updated);
-      localStorage.setItem(`zapped_doars_${outletId}`, JSON.stringify(updated));
-      setFormData({ ...formData, doar: "" });
-    }
+    } 
   };
 
   const handleRegenerateQr = async () => {
@@ -205,7 +193,6 @@ export default function ExpensesPage() {
     setQrSalt(newSalt);
     localStorage.setItem(`zap_qr_salt_${outletId}`, newSalt);
     
-    // Sync new salt to Backend to instantly expire old forms
     await fetch("/api/expenses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -444,30 +431,17 @@ export default function ExpensesPage() {
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-[10px] font-black uppercase text-slate-600 tracking-wider">Doar (Exp By)</label>
-                  <button type="button" onClick={() => setIsAddingDoar(!isAddingDoar)} className="text-[9px] font-bold text-blue-600 uppercase hover:underline">
-                    {isAddingDoar ? "Select Existing" : "+ Add New"}
-                  </button>
                 </div>
-                
-                {isAddingDoar ? (
-                  <div className="flex gap-1">
-                    <input type="text" placeholder="Add Custom Doar..." value={newMasterDoar} onChange={(e) => setNewMasterDoar(e.target.value)} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold capitalize outline-none focus:border-red-500 bg-white" />
-                    <button type="button" onClick={() => { addMasterDataInline("DOAR"); setIsAddingDoar(false); }} className="bg-slate-900 text-white px-4 rounded-xl font-black text-[10px] uppercase active:scale-95 transition-transform">Add</button>
-                  </div>
-                ) : (
-                  <div className="flex gap-1">
-                    <select required={!isAddingDoar} value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-red-500">
-                      <option value="" disabled>Choose...</option>
-                      {doars.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                    {formData.doar && !["Admin", "Manager", "Deepak"].includes(formData.doar) && (
-                      <button type="button" onClick={() => removeMasterItem("DOAR", formData.doar)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-xl border border-slate-200 shadow-xs"><Trash2 size={13}/></button>
-                    )}
-                  </div>
-                )}
+                <div className="flex gap-1">
+                  <select required value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="flex-1 p-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-red-500">
+                    <option value="" disabled>Select Operator...</option>
+                    {doars.map(d => <option key={d} value={d}>{d}</option>)}
+                    {doars.length === 0 && <option disabled>No Doars Setup in Settings</option>}
+                  </select>
+                </div>
               </div>
 
-              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Amount (₹)</label><input required type="number" min="1" step="any" placeholder="0.00" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-mono font-black text-red-600 text-lg" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Amount (₹)</label><input required type="number" min="1" step="any" placeholder="0.00" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-red-500 font-mono font-black text-red-600 text-lg" /></div>
               <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Paid To</label><input required type="text" placeholder="Vendor / Person name" value={formData.paidTo} onChange={(e) => setFormData({...formData, paidTo: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold" /></div>
               <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Narration</label><textarea required rows={2} placeholder="Reason specification..." value={formData.narration} onChange={(e) => setFormData({...formData, narration: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold resize-none" /></div>
 

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff, Image as ImageIcon } from "lucide-react";
+import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff, Image as ImageIcon, LockKeyhole, X, ShieldCheck, Upload } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
 import { useParams } from "next/navigation";
@@ -20,6 +20,14 @@ export default function MenuManagePage() {
   const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "", hsnCode: "" });
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
+  
+  // 🔥 New Image Upload Switcher State
+  const [imageUploadMode, setImageUploadMode] = useState<"URL" | "FILE">("URL");
+
+  // 🔥 Delete Security States
+  const [showDeleteAuthModal, setShowDeleteAuthModal] = useState(false);
+  const [deleteItemTarget, setDeleteItemTarget] = useState<any>(null);
+  const [securityPasswordInput, setSecurityPasswordInput] = useState("");
 
   const existingCategories = Array.from(new Set(items.map(item => item.category)));
 
@@ -107,6 +115,18 @@ export default function MenuManagePage() {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 🔥 Handle File Upload via Device
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, imageUrl: reader.result as string });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -206,9 +226,25 @@ export default function MenuManagePage() {
     });
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Kya aap is menu item ko delete karna chahte hain?")) return;
+  // 🔥 Trigger Security Modal
+  const handleDeleteTrigger = (item: any) => {
+    setDeleteItemTarget(item);
+    setShowDeleteAuthModal(true);
+  };
+
+  // 🔥 Final Delete Confirmation via Terminal Login Password
+  const confirmDelete = async (id: string) => {
+    if (!securityPasswordInput) return alert("PIN Required");
     
+    // Validating against local storage saved password
+    const realTerminalSavedPass = localStorage.getItem("zapped_pos_login_password") || "RamKesarAdmin786";
+    if (securityPasswordInput !== realTerminalSavedPass) {
+      return alert("❌ ACCESS DENIED! Invalid Terminal Security Authorization Credentials provided.");
+    }
+    
+    setShowDeleteAuthModal(false);
+    setSecurityPasswordInput("");
+
     if (!navigator.onLine) {
       const secureOutletId = (session?.user as any)?.outletId || outletId;
       const queue = JSON.parse(localStorage.getItem(`zapped_offline_menu_queue_${secureOutletId}`) || "[]");
@@ -228,7 +264,6 @@ export default function MenuManagePage() {
     }
   };
 
-  // 🔥 Smart Toggle for Dashboard Image Isolation
   const handleImageToggle = async (item: any, isChecked: boolean) => {
     if (!navigator.onLine) {
       alert("Connect to internet to toggle images.");
@@ -280,7 +315,6 @@ export default function MenuManagePage() {
     <>
       <title>ZedPoss | Menu & Catalog Configuration</title>
       <meta name="description" content="Add, edit, and configure pricing for your POS terminal. Secure outlet-based menu isolation by ZedooX Technologies." />
-      <meta name="keywords" content="Restaurant Menu Builder, Outlet Pricing POS, ZedPoss Menu, Cloud Menu Sync, GST Billing Pricing, Dynamic POS Menu, Cafe Menu Manager, Food Price Management, Quick Service Catalog, Item Modifiers POS, Secure Menu Database, Multi-Outlet Menu Control" />
 
       <div className="p-6 h-full flex flex-col lg:flex-row gap-6 bg-slate-50 overflow-y-auto">
         {/* FORM FIELD SIDEBAR PANEL */}
@@ -333,13 +367,30 @@ export default function MenuManagePage() {
               <input type="text" placeholder="e.g., 210690" value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold" />
             </div>
 
-            {/* IMAGE URL FIELD */}
+            {/* 🔥 IMAGE UPLOAD SWITCHER FIELD */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Image URL (Optional)</label>
-              <div className="flex relative">
-                <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
-                <input type="text" placeholder="https://..." value={formData.imageUrl} onChange={(e) => setFormData({...formData, imageUrl: e.target.value})} className="w-full pl-10 p-3 border border-slate-200 rounded-xl outline-none font-bold" />
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-sm font-bold text-slate-700">Item Image</label>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                   <button type="button" onClick={() => setImageUploadMode("URL")} className={`px-2 py-1 text-[9px] font-black uppercase rounded transition-all ${imageUploadMode === 'URL' ? 'bg-white shadow-sm text-orange-500' : 'text-slate-400'}`}>URL Link</button>
+                   <button type="button" onClick={() => setImageUploadMode("FILE")} className={`px-2 py-1 text-[9px] font-black uppercase rounded transition-all ${imageUploadMode === 'FILE' ? 'bg-white shadow-sm text-orange-500' : 'text-slate-400'}`}>Upload</button>
+                </div>
               </div>
+
+              {imageUploadMode === "URL" ? (
+                <div className="flex relative">
+                  <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+                  <input type="text" placeholder="https://..." value={formData.imageUrl} onChange={(e) => setFormData({...formData, imageUrl: e.target.value})} className="w-full pl-10 p-3 border border-slate-200 rounded-xl outline-none font-bold" />
+                </div>
+              ) : (
+                <label className="flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl p-3 cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <Upload size={16} className="text-slate-400 mr-2"/>
+                  <span className="text-xs font-bold text-slate-500">
+                    {formData.imageUrl && formData.imageUrl.startsWith("data:image") ? "Image Selected ✔" : "Choose File from Device"}
+                  </span>
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                </label>
+              )}
             </div>
 
             <div>
@@ -379,7 +430,7 @@ export default function MenuManagePage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs font-bold uppercase tracking-wider">
-                    <th className="p-4">Item ID</th>
+                    <th className="p-4">Item ID & HSN</th>
                     <th className="p-4">Item Name</th>
                     <th className="p-4">Category</th>
                     <th className="p-4">Base Price</th>
@@ -395,8 +446,11 @@ export default function MenuManagePage() {
                     const gst = item.price - base;
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition-colors uppercase">
-                        {/* MAPS DIRECTLY TO DB BARCODE FOR 5 DIGIT ID */}
-                        <td className="p-4 font-mono font-bold text-slate-400 text-sm">#{item.barcode || "----"}</td>
+                        {/* MAPS DIRECTLY TO DB BARCODE & SHOWS HSN CODE */}
+                        <td className="p-4 font-mono font-bold text-slate-400 text-sm">
+                          #{item.barcode || "----"}
+                          <span className="block text-[9px] text-slate-400 mt-0.5 font-bold uppercase">HSN: {item.hsnCode || "N/A"}</span>
+                        </td>
                         <td className="p-4 font-black text-slate-900 text-base">{item.name}</td>
                         <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{item.category}</span></td>
                         <td className="p-4 font-mono text-sm">₹{base.toFixed(2)}</td>
@@ -418,7 +472,7 @@ export default function MenuManagePage() {
                         <td className="p-4 text-center">
                           <div className="flex items-center justify-center space-x-2">
                             <button onClick={() => handleEdit(item)} className="p-2 text-blue-500"><Edit2 size={16}/></button>
-                            <button onClick={() => handleDelete(item.id)} className="p-2 text-red-500"><Trash2 size={16}/></button>
+                            <button onClick={() => handleDeleteTrigger(item)} className="p-2 text-red-500"><Trash2 size={16}/></button>
                           </div>
                         </td>
                       </tr>
@@ -429,6 +483,30 @@ export default function MenuManagePage() {
             </div>
           )}
         </div>
+
+        {/* ================= SECURE DELETE AUTH MODAL ================= */}
+        {showDeleteAuthModal && deleteItemTarget && (
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4 print:hidden animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-t-8 border-red-600 text-center relative overflow-hidden">
+              <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                <div className="flex items-center text-red-700 font-black uppercase text-sm"><LockKeyhole size={16} className="mr-1.5"/> Security Authority Lock</div>
+                <button onClick={()=>{setShowDeleteAuthModal(false); setSecurityPasswordInput("");}} className="text-slate-400 p-1 bg-slate-100 rounded-full"><X size={16}/></button>
+              </div>
+              <p className="text-xs font-bold text-slate-500 text-left mb-4 uppercase">Deleting: <span className="text-slate-900 font-black">{deleteItemTarget.name}</span></p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-left uppercase text-slate-400 tracking-wider mb-1.5">Enter POS Login Terminal Password</label>
+                  <input required type="password" placeholder="••••••••" value={securityPasswordInput} onChange={(e)=>setSecurityPasswordInput(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-mono text-center tracking-widest text-lg outline-none focus:border-red-500 bg-slate-50" />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={()=>{setShowDeleteAuthModal(false); setSecurityPasswordInput("");}} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl text-xs font-black uppercase">Cancel</button>
+                  <button onClick={() => confirmDelete(deleteItemTarget.id)} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center shadow-lg shadow-red-600/20"><ShieldCheck size={14} className="mr-1.5"/> Confirm Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </>
   );

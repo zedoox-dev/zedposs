@@ -41,6 +41,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [ticketData, setTicketData] = useState({ title: "", description: "", priority: "LOW" });
 
   useEffect(() => {
+    // 🔥 DYNAMIC METADATA FIX FOR "CREATE NEXT APP" FLASHING
+    document.title = "ZedPoss | Complete POS & Billing Management by ZedooX";
+    
     if (status !== "authenticated" || !session?.user) return;
 
     // ==========================================
@@ -87,6 +90,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [pathname, outletId, status, session, router]);
 
+  // Clean Search bar globally if location changes manually
+  useEffect(() => {
+    if (pathname === `/pos/${outletId}/dashboard`) {
+       setSearchBillNo("");
+    }
+  }, [pathname, outletId]);
+
   const triggerBackgroundSync = async (tenantId: string, currentOutletId: string) => {
     if (!navigator.onLine) return;
     setIsSyncing(true);
@@ -111,6 +121,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const handleNewOrder = () => {
+    setSearchBillNo(""); // Clear local state immediately
     window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
     router.push(`/pos/${outletId}/dashboard`);
     router.refresh();
@@ -172,11 +183,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      <title>ZedPoss | Complete POS & Billing Management by ZedooX</title>
-      <meta name="description" content="ZedPoss by ZedooX is the ultimate Cloud POS, Billing, and Restaurant Management software. Seamlessly manage multi-outlet billing, inventory, and KDS operations." />
-      <meta name="keywords" content="ZedPoss, ZedooX, ZedPoss by ZedooX, POS Software, Retail POS, Restaurant POS, Cloud Billing, ZedPoss App, Smart POS, GST Billing Software, Outlet Management, Kitchen Display System, KDS, Fast Checkout POS, Inventory Management, Cafe POS Software, QSR POS, Offline POS Billing, Cloud Sync POS, ZedooX Technologies, SaaS POS, Multi-outlet POS, Restaurant Billing App, Food Court POS, Bakery POS Software, Touch Screen Billing, Mobile POS, Cloud Based Point of Sale, Omni-channel POS, Food Delivery Integration, Zomato Swiggy POS, Digital Billing System, Inventory Tracking, Retail Management Software, Web POS Management" />
-      <meta name="author" content="ZedooX Technologies" />
-      <meta name="robots" content="index, follow" />
+      {/* 
+        NOTE: Dynamic Title handling is inside the useEffect logic above to override Next.js routing defaults securely.
+      */}
 
       <div className="flex flex-col h-screen bg-slate-50 overflow-hidden relative font-sans">
         
@@ -217,7 +226,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
             
             {/* 🔥 FIXED LOGO SIZE HERE */}
-            <div className="flex items-center text-orange-500 shrink-0 cursor-pointer" onClick={() => router.push(`/pos/${outletId}/dashboard`)}>
+            <div className="flex items-center text-orange-500 shrink-0 cursor-pointer" onClick={handleNewOrder}>
               <img src="/favicon.ico" alt="Favicon" className="w-6 h-6 sm:w-7 sm:h-7 mr-1.5 object-contain drop-shadow-md" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
               <span className="font-black text-lg sm:text-xl tracking-widest drop-shadow-md">ZedPoss</span>
             </div>

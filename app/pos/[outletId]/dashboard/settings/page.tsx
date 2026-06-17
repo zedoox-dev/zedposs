@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff } from "lucide-react";
+import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -35,16 +35,9 @@ const defaultPrinterConfig = {
 };
 
 const defaultGeneralConfig = {
-  outletName: "Ramkesar Foods",
-  address: "Lajpat Nagar, New Delhi",
-  phone: "",
-  fssai: "",
-  taxRate: "5",
-  currency: "₹",
-  
   autoRoundOff: true,
   lowStockAlerts: true,
-  showAllFilter: true, // Synced globally now
+  showAllFilter: true,
   
   requirePinForCancel: true,
   requirePinForDiscount: true,
@@ -58,18 +51,26 @@ export default function SettingsPage() {
 
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("general"); 
+  const [printerSubTab, setPrinterSubTab] = useState<"LAYOUT" | "KDS_ROUTING">("LAYOUT");
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
   
   const [generalSettings, setGeneralSettings] = useState(defaultGeneralConfig);
+  const [outletMasterData, setOutletMasterData] = useState<any>({});
   const [isSavingGeneral, setIsSavingGeneral] = useState(false);
 
   const [staffList, setStaffList] = useState<any[]>([]);
+  const [doarList, setDoarList] = useState<string[]>([]);
+  const [newDoarInput, setNewDoarInput] = useState("");
+  
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSavingStaff, setIsSavingStaff] = useState(false);
   const [formData, setFormData] = useState({ id: "", name: "", pin: "", role: "CASHIER" });
   
   const [printerSettings, setPrinterSettings] = useState(defaultPrinterConfig);
   const [isSavingPrinter, setIsSavingPrinter] = useState(false);
+
+  // Future KDS Setup Configuration State
+  const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -95,6 +96,14 @@ export default function SettingsPage() {
     if (!session?.user) return;
     const secureOutletId = (session.user as any).outletId || outletId;
 
+    // Retrieve Doar (Operators) List safely from Local Storage
+    const savedDoars = localStorage.getItem(`zapped_doars_${secureOutletId}`);
+    if (savedDoars) {
+      setDoarList(JSON.parse(savedDoars));
+    } else {
+      setDoarList(["Admin", "Manager", "Deepak"]);
+    }
+
     if (!navigator.onLine) {
       const savedGeneral = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
       if (savedGeneral) setGeneralSettings({ ...defaultGeneralConfig, ...JSON.parse(savedGeneral) });
@@ -112,14 +121,20 @@ export default function SettingsPage() {
       const data = await res.json();
       
       if (data.success) {
+        if (data.outletMaster) {
+           setOutletMasterData(data.outletMaster);
+        }
         if (data.generalSettings) {
-          setGeneralSettings({ ...defaultGeneralConfig, ...data.generalSettings });
-          localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(data.generalSettings));
-          localStorage.setItem(`zapped_show_all_filter`, String(data.generalSettings.showAllFilter));
+          // Merge to prevent missing keys on fallback
+          const mergedGeneral = { ...defaultGeneralConfig, ...data.generalSettings };
+          setGeneralSettings(mergedGeneral);
+          localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(mergedGeneral));
+          localStorage.setItem(`zapped_show_all_filter`, String(mergedGeneral.showAllFilter));
         }
         if (data.printerSettings) {
-          setPrinterSettings({ ...defaultPrinterConfig, ...data.printerSettings });
-          localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(data.printerSettings));
+          const mergedPrinter = { ...defaultPrinterConfig, ...data.printerSettings };
+          setPrinterSettings(mergedPrinter);
+          localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(mergedPrinter));
         }
         if (data.staffList && data.staffList.length > 0) {
           setStaffList(data.staffList);
@@ -182,6 +197,22 @@ export default function SettingsPage() {
     } finally {
       setIsSavingPrinter(false);
     }
+  };
+
+  const handleAddDoar = () => {
+    if (!newDoarInput.trim()) return;
+    const secureOutletId = (session?.user as any)?.outletId || outletId;
+    const updatedDoars = [...doarList, newDoarInput.trim()];
+    setDoarList(updatedDoars);
+    localStorage.setItem(`zapped_doars_${secureOutletId}`, JSON.stringify(updatedDoars));
+    setNewDoarInput("");
+  };
+
+  const handleRemoveDoar = (doarName: string) => {
+    const secureOutletId = (session?.user as any)?.outletId || outletId;
+    const updatedDoars = doarList.filter(d => d !== doarName);
+    setDoarList(updatedDoars);
+    localStorage.setItem(`zapped_doars_${secureOutletId}`, JSON.stringify(updatedDoars));
   };
 
   const handleSaveStaff = async (e: React.FormEvent) => {
@@ -284,47 +315,37 @@ export default function SettingsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   
-                  {/* Identity Module */}
+                  {/* Identity Module (Strictly Read Only from DB) */}
                   <div className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200">
-                    <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs">Business Profile</h3>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Outlet / Brand Name</label>
-                      <input type="text" value={generalSettings.outletName} onChange={(e) => setGeneralSettings({...generalSettings, outletName: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-900 focus:border-orange-500 bg-white" />
+                    <div className="flex justify-between items-center">
+                       <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs">Business Profile Master</h3>
+                       <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-2 py-0.5 rounded uppercase">Read Only</span>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Complete Address</label>
-                      <textarea value={generalSettings.address} onChange={(e) => setGeneralSettings({...generalSettings, address: e.target.value})} rows={3} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-900 focus:border-orange-500 bg-white resize-none" />
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1 flex items-center"><Store size={10} className="mr-1"/> Outlet / Brand Name</label>
+                      <input type="text" value={outletMasterData.name || "N/A"} readOnly className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-500 bg-slate-100/50 cursor-not-allowed" />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Official Contact Number</label>
-                      <input type="text" value={generalSettings.phone} onChange={(e) => setGeneralSettings({...generalSettings, phone: e.target.value.replace(/\D/g, '')})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-mono text-sm text-slate-900 focus:border-orange-500 bg-white" />
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1 flex items-center"><MapPin size={10} className="mr-1"/> Complete Address</label>
+                      <textarea value={outletMasterData.address || "N/A"} readOnly rows={3} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-500 bg-slate-100/50 cursor-not-allowed resize-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                       <div>
+                         <label className="block text-[10px] font-bold text-slate-600 mb-1 flex items-center"><Phone size={10} className="mr-1"/> Contact Number</label>
+                         <input type="text" value={outletMasterData.phone || "N/A"} readOnly className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-mono text-sm text-slate-500 bg-slate-100/50 cursor-not-allowed" />
+                       </div>
+                       <div>
+                         <label className="block text-[10px] font-bold text-slate-600 mb-1 flex items-center"><Hash size={10} className="mr-1"/> GSTIN</label>
+                         <input type="text" value={outletMasterData.gstin || "N/A"} readOnly className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-mono text-sm text-slate-500 bg-slate-100/50 cursor-not-allowed" />
+                       </div>
                     </div>
                   </div>
 
-                  {/* Financial Module */}
-                  <div className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200">
-                    <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs">Financial & Legal Configurations</h3>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-1">FSSAI License Number</label>
-                      <input type="text" value={generalSettings.fssai} onChange={(e) => setGeneralSettings({...generalSettings, fssai: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-bold text-sm text-slate-900 focus:border-orange-500 bg-white uppercase" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Currency Symbol</label>
-                        <input type="text" value={generalSettings.currency} onChange={(e) => setGeneralSettings({...generalSettings, currency: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-black text-center text-sm text-slate-900 focus:border-orange-500 bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Default GST Rate (%)</label>
-                        <input type="number" value={generalSettings.taxRate} onChange={(e) => setGeneralSettings({...generalSettings, taxRate: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none font-mono font-bold text-center text-sm text-slate-900 focus:border-orange-500 bg-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 🔥 High-Level Workflow Engine */}
-                  <div className="col-span-1 md:col-span-2 space-y-4 bg-orange-50/50 p-5 rounded-2xl border border-orange-100">
+                  {/* Operational Settings Module */}
+                  <div className="space-y-4 bg-orange-50/50 p-5 rounded-2xl border border-orange-100">
                     <h3 className="font-black text-orange-800 uppercase tracking-wider text-xs flex items-center"><MonitorSmartphone size={16} className="mr-2 text-orange-500"/> Advanced POS Workflow Engine</h3>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                       {/* ALL CATEGORY FILTER TOGGLE */}
                       <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
                         <div>
@@ -366,7 +387,7 @@ export default function SettingsPage() {
 
             {/* 2. PRINTER & KOT TAB */}
             {activeTab === "printer" && (
-              <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                   <h2 className="text-xl font-bold text-slate-800 flex items-center"><Printer className="mr-2 text-orange-500" /> Hardware & Print Customization</h2>
                   <button onClick={handleSavePrinterSettings} disabled={isSavingPrinter} className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center shadow-md active:scale-95 transition-all">
@@ -374,60 +395,91 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                  {/* Hardware */}
-                  <div className="space-y-5">
-                    <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600">1. Physical Hardware Routing</h3>
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Terminal Printer Roll Size</label>
-                      <select value={printerSettings.printerSize} onChange={(e) => setPrinterSettings({...printerSettings, printerSize: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white outline-none font-bold text-slate-800 focus:border-orange-500 text-sm">
-                        <option value="58mm">2-Inch (58mm) Mini Thermal</option><option value="80mm">3-Inch (80mm) Standard POS</option><option value="100mm">4-Inch (100mm) Label Roll</option><option value="125mm">5-Inch (125mm) Wide Format</option>
-                      </select>
-                    </div>
-
-                    <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600 pt-2">2. Dynamic KOT Routing Engine</h3>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                      <div className="flex justify-between items-center"><div><h4 className="font-bold text-slate-800 text-xs">DINE IN KOT</h4><p className="text-[10px] text-slate-500">Table orders token.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDineIn: !printerSettings.kotDineIn})}>{printerSettings.kotDineIn ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
-                      <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">DELIVERY KOT</h4><p className="text-[10px] text-slate-500">Zomato/Swiggy slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDelivery: !printerSettings.kotDelivery})}>{printerSettings.kotDelivery ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
-                      <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
-                    </div>
-                  </div>
-
-                  {/* Custom Receipt Text & Font Size Editors */}
-                  <div className="space-y-4">
-                    <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
-                    
-                    {/* Header Row */}
-                    <div className="flex space-x-2">
-                      <div className="flex-1">
-                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label>
-                        <input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" />
-                      </div>
-                      <div className="w-1/3">
-                        <label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label>
-                        <select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold">
-                          <option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option>
-                          <option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="flex space-x-2">
-                      <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Sub-Header</label><input type="text" value={printerSettings.subHeader} onChange={(e) => setPrinterSettings({...printerSettings, subHeader: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
-                      <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.subHeaderSize} onChange={(e) => setPrinterSettings({...printerSettings, subHeaderSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
-                    </div>
-
-                    <div className="flex space-x-2">
-                      <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">GSTIN</label><input type="text" value={printerSettings.gstNo} onChange={(e) => setPrinterSettings({...printerSettings, gstNo: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold uppercase focus:border-orange-500" /></div>
-                      <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.gstSize} onChange={(e) => setPrinterSettings({...printerSettings, gstSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[9px]">Small</option><option value="text-[10px]">Normal</option><option value="text-xs">Large</option></select></div>
-                    </div>
-
-                    <div className="flex space-x-2">
-                      <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Footer Message</label><input type="text" value={printerSettings.footerMsg} onChange={(e) => setPrinterSettings({...printerSettings, footerMsg: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
-                      <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.footerSize} onChange={(e) => setPrinterSettings({...printerSettings, footerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
-                    </div>
-                  </div>
+                {/* Sub Tab Switcher */}
+                <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+                   <button onClick={() => setPrinterSubTab("LAYOUT")} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors ${printerSubTab === 'LAYOUT' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Bill Layout Editor</button>
+                   <button onClick={() => setPrinterSubTab("KDS_ROUTING")} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors ${printerSubTab === 'KDS_ROUTING' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Multi-Printer & KOT Routing</button>
                 </div>
+
+                {printerSubTab === "LAYOUT" && (
+                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in slide-in-from-left-2 mt-4">
+                     {/* Hardware */}
+                     <div className="space-y-5">
+                       <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600">1. Physical Hardware Roll Size</h3>
+                       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                         <label className="block text-xs font-bold text-slate-600 mb-1">Terminal Printer Roll</label>
+                         <select value={printerSettings.printerSize} onChange={(e) => setPrinterSettings({...printerSettings, printerSize: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white outline-none font-bold text-slate-800 focus:border-orange-500 text-sm">
+                           <option value="58mm">2-Inch (58mm) Mini Thermal</option><option value="80mm">3-Inch (80mm) Standard POS</option><option value="100mm">4-Inch (100mm) Label Roll</option><option value="125mm">5-Inch (125mm) Wide Format</option>
+                         </select>
+                       </div>
+
+                       <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600 pt-2">2. Dynamic KOT Routing Engine</h3>
+                       <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                         <div className="flex justify-between items-center"><div><h4 className="font-bold text-slate-800 text-xs">DINE IN KOT</h4><p className="text-[10px] text-slate-500">Table orders token.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDineIn: !printerSettings.kotDineIn})}>{printerSettings.kotDineIn ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                         <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">DELIVERY KOT</h4><p className="text-[10px] text-slate-500">Zomato/Swiggy slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDelivery: !printerSettings.kotDelivery})}>{printerSettings.kotDelivery ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                         <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                       </div>
+                     </div>
+
+                     {/* Custom Receipt Text & Font Size Editors */}
+                     <div className="space-y-4">
+                       <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
+                       
+                       {/* Header Row */}
+                       <div className="flex space-x-2">
+                         <div className="flex-1">
+                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label>
+                           <input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" />
+                         </div>
+                         <div className="w-1/3">
+                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label>
+                           <select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold">
+                             <option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option>
+                             <option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option>
+                           </select>
+                         </div>
+                       </div>
+
+                       <div className="flex space-x-2">
+                         <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Sub-Header</label><input type="text" value={printerSettings.subHeader} onChange={(e) => setPrinterSettings({...printerSettings, subHeader: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
+                         <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.subHeaderSize} onChange={(e) => setPrinterSettings({...printerSettings, subHeaderSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
+                       </div>
+
+                       <div className="flex space-x-2">
+                         <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">GSTIN</label><input type="text" value={printerSettings.gstNo} onChange={(e) => setPrinterSettings({...printerSettings, gstNo: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold uppercase focus:border-orange-500" /></div>
+                         <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.gstSize} onChange={(e) => setPrinterSettings({...printerSettings, gstSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[9px]">Small</option><option value="text-[10px]">Normal</option><option value="text-xs">Large</option></select></div>
+                       </div>
+
+                       <div className="flex space-x-2">
+                         <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Footer Message</label><input type="text" value={printerSettings.footerMsg} onChange={(e) => setPrinterSettings({...printerSettings, footerMsg: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
+                         <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.footerSize} onChange={(e) => setPrinterSettings({...printerSettings, footerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
+                       </div>
+                     </div>
+                   </div>
+                )}
+
+                {printerSubTab === "KDS_ROUTING" && (
+                   <div className="mt-4 animate-in slide-in-from-right-2">
+                      <div className="bg-orange-50/50 p-6 rounded-2xl border border-orange-100 flex flex-col items-center justify-center text-center space-y-3 min-h-[300px]">
+                         <Printer size={48} className="text-orange-300" />
+                         <h3 className="font-black text-orange-800 text-lg uppercase tracking-wider">Multi-Printer Setup Active</h3>
+                         <p className="text-xs text-orange-600/80 font-bold max-w-md">KDS Nodes and specific category routing (e.g. Bar printer, Kitchen 1) are configured and managed centrally. Terminal is ready for remote silent printing commands over WebUSB & Local IP.</p>
+                         <div className="mt-4 w-full max-w-lg bg-white p-4 rounded-xl border border-orange-200 shadow-sm text-left">
+                            <h4 className="text-[10px] font-black uppercase text-slate-400 mb-3 border-b pb-2">Configured Nodes</h4>
+                            {kdsConfigs.map((node, i) => (
+                               <div key={i} className="flex justify-between items-center text-xs font-bold text-slate-700 bg-slate-50 p-2 rounded-lg mb-2 last:mb-0">
+                                  <span>{node.name}</span>
+                                  <div className="flex space-x-4">
+                                     <span className="font-mono text-indigo-500">{node.ipAddress}</span>
+                                     <span className="text-orange-500">{node.type}</span>
+                                  </div>
+                               </div>
+                            ))}
+                            <button className="w-full mt-2 py-2 border-2 border-dashed border-slate-300 text-slate-400 font-bold text-xs rounded-lg hover:border-orange-500 hover:text-orange-500 transition-colors">+ Add Hardware Printer Route</button>
+                         </div>
+                      </div>
+                   </div>
+                )}
               </div>
             )}
 
@@ -578,43 +630,72 @@ export default function SettingsPage() {
                      </table>
                    </div>
 
-                   {/* 🔥 NEW: Advanced Security Policies Engine */}
-                   <div className="bg-red-50/30 p-5 rounded-2xl border border-red-100">
-                      <h3 className="font-black text-red-800 uppercase tracking-wider text-xs flex items-center mb-4"><Lock size={16} className="mr-2 text-red-500"/> Security & Authorization Policies</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                          <div>
-                            <h4 className="font-bold text-sm text-slate-800 flex items-center"><Trash2 size={12} className="mr-1 text-slate-400"/> Void/Cancel Checks</h4>
-                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN to cancel bills.</p>
-                          </div>
-                          <button onClick={() => setGeneralSettings({...generalSettings, requirePinForCancel: !generalSettings.requirePinForCancel})}>
-                            {generalSettings.requirePinForCancel ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
-                          </button>
-                        </div>
+                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* 🔥 Advanced Security Policies Engine */}
+                      <div className="bg-red-50/30 p-5 rounded-2xl border border-red-100 h-fit">
+                         <h3 className="font-black text-red-800 uppercase tracking-wider text-xs flex items-center mb-4"><Lock size={16} className="mr-2 text-red-500"/> Security & Authorization Policies</h3>
+                         <div className="grid grid-cols-1 gap-4">
+                           
+                           <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                             <div>
+                               <h4 className="font-bold text-sm text-slate-800 flex items-center"><Trash2 size={12} className="mr-1 text-slate-400"/> Void/Cancel Checks</h4>
+                               <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN to cancel bills.</p>
+                             </div>
+                             <button onClick={() => setGeneralSettings({...generalSettings, requirePinForCancel: !generalSettings.requirePinForCancel})}>
+                               {generalSettings.requirePinForCancel ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                             </button>
+                           </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                          <div>
-                            <h4 className="font-bold text-sm text-slate-800 flex items-center"><Percent size={12} className="mr-1 text-slate-400"/> Manual Discounts</h4>
-                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN for discounts.</p>
-                          </div>
-                          <button onClick={() => setGeneralSettings({...generalSettings, requirePinForDiscount: !generalSettings.requirePinForDiscount})}>
-                            {generalSettings.requirePinForDiscount ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
-                          </button>
-                        </div>
+                           <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                             <div>
+                               <h4 className="font-bold text-sm text-slate-800 flex items-center"><Percent size={12} className="mr-1 text-slate-400"/> Manual Discounts</h4>
+                               <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN for discounts.</p>
+                             </div>
+                             <button onClick={() => setGeneralSettings({...generalSettings, requirePinForDiscount: !generalSettings.requirePinForDiscount})}>
+                               {generalSettings.requirePinForDiscount ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
+                             </button>
+                           </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
-                          <div className="flex-1">
-                            <h4 className="font-bold text-sm text-slate-800 flex items-center"><Clock size={12} className="mr-1 text-slate-400"/> Session Timeout</h4>
-                            <p className="text-[9px] font-bold text-slate-400 mt-0.5">Auto-lock POS after inactivity.</p>
-                          </div>
-                          <div className="w-16">
-                            <select value={generalSettings.autoLogoutMins} onChange={(e) => setGeneralSettings({...generalSettings, autoLogoutMins: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white font-black text-slate-800 text-center">
-                              <option value="15">15m</option><option value="30">30m</option><option value="60">1Hr</option><option value="OFF">OFF</option>
-                            </select>
-                          </div>
-                        </div>
+                           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
+                             <div className="flex-1">
+                               <h4 className="font-bold text-sm text-slate-800 flex items-center"><Clock size={12} className="mr-1 text-slate-400"/> Session Timeout</h4>
+                               <p className="text-[9px] font-bold text-slate-400 mt-0.5">Auto-lock POS after inactivity.</p>
+                             </div>
+                             <div className="w-16">
+                               <select value={generalSettings.autoLogoutMins} onChange={(e) => setGeneralSettings({...generalSettings, autoLogoutMins: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white font-black text-slate-800 text-center">
+                                 <option value="15">15m</option><option value="30">30m</option><option value="60">1Hr</option><option value="OFF">OFF</option>
+                               </select>
+                             </div>
+                           </div>
 
+                         </div>
+                      </div>
+
+                      {/* 🔥 Operators (DOARS) Management */}
+                      <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100 h-fit">
+                         <h3 className="font-black text-indigo-800 uppercase tracking-wider text-xs flex items-center mb-4"><Users size={16} className="mr-2 text-indigo-500"/> Operator (Doars) List Management</h3>
+                         <p className="text-[10px] font-bold text-indigo-600/70 mb-4">Add authorized names to display in Petty Cash and Purchase (GRN) operator dropdowns.</p>
+                         
+                         <div className="flex items-center space-x-2 mb-4">
+                           <input 
+                             type="text" 
+                             placeholder="E.g. Cashier Rahul" 
+                             value={newDoarInput} 
+                             onChange={(e) => setNewDoarInput(e.target.value)} 
+                             className="flex-1 p-2.5 border border-indigo-200 rounded-xl outline-none font-bold text-xs"
+                           />
+                           <button onClick={handleAddDoar} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase px-4 py-3 rounded-xl transition-all shadow-sm">Add Doar</button>
+                         </div>
+
+                         <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                           {doarList.map((doar, idx) => (
+                              <div key={idx} className="flex justify-between items-center bg-white border border-slate-200 p-2.5 rounded-xl shadow-sm">
+                                 <span className="font-bold text-xs text-slate-700 capitalize">{doar}</span>
+                                 <button onClick={() => handleRemoveDoar(doar)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors"><Trash2 size={14}/></button>
+                              </div>
+                           ))}
+                           {doarList.length === 0 && <p className="text-xs font-bold text-slate-400 text-center italic py-2">No operators configured.</p>}
+                         </div>
                       </div>
                    </div>
 

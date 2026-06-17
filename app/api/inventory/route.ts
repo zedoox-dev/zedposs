@@ -16,15 +16,17 @@ export async function GET(req: Request) {
 
     const settings: any = out.generalSettings ? (typeof out.generalSettings === 'string' ? JSON.parse(out.generalSettings) : out.generalSettings) : {};
     
+    // Check if salt matches DB
     if (settings.qrPurchaseToken && settings.qrPurchaseToken !== urlToken) {
       return NextResponse.json({ expired: true });
     }
     
+    // Send inventory list for mobile dropdown (Strictly NO MENU ITEMS)
     const inventory = await prisma.inventory.findMany({ 
         where: { outletId: queryOutletId, isDeleted: false, type: { not: "FINISHED_GOOD" } }, 
         select: { id: true, itemName: true, unit: true } 
     });
-    // 🔥 FIX: Fetching Vendors Outlet-Wise using tenantId field as a secure wrapper
+    // Fetching Vendors Outlet-Wise using tenantId field as a secure wrapper
     const vendors = await prisma.vendor.findMany({ 
         where: { tenantId: queryOutletId, isDeleted: false }, 
         select: { name: true } 
@@ -46,12 +48,13 @@ export async function GET(req: Request) {
   }
 
   try {
+    // 1. Fetch Inventory SKUs strictly for this outlet (NO MENU ITEMS via DB model separation)
     const inventory = await prisma.inventory.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       orderBy: { itemName: 'asc' }
     });
 
-    // 🔥 FIX: Fetch Vendors strictly for this OUTLET (Outlet-Wise Isolation)
+    // 2. Fetch Vendors strictly for this OUTLET (Outlet-Wise Isolation)
     const vendors = await prisma.vendor.findMany({
       where: { tenantId: secureOutletId, isDeleted: false },
       orderBy: { name: 'asc' }
@@ -59,6 +62,7 @@ export async function GET(req: Request) {
 
     const mappedVendors = vendors.map(v => ({ ...v, outstanding: v.outstandingAmt }));
 
+    // 3. Fetch Purchase Orders (GRN Logs) strictly for this outlet
     const purchases = await prisma.purchaseOrder.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       include: {
@@ -98,6 +102,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, itemName, type, unit, stockLevel, minStock, vendorData, newToken, outletId } = body;
 
+    // 🟢 REGENERATE MOBILE GRN TOKEN
     if (action === "REGENERATE_TOKEN") {
       const session = await getServerSession(authOptions);
       if (!session || !session.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -119,6 +124,7 @@ export async function POST(req: Request) {
 
     const secureOutletId = (session.user as any).outletId;
 
+    // ACTION: ADD NEW INVENTORY SKU
     if (action === "ADD_SKU") {
       const item = await prisma.inventory.create({
         data: {
@@ -133,6 +139,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, item });
     }
 
+    // ACTION: ADD NEW VENDOR
     if (action === "ADD_VENDOR") {
       let creditDays = 0;
       if (vendorData.terms === "NET_15") creditDays = 15;
@@ -156,7 +163,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error: any) {
-    return NextResponse.json({ error: "Create Error", details: error.message }, { status: 500 });
+    console.error("Inventory Save Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
@@ -177,6 +185,7 @@ export async function PUT(req: Request) {
     const dbOutlet = await prisma.outlet.findUnique({ where: { id: secureOutletId } });
     if (!dbOutlet) return NextResponse.json({ error: "Invalid Outlet." }, { status: 400 });
 
+    // Verify Mobile Token
     if (isMobileEntry) {
       const settings: any = dbOutlet.generalSettings ? (typeof dbOutlet.generalSettings === 'string' ? JSON.parse(dbOutlet.generalSettings) : dbOutlet.generalSettings) : {};
       if (settings.qrPurchaseToken !== token) {
@@ -184,6 +193,7 @@ export async function PUT(req: Request) {
       }
     }
 
+    // 💰 ACTION: SETTLE VENDOR DUES
     if (action === "PAY_VENDOR_DUE" && session?.user) {
       const updatedVendor = await prisma.vendor.update({
         where: { id: vendorId },
@@ -192,6 +202,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: true, vendor: updatedVendor });
     }
 
+    // 🔥 FULL PRISMA INTEGRATION FOR GRN (PURCHASE ENTRY)
     if (action === "ADD_PURCHASE") {
       const { rate, qty, vendorName, invoiceNo, paymentMode, totalAmount, isUrgent } = purchaseData;
 
@@ -206,7 +217,6 @@ export async function PUT(req: Request) {
           data: { stockLevel: { increment: parseFloat(qty) } }
         });
 
-        // Search Vendor per Outlet
         let targetVendor = await tx.vendor.findFirst({
           where: { tenantId: secureOutletId, name: vendorName }
         });

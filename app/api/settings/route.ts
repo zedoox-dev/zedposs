@@ -14,8 +14,10 @@ export async function GET(req: Request) {
   if (!secureOutletId || !secureTenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 400 });
 
   try {
+    // 🔥 Fetch outlet master data for read-only Display
     const outlet = await prisma.outlet.findUnique({
-      where: { id: secureOutletId }
+      where: { id: secureOutletId },
+      include: { tenant: true } // Fetching Tenant Info as well for full profile
     });
 
     // Fetches Staff with their linked Role relation securely
@@ -37,6 +39,13 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       success: true,
+      outletMaster: {
+         name: outlet?.name || "",
+         address: outlet?.address || "",
+         phone: outlet?.phone || "",
+         currency: outlet?.currency || "₹",
+         gstin: (outlet?.tenant as any)?.gstin || "N/A"
+      },
       generalSettings: outlet?.generalSettings || null,
       printerSettings: outlet?.printerSettings || null,
       staffList: mappedStaff

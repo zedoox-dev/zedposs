@@ -10,8 +10,8 @@ export default function InventoryAndPurchaseERP() {
   const outletId = params.outletId as string;
   const { data: session } = useSession();
 
+  // --- Core States ---
   const [isMounted, setIsMounted] = useState(false);
-  // 🔥 Added PRODUCED Tab
   const [activeView, setActiveView] = useState<"INVENTORY" | "PRODUCED" | "PURCHASE" | "VENDORS" | "PURCHASE_ANALYTICS">("INVENTORY");
   const [inventory, setInventory] = useState<any[]>([]);
   const [recipes, setRecipes] = useState<any[]>([]);
@@ -20,10 +20,12 @@ export default function InventoryAndPurchaseERP() {
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
   const [printerConfig, setPrinterConfig] = useState<any>({ printerSize: "80mm", headerName: "RAMKESAR POS" });
 
+  // --- Date Filters ---
   const [dateFilter, setDateFilter] = useState("today"); 
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
 
+  // --- Inventory Filters & Modals ---
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [stockLedgerView, setStockLedgerView] = useState<"LIVE" | "OPENING" | "INWARD" | "CONSUMED" | "CLOSING">("LIVE");
@@ -42,6 +44,7 @@ export default function InventoryAndPurchaseERP() {
   const [deleteItemTarget, setDeleteItemTarget] = useState<any>(null);
   const [securityPasswordInput, setSecurityPasswordInput] = useState("");
 
+  // --- Purchase Module States ---
   const [purchaseItem, setPurchaseItem] = useState("");
   const [purchaseQty, setPurchaseQty] = useState("");
   const [purchaseRate, setPurchaseRate] = useState("");
@@ -83,9 +86,10 @@ export default function InventoryAndPurchaseERP() {
     const pConf = localStorage.getItem(`zapped_printer_config_${outletId}`);
     if (pConf) setPrinterConfig(JSON.parse(pConf));
     
+    // 🔥 FIX: Strict Fetching of Doars (no fallback array)
     const savedDoars = localStorage.getItem(`zapped_doars_${outletId}`);
     if (savedDoars) setStaffDoars(JSON.parse(savedDoars));
-    else setStaffDoars(["Admin", "Manager", "Deepak", "Chotu", "Varinder", "Raju"]);
+    else setStaffDoars([]);
     
     const savedIndents = localStorage.getItem(`zapped_indent_requests_${outletId}`);
     if (savedIndents) setIndentLogs(JSON.parse(savedIndents));
@@ -266,11 +270,14 @@ export default function InventoryAndPurchaseERP() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      if(res.ok) {
+      const data = await res.json();
+      if(res.ok && data.success) {
         setShowAddVendorModal(false);
         setNewVendorData({ name: "", contactPerson: "", phone: "", address: "", outstanding: "0", gstin:"", rating:"5", terms:"NET_0" });
         fetchInventoryAndProduction();
         alert("🟢 Approved Vendor Account Registered via Cloud!");
+      } else {
+        alert(`Error: ${data.error}`);
       }
     } catch (e) { alert("Error connecting to server."); }
   };
@@ -342,13 +349,14 @@ export default function InventoryAndPurchaseERP() {
   };
 
   const filteredPurchaseLogs = purchaseLogs.filter(log => isLogWithinDate(log.date));
+  const filteredHistory = history.filter(h => isLogWithinDate(h.date)); 
 
-  // 🔥 1. EXACT CONSUMPTION MATH USING [RM_LOG] FROM DB
+  // EXACT CONSUMPTION MATH USING [RM_LOG] FROM DB
   const calculateConsumedQuantity = (inventoryId: string) => {
     let totalConsumedVolume = 0;
-    history.forEach(batch => {
+    filteredHistory.forEach(batch => {
       try {
-        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/);
+        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*)\]$/);
         if(rmMatch) {
           const logs = JSON.parse(rmMatch[1]);
           const found = logs.find((l:any) => l.id === inventoryId);
@@ -356,7 +364,7 @@ export default function InventoryAndPurchaseERP() {
             totalConsumedVolume += parseFloat(found.deducted);
           }
         }
-      } catch(e) {}
+      } catch(e) { console.error("Parse err", e) }
     });
     return totalConsumedVolume;
   };
@@ -373,7 +381,6 @@ export default function InventoryAndPurchaseERP() {
 
   const handlePrint = () => { setTimeout(() => { window.print(); }, 150); };
 
-  // 🔥 2. STRICT SEPARATION OF RAW MATERIALS AND PRODUCED SERVINGS
   const rawInventory = inventory.filter(i => i.type !== "FINISHED_GOOD");
   const producedInventory = inventory.filter(i => i.type === "FINISHED_GOOD");
 
@@ -411,12 +418,12 @@ export default function InventoryAndPurchaseERP() {
     ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] 
     : "NONE";
 
-  // 🔥 3. STRICT ISOLATION FOR MOBILE QR GRN VIEW
+  // 🔥 3. STRICT ISOLATION FOR MOBILE QR GRN VIEW (No layout access)
   if (isMobileMode) {
     if (mobileAccessDenied) {
       return (
-        <div className="mobile-grn-portal fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
-          <style>{`body > div:first-child, header, nav, aside { display: none !important; }`}</style>
+        <div className="fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+          <style dangerouslySetInnerHTML={{__html: `header, nav, aside { display: none !important; }`}} />
           <ShieldAlert size={80} className="text-red-500 mb-6 animate-pulse"/>
           <h1 className="text-2xl font-black text-white uppercase tracking-widest mb-2">Access Token Expired</h1>
           <p className="text-slate-400 font-bold text-sm">Security matrix has invalidated this QR session. Please request the Manager to regenerate the QR code on the desktop terminal.</p>
@@ -424,11 +431,11 @@ export default function InventoryAndPurchaseERP() {
       );
     }
     
-    if (loading) return <div className="mobile-grn-portal fixed inset-0 z-[99999] bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-white" size={40}/><style>{`body > div:first-child, header, nav, aside { display: none !important; }`}</style></div>;
+    if (loading) return <div className="fixed inset-0 z-[99999] bg-slate-900 flex justify-center items-center"><style dangerouslySetInnerHTML={{__html: `header, nav, aside { display: none !important; }`}} /><Loader2 className="animate-spin text-white" size={40}/></div>;
 
     return (
-      <div className="mobile-grn-portal fixed inset-0 z-[99999] w-full h-[100dvh] overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
-        <style>{`body > div:first-child, header, nav, aside { display: none !important; }`}</style>
+      <div className="fixed inset-0 z-[99999] w-full h-full overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
+        <style dangerouslySetInnerHTML={{__html: `header, nav, aside { display: none !important; }`}} />
         <div className="w-full max-w-md mt-6 mb-auto relative z-[100000]">
           {/* Outlet Name Banner */}
           <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-indigo-500 text-center shadow-lg">
@@ -494,6 +501,7 @@ export default function InventoryAndPurchaseERP() {
                 <select required value={purchaseDoar} onChange={(e) => setPurchaseDoar(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-indigo-500 shadow-sm outline-none">
                   <option value="" disabled>Choose Personnel...</option>
                   {staffDoars.map(d => <option key={d} value={d}>{d}</option>)}
+                  {staffDoars.length === 0 && <option disabled>No Operators config in Settings</option>}
                 </select>
               </div>
               {!isHQ && parseFloat(purchaseQty)>0 && parseFloat(purchaseRate)>0 && (
@@ -535,6 +543,7 @@ export default function InventoryAndPurchaseERP() {
             </div>
             
             <div className="flex flex-wrap items-center gap-2">
+              {/* GLOBAL DATE FILTERS CONTROL BAR */}
               <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="p-2 border border-slate-200 rounded-lg font-black text-[10px] uppercase tracking-wider bg-white outline-none focus:border-indigo-500 shadow-sm mr-2">
                 <option value="today">Today's Ledger</option><option value="yesterday">Yesterday's Ledger</option><option value="custom">Custom Range</option>
                 <option value="all_history">Till Now Accounts</option>
@@ -730,7 +739,7 @@ export default function InventoryAndPurchaseERP() {
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Received Qty</label>
                         <div className="flex items-center">
                           <input required type="number" step="any" min="0.01" placeholder="0" value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-l-xl text-sm font-mono font-black focus:border-indigo-500 outline-none" />
-                          <span className="bg-slate-100 border border-l-0 border-slate-200 p-2.5 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? inventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span>
+                          <span className="bg-slate-100 border border-l-0 border-slate-200 p-2.5 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? rawInventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span>
                         </div>
                       </div>
                       {!isHQ && (
@@ -754,7 +763,7 @@ export default function InventoryAndPurchaseERP() {
                             <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Supplier / Vendor</label>
                             <select required={!isHQ} value={purchaseVendor} onChange={(e) => setPurchaseVendor(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
                               <option value="" disabled>Select Vendor...</option>
-                              {vendorList.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                              {vendors.map(v => <option key={v} value={v}>{v}</option>)}
                             </select>
                           </div>
                           <div>
@@ -786,6 +795,7 @@ export default function InventoryAndPurchaseERP() {
                       <select required value={purchaseDoar} onChange={(e) => setPurchaseDoar(e.target.value)} className="w-full p-3 border-2 border-indigo-100 rounded-xl text-xs font-bold bg-indigo-50/30 outline-none text-indigo-900 focus:border-indigo-500 shadow-sm">
                         <option value="" disabled>Verified Receiving By...</option>
                         {staffDoars.map(d => <option key={d} value={d}>{d}</option>)}
+                        {staffDoars.length === 0 && <option disabled>No Operators config in Settings</option>}
                       </select>
                     </div>
                   </div>
