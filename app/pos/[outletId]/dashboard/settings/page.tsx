@@ -52,7 +52,7 @@ export default function SettingsPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("general"); 
   const [printerSubTab, setPrinterSubTab] = useState<"LAYOUT" | "KDS_ROUTING">("LAYOUT");
-  const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
+  const [isOnline, setIsOnline] = useState(true);
   
   const [generalSettings, setGeneralSettings] = useState(defaultGeneralConfig);
   const [outletMasterData, setOutletMasterData] = useState<any>({});
@@ -71,53 +71,59 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
+  // 🔥 Safely handle window object in Next.js SSR
   useEffect(() => {
+    setIsMounted(true); 
+    setIsOnline(navigator.onLine);
+    
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
-    setIsMounted(true); 
-
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [outletId, session]);
+  }, []);
 
   useEffect(() => {
-    if (session?.user) {
+    if (isMounted && session?.user) {
       fetchSettingsFromDB();
     }
-  }, [session, isOnline]);
+  }, [session, isOnline, isMounted]);
 
   const fetchSettingsFromDB = async () => {
     if (!session?.user) return;
     const secureOutletId = (session.user as any).outletId || outletId;
 
-    // 🔥 FIX 3: Robust Try-Catch for Local Storage parses
-    const savedDoars = localStorage.getItem(`zapped_doars_${secureOutletId}`);
-    if (savedDoars) {
-      try {
-        setDoarList(JSON.parse(savedDoars));
-      } catch(e) {
+    // 🔥 Safe LocalStorage access after mount
+    if (typeof window !== "undefined") {
+      const savedDoars = localStorage.getItem(`zapped_doars_${secureOutletId}`);
+      if (savedDoars) {
+        try {
+          setDoarList(JSON.parse(savedDoars));
+        } catch(e) {
+          setDoarList(["Admin", "Manager", "Deepak"]);
+        }
+      } else {
         setDoarList(["Admin", "Manager", "Deepak"]);
       }
-    } else {
-      setDoarList(["Admin", "Manager", "Deepak"]);
     }
 
     if (!navigator.onLine) {
-      try {
-        const savedGeneral = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
-        if (savedGeneral) setGeneralSettings({ ...defaultGeneralConfig, ...JSON.parse(savedGeneral) });
+      if (typeof window !== "undefined") {
+        try {
+          const savedGeneral = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
+          if (savedGeneral) setGeneralSettings({ ...defaultGeneralConfig, ...JSON.parse(savedGeneral) });
 
-        const savedPrinter = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
-        if (savedPrinter) setPrinterSettings({ ...defaultPrinterConfig, ...JSON.parse(savedPrinter) });
+          const savedPrinter = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
+          if (savedPrinter) setPrinterSettings({ ...defaultPrinterConfig, ...JSON.parse(savedPrinter) });
 
-        const savedStaff = localStorage.getItem(`zapped_staff_list_${secureOutletId}`);
-        if (savedStaff) setStaffList(JSON.parse(savedStaff));
-      } catch(e) {}
+          const savedStaff = localStorage.getItem(`zapped_staff_list_${secureOutletId}`);
+          if (savedStaff) setStaffList(JSON.parse(savedStaff));
+        } catch(e) {}
+      }
       return;
     }
 
@@ -130,22 +136,27 @@ export default function SettingsPage() {
            setOutletMasterData(data.outletMaster);
         }
         if (data.generalSettings) {
-          // Double verify object spread
           const safeGeneral = typeof data.generalSettings === 'string' ? JSON.parse(data.generalSettings) : data.generalSettings;
           const mergedGeneral = { ...defaultGeneralConfig, ...safeGeneral };
           setGeneralSettings(mergedGeneral);
-          localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(mergedGeneral));
-          localStorage.setItem(`zapped_show_all_filter`, String(mergedGeneral.showAllFilter));
+          if (typeof window !== "undefined") {
+             localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(mergedGeneral));
+             localStorage.setItem(`zapped_show_all_filter`, String(mergedGeneral.showAllFilter));
+          }
         }
         if (data.printerSettings) {
           const safePrinter = typeof data.printerSettings === 'string' ? JSON.parse(data.printerSettings) : data.printerSettings;
           const mergedPrinter = { ...defaultPrinterConfig, ...safePrinter };
           setPrinterSettings(mergedPrinter);
-          localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(mergedPrinter));
+          if (typeof window !== "undefined") {
+             localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(mergedPrinter));
+          }
         }
         if (data.staffList && data.staffList.length > 0) {
           setStaffList(data.staffList);
-          localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(data.staffList));
+          if (typeof window !== "undefined") {
+             localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(data.staffList));
+          }
         }
       }
     } catch (error) {
@@ -156,8 +167,10 @@ export default function SettingsPage() {
   const handleSaveGeneralSettings = async () => {
     setIsSavingGeneral(true);
     const secureOutletId = (session?.user as any)?.outletId || outletId;
-    localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(generalSettings));
-    localStorage.setItem(`zapped_show_all_filter`, String(generalSettings.showAllFilter));
+    if (typeof window !== "undefined") {
+       localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(generalSettings));
+       localStorage.setItem(`zapped_show_all_filter`, String(generalSettings.showAllFilter));
+    }
     
     if (!navigator.onLine) {
       setTimeout(() => {
@@ -183,7 +196,9 @@ export default function SettingsPage() {
   const handleSavePrinterSettings = async () => {
     setIsSavingPrinter(true);
     const secureOutletId = (session?.user as any)?.outletId || outletId;
-    localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(printerSettings));
+    if (typeof window !== "undefined") {
+       localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(printerSettings));
+    }
     
     if (!navigator.onLine) {
       setTimeout(() => {
@@ -211,7 +226,9 @@ export default function SettingsPage() {
     const secureOutletId = (session?.user as any)?.outletId || outletId;
     const updatedDoars = [...doarList, newDoarInput.trim()];
     setDoarList(updatedDoars);
-    localStorage.setItem(`zapped_doars_${secureOutletId}`, JSON.stringify(updatedDoars));
+    if (typeof window !== "undefined") {
+       localStorage.setItem(`zapped_doars_${secureOutletId}`, JSON.stringify(updatedDoars));
+    }
     setNewDoarInput("");
   };
 
@@ -219,7 +236,9 @@ export default function SettingsPage() {
     const secureOutletId = (session?.user as any)?.outletId || outletId;
     const updatedDoars = doarList.filter(d => d !== doarName);
     setDoarList(updatedDoars);
-    localStorage.setItem(`zapped_doars_${secureOutletId}`, JSON.stringify(updatedDoars));
+    if (typeof window !== "undefined") {
+       localStorage.setItem(`zapped_doars_${secureOutletId}`, JSON.stringify(updatedDoars));
+    }
   };
 
   const handleSaveStaff = async (e: React.FormEvent) => {
@@ -243,7 +262,9 @@ export default function SettingsPage() {
       if (res.ok && data.success) {
         const updatedList = [...staffList, data.staff];
         setStaffList(updatedList);
-        localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(updatedList));
+        if (typeof window !== "undefined") {
+           localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(updatedList));
+        }
         
         setFormData({ id: "", name: "", pin: "", role: "CASHIER" });
         setShowAddModal(false);
@@ -271,7 +292,9 @@ export default function SettingsPage() {
       const res = await fetch(`/api/settings?id=${id}`, { method: "DELETE" });
       if (res.ok) {
         setStaffList(updatedList);
-        localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(updatedList));
+        if (typeof window !== "undefined") {
+           localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(updatedList));
+        }
       }
     } catch(e) {
       alert("Network Error.");
@@ -750,3 +773,12 @@ export default function SettingsPage() {
     </>
   );
 }
+
+
+
+y
+
+
+
+
+
