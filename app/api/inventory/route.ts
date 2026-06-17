@@ -26,9 +26,9 @@ export async function GET(req: Request) {
         where: { outletId: queryOutletId, isDeleted: false, type: { not: "FINISHED_GOOD" } }, 
         select: { id: true, itemName: true, unit: true } 
     });
-    // Fetching Vendors Outlet-Wise using tenantId field as a secure wrapper
+    
     const vendors = await prisma.vendor.findMany({ 
-        where: { tenantId: queryOutletId, isDeleted: false }, 
+        where: { tenantId: out.tenantId, isDeleted: false }, 
         select: { name: true } 
     });
 
@@ -42,21 +42,22 @@ export async function GET(req: Request) {
   }
 
   const secureOutletId = (session.user as any).outletId;
+  const secureTenantId = (session.user as any).tenantId;
 
-  if (!secureOutletId) {
+  if (!secureOutletId || !secureTenantId) {
     return NextResponse.json({ error: "Context IDs missing." }, { status: 400 });
   }
 
   try {
-    // 1. Fetch Inventory SKUs strictly for this outlet (NO MENU ITEMS via DB model separation)
+    // 1. Fetch Inventory SKUs strictly for this outlet
     const inventory = await prisma.inventory.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       orderBy: { itemName: 'asc' }
     });
 
-    // 2. Fetch Vendors strictly for this OUTLET (Outlet-Wise Isolation)
+    // 2. Fetch Vendors (Strictly tenantId to avoid FK Crash, but filtered for this UI)
     const vendors = await prisma.vendor.findMany({
-      where: { tenantId: secureOutletId, isDeleted: false },
+      where: { tenantId: secureTenantId, isDeleted: false },
       orderBy: { name: 'asc' }
     });
 
@@ -123,6 +124,7 @@ export async function POST(req: Request) {
     if (!session || !session.user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
     const secureOutletId = (session.user as any).outletId;
+    const secureTenantId = (session.user as any).tenantId;
 
     // ACTION: ADD NEW INVENTORY SKU
     if (action === "ADD_SKU") {
@@ -145,10 +147,10 @@ export async function POST(req: Request) {
       if (vendorData.terms === "NET_15") creditDays = 15;
       else if (vendorData.terms === "NET_30") creditDays = 30;
 
-      // 🔥 FIX: Save Vendor mapped strictly to Outlet ID
+      // 🔥 FIX: MUST BE secureTenantId TO AVOID FK CRASH
       const newVendor = await prisma.vendor.create({
         data: {
-          tenantId: secureOutletId, // Hacked tenantId to lock vendor per outlet
+          tenantId: secureTenantId, 
           name: String(vendorData.name).toUpperCase(),
           contactPerson: vendorData.contactPerson,
           phone: vendorData.phone,
@@ -218,12 +220,12 @@ export async function PUT(req: Request) {
         });
 
         let targetVendor = await tx.vendor.findFirst({
-          where: { tenantId: secureOutletId, name: vendorName }
+          where: { tenantId: dbOutlet.tenantId, name: vendorName }
         });
 
         if (!targetVendor && vendorName !== "HQ") {
           targetVendor = await tx.vendor.create({
-            data: { tenantId: secureOutletId, name: vendorName, phone: "N/A" }
+            data: { tenantId: dbOutlet.tenantId, name: vendorName, phone: "N/A" }
           });
         }
 
@@ -237,7 +239,7 @@ export async function PUT(req: Request) {
         const po = await tx.purchaseOrder.create({
           data: {
             outletId: secureOutletId,
-            vendorId: targetVendor?.id || (await tx.vendor.findFirst({where: {tenantId: secureOutletId}}))?.id || "TEMP", 
+            vendorId: targetVendor?.id || (await tx.vendor.findFirst({where: {tenantId: dbOutlet.tenantId}}))!.id, 
             invoiceNumber: invoiceNo || `GRN-${Date.now()}`,
             totalAmount: parseFloat(totalAmount),
             netAmount: parseFloat(totalAmount), 

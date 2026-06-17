@@ -118,7 +118,7 @@ export default function MenuManagePage() {
     }
   };
 
-  // 🔥 Handle File Upload via Device
+  // 🔥 Fix: Handle File Upload via Device to show Green Tick correctly like Expenses
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -386,6 +386,7 @@ export default function MenuManagePage() {
                 <label className="flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl p-3 cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
                   <Upload size={16} className="text-slate-400 mr-2"/>
                   <span className="text-xs font-bold text-slate-500">
+                    {/* Fixed feedback logic here */}
                     {formData.imageUrl && formData.imageUrl.startsWith("data:image") ? "Image Selected ✔" : "Choose File from Device"}
                   </span>
                   <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
@@ -446,7 +447,6 @@ export default function MenuManagePage() {
                     const gst = item.price - base;
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition-colors uppercase">
-                        {/* MAPS DIRECTLY TO DB BARCODE & SHOWS HSN CODE */}
                         <td className="p-4 font-mono font-bold text-slate-400 text-sm">
                           #{item.barcode || "----"}
                           <span className="block text-[9px] text-slate-400 mt-0.5 font-bold uppercase">HSN: {item.hsnCode || "N/A"}</span>

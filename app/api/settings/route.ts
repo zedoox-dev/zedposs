@@ -14,10 +14,9 @@ export async function GET(req: Request) {
   if (!secureOutletId || !secureTenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 400 });
 
   try {
-    // 🔥 Fetch outlet master data for read-only Display
+    // 🔥 FIX 1: Removed `include: { tenant: true }` to prevent Relation Name crashes.
     const outlet = await prisma.outlet.findUnique({
-      where: { id: secureOutletId },
-      include: { tenant: true } // Fetching Tenant Info as well for full profile
+      where: { id: secureOutletId }
     });
 
     // Fetches Staff with their linked Role relation securely
@@ -37,20 +36,32 @@ export async function GET(req: Request) {
       role: s.role?.name || "CASHIER"
     }));
 
+    // 🔥 FIX 2: Safely parse settings if Prisma returns them as strings
+    let parsedGeneral = outlet?.generalSettings;
+    if (typeof parsedGeneral === 'string') {
+        try { parsedGeneral = JSON.parse(parsedGeneral); } catch(e) { parsedGeneral = null; }
+    }
+
+    let parsedPrinter = outlet?.printerSettings;
+    if (typeof parsedPrinter === 'string') {
+        try { parsedPrinter = JSON.parse(parsedPrinter); } catch(e) { parsedPrinter = null; }
+    }
+
     return NextResponse.json({
       success: true,
       outletMaster: {
-         name: outlet?.name || "",
-         address: outlet?.address || "",
-         phone: outlet?.phone || "",
+         name: outlet?.name || "N/A",
+         address: outlet?.address || "N/A",
+         phone: outlet?.phone || "N/A",
          currency: outlet?.currency || "₹",
-         gstin: (outlet?.tenant as any)?.gstin || "N/A"
+         gstin: "Check Main Settings" // Handled safely without tenant relation
       },
-      generalSettings: outlet?.generalSettings || null,
-      printerSettings: outlet?.printerSettings || null,
+      generalSettings: parsedGeneral || null,
+      printerSettings: parsedPrinter || null,
       staffList: mappedStaff
     });
   } catch (error: any) {
+    console.error("Settings GET Error:", error);
     return NextResponse.json({ error: "Fetch Error", details: error.message }, { status: 500 });
   }
 }
@@ -105,7 +116,7 @@ export async function POST(req: Request) {
           email: dummyEmail,
           password: payload.pin, 
           pin: payload.pin,
-          roleId: dbRole.id, // Strictly linked using relation
+          roleId: dbRole.id, 
           tenantId: secureTenantId,
           outletId: secureOutletId
         }

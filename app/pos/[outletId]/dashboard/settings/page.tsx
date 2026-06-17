@@ -69,7 +69,6 @@ export default function SettingsPage() {
   const [printerSettings, setPrinterSettings] = useState(defaultPrinterConfig);
   const [isSavingPrinter, setIsSavingPrinter] = useState(false);
 
-  // Future KDS Setup Configuration State
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
   useEffect(() => {
@@ -96,23 +95,29 @@ export default function SettingsPage() {
     if (!session?.user) return;
     const secureOutletId = (session.user as any).outletId || outletId;
 
-    // Retrieve Doar (Operators) List safely from Local Storage
+    // 🔥 FIX 3: Robust Try-Catch for Local Storage parses
     const savedDoars = localStorage.getItem(`zapped_doars_${secureOutletId}`);
     if (savedDoars) {
-      setDoarList(JSON.parse(savedDoars));
+      try {
+        setDoarList(JSON.parse(savedDoars));
+      } catch(e) {
+        setDoarList(["Admin", "Manager", "Deepak"]);
+      }
     } else {
       setDoarList(["Admin", "Manager", "Deepak"]);
     }
 
     if (!navigator.onLine) {
-      const savedGeneral = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
-      if (savedGeneral) setGeneralSettings({ ...defaultGeneralConfig, ...JSON.parse(savedGeneral) });
+      try {
+        const savedGeneral = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
+        if (savedGeneral) setGeneralSettings({ ...defaultGeneralConfig, ...JSON.parse(savedGeneral) });
 
-      const savedPrinter = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
-      if (savedPrinter) setPrinterSettings({ ...defaultPrinterConfig, ...JSON.parse(savedPrinter) });
+        const savedPrinter = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
+        if (savedPrinter) setPrinterSettings({ ...defaultPrinterConfig, ...JSON.parse(savedPrinter) });
 
-      const savedStaff = localStorage.getItem(`zapped_staff_list_${secureOutletId}`);
-      if (savedStaff) setStaffList(JSON.parse(savedStaff));
+        const savedStaff = localStorage.getItem(`zapped_staff_list_${secureOutletId}`);
+        if (savedStaff) setStaffList(JSON.parse(savedStaff));
+      } catch(e) {}
       return;
     }
 
@@ -125,14 +130,16 @@ export default function SettingsPage() {
            setOutletMasterData(data.outletMaster);
         }
         if (data.generalSettings) {
-          // Merge to prevent missing keys on fallback
-          const mergedGeneral = { ...defaultGeneralConfig, ...data.generalSettings };
+          // Double verify object spread
+          const safeGeneral = typeof data.generalSettings === 'string' ? JSON.parse(data.generalSettings) : data.generalSettings;
+          const mergedGeneral = { ...defaultGeneralConfig, ...safeGeneral };
           setGeneralSettings(mergedGeneral);
           localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(mergedGeneral));
           localStorage.setItem(`zapped_show_all_filter`, String(mergedGeneral.showAllFilter));
         }
         if (data.printerSettings) {
-          const mergedPrinter = { ...defaultPrinterConfig, ...data.printerSettings };
+          const safePrinter = typeof data.printerSettings === 'string' ? JSON.parse(data.printerSettings) : data.printerSettings;
+          const mergedPrinter = { ...defaultPrinterConfig, ...safePrinter };
           setPrinterSettings(mergedPrinter);
           localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(mergedPrinter));
         }

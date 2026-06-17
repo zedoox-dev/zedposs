@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Package, Plus, AlertCircle, Loader2, X, Scale, Search, Filter, Printer, Layers, RefreshCcw, CheckCircle2, AlertTriangle, ArrowRightLeft, Building2, Truck, QrCode, Lock, ShieldAlert, FileSpreadsheet, Calculator, History, IndianRupee, Tag, UserCheck, CreditCard, Upload, FileText, Star, Activity, LineChart, PieChart, Coins, Trash2, LockKeyhole, ShieldCheck, Soup } from "lucide-react";
+import { Package, Plus, AlertCircle, Loader2, X, Scale, Search, Filter, Printer, Layers, RefreshCcw, CheckCircle2, AlertTriangle, ArrowRightLeft, Building2, Truck, QrCode, Lock, ShieldAlert, FileSpreadsheet, Calculator, History, IndianRupee, Tag, UserCheck, CreditCard, Upload, FileText, Star, Activity, LineChart, PieChart, Coins, Trash2, LockKeyhole, ShieldCheck, Soup, Clock } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
@@ -86,7 +86,7 @@ export default function InventoryAndPurchaseERP() {
     const pConf = localStorage.getItem(`zapped_printer_config_${outletId}`);
     if (pConf) setPrinterConfig(JSON.parse(pConf));
     
-    // 🔥 FIX: Strict Fetching of Doars (no fallback array)
+    // Strict Fetching of Doars (no fallback array)
     const savedDoars = localStorage.getItem(`zapped_doars_${outletId}`);
     if (savedDoars) setStaffDoars(JSON.parse(savedDoars));
     else setStaffDoars([]);
@@ -168,6 +168,7 @@ export default function InventoryAndPurchaseERP() {
       setVendors(data.vendors?.map((v:any) => v.name) || []);
       setPurchaseLogs(data.purchaseLogs || []);
 
+      // Always Fetch ALL history to accurately calculate consumption for Opening stock
       const prodRes = await fetch(`/api/production?date=all_history`);
       const prodData = await prodRes.json();
       if (prodData.success) {
@@ -248,7 +249,11 @@ export default function InventoryAndPurchaseERP() {
         setPurchaseItem(""); setPurchaseQty(""); setPurchaseRate(""); setPurchaseGst("0");
         setPurchaseRef(""); setPurchaseNotes(""); setProofUrl(""); setIsUrgent(false);
         setPurchaseDoar(""); setPurchaseVendor(""); setPurchasePayment("CASH");
-        if (!isMobileMode) fetchInventoryAndProduction();
+        if (!isMobileMode) {
+          fetchInventoryAndProduction();
+          // Provide instant local feedback if API is slow
+          setPurchaseLogs(prev => [{...payload.purchaseData, id: Date.now(), itemName: inventory.find(i=>i.id===purchaseItem)?.itemName, date: new Date().toISOString(), qty: purchaseQty}, ...prev]);
+        }
       } else {
         alert(data.error || "Purchase Registration Failed.");
       }
@@ -351,12 +356,12 @@ export default function InventoryAndPurchaseERP() {
   const filteredPurchaseLogs = purchaseLogs.filter(log => isLogWithinDate(log.date));
   const filteredHistory = history.filter(h => isLogWithinDate(h.date)); 
 
-  // EXACT CONSUMPTION MATH USING [RM_LOG] FROM DB
+  // 🔥 1. EXACT CONSUMPTION MATH USING [RM_LOG] FROM DB
   const calculateConsumedQuantity = (inventoryId: string) => {
     let totalConsumedVolume = 0;
     filteredHistory.forEach(batch => {
       try {
-        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*)\]$/);
+        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/); // Non-greedy match fixed
         if(rmMatch) {
           const logs = JSON.parse(rmMatch[1]);
           const found = logs.find((l:any) => l.id === inventoryId);
@@ -381,8 +386,8 @@ export default function InventoryAndPurchaseERP() {
 
   const handlePrint = () => { setTimeout(() => { window.print(); }, 150); };
 
+  // 🔥 2. STRICT SEPARATION OF RAW MATERIALS AND PRODUCED SERVINGS
   const rawInventory = inventory.filter(i => i.type !== "FINISHED_GOOD");
-  const producedInventory = inventory.filter(i => i.type === "FINISHED_GOOD");
 
   const filteredRawInventory = rawInventory.filter(item => {
     const matchSearch = item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -390,10 +395,6 @@ export default function InventoryAndPurchaseERP() {
     if (typeFilter === "OUT_OF_STOCK") return matchSearch && (item.stockLevel <= 0);
     const matchType = typeFilter === "ALL" || item.type === typeFilter || item.itemName.includes(`[${typeFilter}]`);
     return matchSearch && matchType;
-  });
-
-  const filteredProducedInventory = producedInventory.filter(item => {
-    return item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   const totalSKUs = rawInventory.length;
@@ -411,12 +412,6 @@ export default function InventoryAndPurchaseERP() {
   const spendByCash = filteredPurchaseLogs.filter(l => l.paymentMode === "CASH").reduce((s, l) => s + l.total, 0);
   const spendByCredit = filteredPurchaseLogs.filter(l => l.paymentMode === "CREDIT").reduce((s, l) => s + l.total, 0);
   const urgentConsignmentsCount = filteredPurchaseLogs.filter(l => l.isUrgent).length;
-
-  const itemSpendMap: Record<string, number> = {};
-  filteredPurchaseLogs.forEach(l => { itemSpendMap[l.itemName] = (itemSpendMap[l.itemName] || 0) + l.total; });
-  const topSpendLeaderSKU = Object.keys(itemSpendMap).length > 0 
-    ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] 
-    : "NONE";
 
   // 🔥 3. STRICT ISOLATION FOR MOBILE QR GRN VIEW (No layout access)
   if (isMobileMode) {
@@ -543,7 +538,6 @@ export default function InventoryAndPurchaseERP() {
             </div>
             
             <div className="flex flex-wrap items-center gap-2">
-              {/* GLOBAL DATE FILTERS CONTROL BAR */}
               <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="p-2 border border-slate-200 rounded-lg font-black text-[10px] uppercase tracking-wider bg-white outline-none focus:border-indigo-500 shadow-sm mr-2">
                 <option value="today">Today's Ledger</option><option value="yesterday">Yesterday's Ledger</option><option value="custom">Custom Range</option>
                 <option value="all_history">Till Now Accounts</option>
@@ -665,46 +659,66 @@ export default function InventoryAndPurchaseERP() {
             </div>
           )}
 
-          {/* ================= VIEW 1.5: PRODUCED ITEMS (FINISHED GOODS) ================= */}
+          {/* ================= VIEW 1.5: PRODUCED BATCHES ================= */}
           {activeView === "PRODUCED" && (
-            <div className="flex flex-col h-full animate-in fade-in">
-              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 shrink-0 bg-white p-2 border border-slate-200 rounded-xl shadow-sm">
-                <div className="flex items-center flex-1 w-full gap-3">
-                  <div className="relative max-w-xs flex-1"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={14} /><input type="text" placeholder="Search Finished Good..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg outline-none font-bold text-xs focus:border-orange-500 bg-slate-50" /></div>
-                </div>
+            <div className="flex flex-col h-full animate-in fade-in space-y-4">
+              <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm shrink-0">
+                 <h3 className="font-black text-slate-800 uppercase flex items-center"><Soup size={18} className="mr-2 text-orange-500"/> Finished Goods Batch Records</h3>
+                 <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">Showing {filteredHistory.length} Batches</span>
               </div>
 
-              <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                <div className="overflow-y-auto custom-scrollbar">
-                  <table className="w-full text-left border-collapse min-w-[700px]">
-                    <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-sm z-10 border-b border-slate-200">
-                      <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                        <th className="p-4 w-12 text-center">#</th>
-                        <th className="p-4">Finished Good Description</th>
-                        <th className="p-4 text-center bg-orange-50/50 text-orange-800 border-x border-slate-200">Available Servings Yield</th>
-                        <th className="p-4 text-center w-48">Operations Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
-                      {filteredProducedInventory.map((item, idx) => {
-                        return (
-                          <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="p-4 text-center font-black text-slate-400">{idx + 1}</td>
-                            <td className="p-4 font-black text-slate-900 uppercase">
-                              <div className="flex items-center">
-                                <Soup size={16} className="text-orange-500 mr-2"/> {item.itemName}
-                              </div>
-                            </td>
-                            <td className="p-4 text-center font-mono font-black text-orange-600 text-lg border-x border-slate-100">{parseFloat(item.stockLevel).toFixed(0)} <span className="text-[9px] uppercase font-bold text-slate-400">SERVINGS</span></td>
-                            <td className="p-4 text-center">
-                              <button onClick={()=>{setDeleteItemTarget(item); setShowDeleteAuthModal(true);}} className="text-[9px] font-black text-red-600 bg-red-50 hover:bg-red-600 hover:text-white border border-red-100 px-2.5 py-1.5 rounded uppercase transition-all inline-flex items-center"><Trash2 size={10} className="mr-0.5"/> Delete Yield Data</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {filteredProducedInventory.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-400 font-bold uppercase tracking-wider">No Produced Items Yields Logged.</td></tr>}
-                    </tbody>
-                  </table>
+              <div className="flex-1 overflow-y-auto custom-scrollbar pb-10">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                   {filteredHistory.map((batch, idx) => {
+                      let rmLogs = [];
+                      try {
+                         const match = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/);
+                         if (match) rmLogs = JSON.parse(match[1]);
+                      } catch(e) {}
+                      const waste = batch.batchNumber.match(/\[WASTE:(.*?)\]/) ? parseFloat(batch.batchNumber.match(/\[WASTE:(.*?)\]/)[1]) : 0;
+                      
+                      return (
+                         <div key={idx} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-orange-300 transition-all flex flex-col">
+                            <div className="flex justify-between items-start mb-3 border-b border-slate-100 pb-3">
+                               <div>
+                                  <h4 className="font-black text-lg text-slate-900 uppercase leading-tight">{batch.finishedGoodName}</h4>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{new Date(batch.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                               </div>
+                               <div className="text-right">
+                                  <span className="bg-orange-100 text-orange-700 font-black text-xs px-2.5 py-1 rounded-lg uppercase tracking-wider block mb-1">Yield: +{batch.quantityProduced}</span>
+                                  {waste > 0 && <span className="bg-red-50 text-red-500 font-bold text-[9px] px-2 py-0.5 rounded border border-red-100 inline-block">Waste: {waste}</span>}
+                               </div>
+                            </div>
+                            
+                            <div className="flex-1">
+                               <h5 className="text-[9px] font-black uppercase text-slate-400 mb-2 tracking-widest">Raw Materials Consumed</h5>
+                               {rmLogs.length > 0 ? (
+                                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1.5">
+                                     {rmLogs.map((rm:any, i:number) => (
+                                        <div key={i} className="flex justify-between items-center text-xs">
+                                           <span className="font-bold text-slate-700 uppercase flex items-center"><CheckCircle2 size={10} className="mr-1.5 text-emerald-500"/> {rm.name}</span>
+                                           <span className="font-mono font-black text-slate-900">-{rm.deducted} <span className="text-[9px] text-slate-500">{rm.unit}</span></span>
+                                        </div>
+                                     ))}
+                                  </div>
+                               ) : (
+                                  <p className="text-xs font-bold text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">No RM deductions recorded for this batch.</p>
+                               )}
+                            </div>
+                            
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                               <span className="text-[8px] text-slate-400 font-mono tracking-widest">ID: {batch.batchNumber.split('[')[0]}</span>
+                               <span className="text-[9px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded uppercase flex items-center"><UserCheck size={10} className="mr-1"/> By: {batch.createdByUser?.name || "System"}</span>
+                            </div>
+                         </div>
+                      );
+                   })}
+                   {filteredHistory.length === 0 && (
+                      <div className="col-span-1 lg:col-span-2 p-10 flex flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 border-dashed text-slate-400">
+                         <History size={40} className="mb-3 opacity-20"/>
+                         <p className="font-black text-sm uppercase tracking-widest">No Production Batches Logged in this Period</p>
+                      </div>
+                   )}
                 </div>
               </div>
             </div>

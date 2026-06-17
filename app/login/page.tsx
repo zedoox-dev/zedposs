@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { Loader2, Lock, Mail, Store, ShieldCheck, Cpu } from "lucide-react";
 
@@ -8,6 +8,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // 🔥 FIX: Force document title on client load to prevent "Create Next App" flashing
+  useEffect(() => {
+    document.title = "ZedPoss Billing | Secure Outlet Login | By ZedooX";
+  }, []);
 
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,8 +49,10 @@ export default function LoginPage() {
 
   return (
     <>
-      <title>ZedPoss Billing | Login</title>
-      <meta name="description" content="Secure POS terminal login." />
+      {/* 🔥 PREMIUM SEO & META TAGS */}
+      <title>ZedPoss Billing | Secure Outlet Login</title>
+      <meta name="description" content="Login to ZedPoss Cloud POS Terminal. A premium, ultra-fast, and highly secure restaurant & retail billing system developed by ZedooX Technologies." />
+      <meta name="keywords" content="ZedPoss Login, POS Terminal, ZedooX Technologies, Cloud Billing, Smart POS, Restaurant Billing, Retail POS, Fast Checkout" />
 
       <div className="min-h-screen bg-[#0a0a0c] flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
         
@@ -100,6 +107,14 @@ export default function LoginPage() {
             </div>
           </div>
         </div>
+
+        {/* 🔥 NEW: ZedooX Technologies Branding Footer */}
+        <div className="absolute bottom-6 w-full text-center z-10 animate-in fade-in duration-1000 delay-300">
+          <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] flex items-center justify-center">
+            ZedPoss By <span className="text-orange-500 ml-1.5">ZedooX Technologies</span>
+          </p>
+        </div>
+
       </div>
     </>
   );
