@@ -86,11 +86,6 @@ export default function InventoryAndPurchaseERP() {
     const pConf = localStorage.getItem(`zapped_printer_config_${outletId}`);
     if (pConf) setPrinterConfig(JSON.parse(pConf));
     
-    // Strict Fetching of Doars (no fallback array)
-    const savedDoars = localStorage.getItem(`zapped_doars_${outletId}`);
-    if (savedDoars) setStaffDoars(JSON.parse(savedDoars));
-    else setStaffDoars([]);
-    
     const savedIndents = localStorage.getItem(`zapped_indent_requests_${outletId}`);
     if (savedIndents) setIndentLogs(JSON.parse(savedIndents));
 
@@ -110,6 +105,7 @@ export default function InventoryAndPurchaseERP() {
               setQrToken(passedToken || "");
               setInventory(data.inventory || []);
               setVendors(data.vendors?.map((v:any) => v.name) || []);
+              if (data.doarList) setStaffDoars(data.doarList);
               setLoading(false);
             }
           }).catch(() => setMobileAccessDenied(true));
@@ -167,8 +163,8 @@ export default function InventoryAndPurchaseERP() {
       setVendorList(data.vendors || []);
       setVendors(data.vendors?.map((v:any) => v.name) || []);
       setPurchaseLogs(data.purchaseLogs || []);
+      if (data.doarList) setStaffDoars(data.doarList);
 
-      // Always Fetch ALL history to accurately calculate consumption for Opening stock
       const prodRes = await fetch(`/api/production?date=all_history`);
       const prodData = await prodRes.json();
       if (prodData.success) {
@@ -361,7 +357,7 @@ export default function InventoryAndPurchaseERP() {
     let totalConsumedVolume = 0;
     filteredHistory.forEach(batch => {
       try {
-        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/); // Non-greedy match fixed
+        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/); 
         if(rmMatch) {
           const logs = JSON.parse(rmMatch[1]);
           const found = logs.find((l:any) => l.id === inventoryId);
@@ -369,7 +365,7 @@ export default function InventoryAndPurchaseERP() {
             totalConsumedVolume += parseFloat(found.deducted);
           }
         }
-      } catch(e) { console.error("Parse err", e) }
+      } catch(e) {}
     });
     return totalConsumedVolume;
   };
@@ -388,6 +384,7 @@ export default function InventoryAndPurchaseERP() {
 
   // 🔥 2. STRICT SEPARATION OF RAW MATERIALS AND PRODUCED SERVINGS
   const rawInventory = inventory.filter(i => i.type !== "FINISHED_GOOD");
+  const producedInventory = inventory.filter(i => i.type === "FINISHED_GOOD");
 
   const filteredRawInventory = rawInventory.filter(item => {
     const matchSearch = item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -395,6 +392,10 @@ export default function InventoryAndPurchaseERP() {
     if (typeFilter === "OUT_OF_STOCK") return matchSearch && (item.stockLevel <= 0);
     const matchType = typeFilter === "ALL" || item.type === typeFilter || item.itemName.includes(`[${typeFilter}]`);
     return matchSearch && matchType;
+  });
+
+  const filteredProducedInventory = producedInventory.filter(item => {
+    return item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   const totalSKUs = rawInventory.length;
@@ -413,12 +414,18 @@ export default function InventoryAndPurchaseERP() {
   const spendByCredit = filteredPurchaseLogs.filter(l => l.paymentMode === "CREDIT").reduce((s, l) => s + l.total, 0);
   const urgentConsignmentsCount = filteredPurchaseLogs.filter(l => l.isUrgent).length;
 
-  // 🔥 3. STRICT ISOLATION FOR MOBILE QR GRN VIEW (No layout access)
+  const itemSpendMap: Record<string, number> = {};
+  filteredPurchaseLogs.forEach(l => { itemSpendMap[l.itemName] = (itemSpendMap[l.itemName] || 0) + l.total; });
+  const topSpendLeaderSKU = Object.keys(itemSpendMap).length > 0 
+    ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] 
+    : "NONE";
+
+  // 🔥 3. STRICT ISOLATION FOR MOBILE QR GRN VIEW
   if (isMobileMode) {
     if (mobileAccessDenied) {
       return (
         <div className="fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
-          <style dangerouslySetInnerHTML={{__html: `header, nav, aside { display: none !important; }`}} />
+          <style dangerouslySetInnerHTML={{__html: `header, nav, aside, .print\\:hidden:not(.fixed) { display: none !important; }`}} />
           <ShieldAlert size={80} className="text-red-500 mb-6 animate-pulse"/>
           <h1 className="text-2xl font-black text-white uppercase tracking-widest mb-2">Access Token Expired</h1>
           <p className="text-slate-400 font-bold text-sm">Security matrix has invalidated this QR session. Please request the Manager to regenerate the QR code on the desktop terminal.</p>
@@ -426,11 +433,11 @@ export default function InventoryAndPurchaseERP() {
       );
     }
     
-    if (loading) return <div className="fixed inset-0 z-[99999] bg-slate-900 flex justify-center items-center"><style dangerouslySetInnerHTML={{__html: `header, nav, aside { display: none !important; }`}} /><Loader2 className="animate-spin text-white" size={40}/></div>;
+    if (loading) return <div className="fixed inset-0 z-[99999] bg-slate-900 flex justify-center items-center"><style dangerouslySetInnerHTML={{__html: `header, nav, aside, .print\\:hidden:not(.fixed) { display: none !important; }`}} /><Loader2 className="animate-spin text-white" size={40}/></div>;
 
     return (
-      <div className="fixed inset-0 z-[99999] w-full h-full overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
-        <style dangerouslySetInnerHTML={{__html: `header, nav, aside { display: none !important; }`}} />
+      <div className="fixed inset-0 z-[99999] w-full h-[100dvh] overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
+        <style dangerouslySetInnerHTML={{__html: `header, nav, aside, .print\\:hidden:not(.fixed) { display: none !important; }`}} />
         <div className="w-full max-w-md mt-6 mb-auto relative z-[100000]">
           {/* Outlet Name Banner */}
           <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-indigo-500 text-center shadow-lg">

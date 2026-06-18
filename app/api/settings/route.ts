@@ -7,19 +7,16 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || !session.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // 🔒 STRICT ID FETCHING
   const secureOutletId = (session.user as any).outletId;
   const secureTenantId = (session.user as any).tenantId;
 
   if (!secureOutletId || !secureTenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 400 });
 
   try {
-    // 🔥 FIX 1: Removed `include: { tenant: true }` to prevent Relation Name crashes.
     const outlet = await prisma.outlet.findUnique({
       where: { id: secureOutletId }
     });
 
-    // Fetches Staff with their linked Role relation securely
     const staff = await prisma.user.findMany({
       where: { 
         tenantId: secureTenantId, 
@@ -29,6 +26,12 @@ export async function GET(req: Request) {
       include: { role: true } 
     });
 
+    // 🔥 NEW: Fetch Real Database Doars
+    const doars = await prisma.operatorDoar.findMany({
+      where: { outletId: secureOutletId, isActive: true },
+      select: { name: true }
+    });
+
     const mappedStaff = staff.map(s => ({
       id: s.id,
       name: s.name,
@@ -36,7 +39,6 @@ export async function GET(req: Request) {
       role: s.role?.name || "CASHIER"
     }));
 
-    // 🔥 FIX 2: Safely parse settings if Prisma returns them as strings
     let parsedGeneral = outlet?.generalSettings;
     if (typeof parsedGeneral === 'string') {
         try { parsedGeneral = JSON.parse(parsedGeneral); } catch(e) { parsedGeneral = null; }
@@ -54,11 +56,12 @@ export async function GET(req: Request) {
          address: outlet?.address || "N/A",
          phone: outlet?.phone || "N/A",
          currency: outlet?.currency || "₹",
-         gstin: "Check Main Settings" // Handled safely without tenant relation
+         gstin: "Check Main Settings" 
       },
       generalSettings: parsedGeneral || null,
       printerSettings: parsedPrinter || null,
-      staffList: mappedStaff
+      staffList: mappedStaff,
+      doarList: doars.map(d => d.name) // 🔥 Sent directly to frontend safely
     });
   } catch (error: any) {
     console.error("Settings GET Error:", error);
@@ -75,7 +78,7 @@ export async function POST(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
 
     const body = await req.json();
-    const { action, payload } = body;
+    const { action, payload, doarName } = body;
 
     // 🟢 1. SAVE GENERAL SETTINGS
     if (action === "SAVE_GENERAL") {
@@ -95,11 +98,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // 🟢 3. ADD STAFF & ROLE MANAGEMENT
+    // 🟢 3. ADD OPERATOR DOAR TO DB
+    if (action === "ADD_DOAR") {
+       const newDoar = await prisma.operatorDoar.create({
+          data: { name: doarName, outletId: secureOutletId }
+       });
+       return NextResponse.json({ success: true, doar: newDoar });
+    }
+
+    // 🟢 4. ADD STAFF
     if (action === "ADD_STAFF") {
       const dummyEmail = `staff_${Date.now()}@tenant${secureTenantId}.local`;
-      
-      // Smart Auto-Healer: Find or create the specified Role in the DB
       let dbRole = await prisma.role.findFirst({
         where: { tenantId: secureTenantId, name: payload.role }
       });
@@ -140,9 +149,21 @@ export async function DELETE(req: Request) {
     if (!session || !session.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const secureTenantId = (session.user as any).tenantId;
+    const secureOutletId = (session.user as any).outletId;
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
+    const action = searchParams.get("action");
+    const doarName = searchParams.get("doarName");
 
+    // 🔴 DELETE DOAR
+    if (action === "DELETE_DOAR" && doarName) {
+       await prisma.operatorDoar.deleteMany({
+          where: { outletId: secureOutletId, name: doarName }
+       });
+       return NextResponse.json({ success: true });
+    }
+
+    // 🔴 DELETE STAFF
     if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
     const existingUser = await prisma.user.findUnique({ where: { id } });

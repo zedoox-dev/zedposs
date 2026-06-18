@@ -114,7 +114,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ expired: true });
     }
     
-    return NextResponse.json({ success: true, outletName: out.name });
+    // 🔥 Fetch strict Database Operator Doars for Mobile Form
+    const doars = await prisma.operatorDoar.findMany({
+      where: { outletId: queryOutletId, isActive: true },
+      select: { name: true }
+    });
+
+    return NextResponse.json({ 
+      success: true, 
+      outletName: out.name, 
+      doarList: doars.map(d => d.name) 
+    });
   }
 
   // 🟢 DASHBOARD AUTHENTICATED FETCH
@@ -151,9 +161,14 @@ export async function GET(req: Request) {
       where: { outletId: secureOutletId, createdAt: dateQuery, isDeleted: false, status: "COMPLETED" }
     });
 
+    // 🔥 Fetch strict Database Operator Doars for Dashboard Form
+    const doars = await prisma.operatorDoar.findMany({
+      where: { outletId: secureOutletId, isActive: true },
+      select: { name: true }
+    });
+
     let calculatedCash = 0;
     
-    // 🔥 STRICT CASH CALCULATION (CASH OR PART/MIXED ONLY) FOR CURRENT FILTER
     orders.forEach(order => {
       if (order.paymentMode === "CASH") {
         calculatedCash += order.totalAmount;
@@ -163,7 +178,6 @@ export async function GET(req: Request) {
       }
     });
 
-    // 🔥 LIFETIME CASH BALANCE CALCULATION (ALL TIME)
     const lifetimeExpensesAgg = await prisma.expense.aggregate({
       where: { outletId: secureOutletId, isDeleted: false },
       _sum: { amount: true }
@@ -200,7 +214,8 @@ export async function GET(req: Request) {
       success: true, 
       expenses: mappedExpenses, 
       cashCollected: calculatedCash,
-      lifetimeBalance: lifetimeBalance // Passed secure lifetime metric to UI
+      lifetimeBalance: lifetimeBalance,
+      doarList: doars.map(d => d.name) // 🔥 Sent directly to frontend securely
     });
     
   } catch (error) {

@@ -26,10 +26,9 @@ export default function ExpensesPage() {
   const [formData, setFormData] = useState({ expenseType: "", amount: "", paidTo: "", narration: "", doar: "", proofUrl: "" });
   
   const [expenseTypes, setExpenseTypes] = useState<string[]>([]);
-  const [doars, setDoars] = useState<string[]>([]);
+  const [doars, setDoars] = useState<string[]>([]); // Strict state mapped to DB
   
   const [newMasterType, setNewMasterType] = useState("");
-
   const [isAddingType, setIsAddingType] = useState(false);
 
   const [isFormOnlyMode, setIsFormOnlyMode] = useState(false);
@@ -59,12 +58,14 @@ export default function ExpensesPage() {
               setIsExpired(true);
             } else {
               setMobileOutletName(data.outletName);
+              // Set DB Doars on mobile entry load
+              if (data.doarList) setDoars(data.doarList);
             }
           } catch (e) {
             setIsExpired(true);
           }
           setIsCheckingRoute(false);
-          return; // STOP EXECUTION HERE FOR MOBILE
+          return; 
         } 
         
         // Dashboard Flow
@@ -82,14 +83,8 @@ export default function ExpensesPage() {
       }
 
       const savedTypes = localStorage.getItem(`zapped_exp_types_${outletId}`);
-      // 🔥 FIX: Strict Fetching of Doars (no fallback array)
-      const savedDoars = localStorage.getItem(`zapped_doars_${outletId}`);
-      
       if (savedTypes) setExpenseTypes(JSON.parse(savedTypes));
       else setExpenseTypes(["STAFF FOOD", "RAW MATERIAL", "MAINTENANCE", "ELECTRICITY", "GENERAL"]);
-
-      if (savedDoars) setDoars(JSON.parse(savedDoars));
-      else setDoars([]);
     };
 
     initializePage();
@@ -119,6 +114,8 @@ export default function ExpensesPage() {
         setExpenses(expData.expenses || []);
         setCashCollected(expData.cashCollected || 0);
         setLifetimeBalance(expData.lifetimeBalance || 0);
+        // 🔥 Set Strict DB Authorised Doars
+        if (expData.doarList) setDoars(expData.doarList);
       } else {
         setExpenses(Array.isArray(expData) ? expData : []);
       }
@@ -233,7 +230,6 @@ export default function ExpensesPage() {
     return (
       <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col items-center p-4 overflow-y-auto custom-scrollbar h-[100dvh] w-screen top-0 left-0">
         <div className="w-full max-w-md mt-10 mb-auto">
-          {/* Outlet Name Banner */}
           <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-red-500 text-center shadow-lg">
             <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center">
               <Store size={18} className="mr-2 text-red-500"/> {mobileOutletName || "ZAPPED OUTLET"}
@@ -256,6 +252,7 @@ export default function ExpensesPage() {
                   <select required value={formData.doar} onChange={(e) => setFormData({...formData, doar: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50 outline-none focus:border-red-500">
                     <option value="" disabled>Select Person...</option>
                     {doars.map(d => <option key={d} value={d}>{d}</option>)}
+                    {doars.length === 0 && <option disabled>No Operators configured</option>}
                   </select>
                 </div>
               </div>

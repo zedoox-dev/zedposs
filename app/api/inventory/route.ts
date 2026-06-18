@@ -32,7 +32,19 @@ export async function GET(req: Request) {
         select: { name: true } 
     });
 
-    return NextResponse.json({ success: true, outletName: out.name, inventory, vendors });
+    // 🔥 Fetch strict Database Operator Doars for Mobile Form
+    const doars = await prisma.operatorDoar.findMany({
+      where: { outletId: queryOutletId, isActive: true },
+      select: { name: true }
+    });
+
+    return NextResponse.json({ 
+      success: true, 
+      outletName: out.name, 
+      inventory, 
+      vendors,
+      doarList: doars.map(d => d.name)
+    });
   }
 
   // 🔒 STRICT SECURITY: GET SESSION TOKENS FOR DASHBOARD
@@ -80,7 +92,7 @@ export async function GET(req: Request) {
         date: po.date,
         poNumber: po.invoiceNumber || "N/A",
         itemName: item.inventory?.itemName || "Unknown",
-        inventoryId: item.inventoryId, // Used for exact inward mapping
+        inventoryId: item.inventoryId, 
         unit: item.inventory?.unit || "UNIT",
         qty: item.quantity,
         rate: item.costPrice,
@@ -92,7 +104,18 @@ export async function GET(req: Request) {
       }))
     );
 
-    return NextResponse.json({ inventory, vendors: mappedVendors, purchaseLogs });
+    // 🔥 Fetch strict Database Operator Doars for Dashboard Form
+    const doars = await prisma.operatorDoar.findMany({
+      where: { outletId: secureOutletId, isActive: true },
+      select: { name: true }
+    });
+
+    return NextResponse.json({ 
+      inventory, 
+      vendors: mappedVendors, 
+      purchaseLogs,
+      doarList: doars.map(d => d.name)
+    });
   } catch (error: any) {
     return NextResponse.json({ error: "Fetch Error", details: error.message }, { status: 500 });
   }
@@ -147,7 +170,6 @@ export async function POST(req: Request) {
       if (vendorData.terms === "NET_15") creditDays = 15;
       else if (vendorData.terms === "NET_30") creditDays = 30;
 
-      // 🔥 FIX: MUST BE secureTenantId TO AVOID FK CRASH
       const newVendor = await prisma.vendor.create({
         data: {
           tenantId: secureTenantId, 

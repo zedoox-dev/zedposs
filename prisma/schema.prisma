@@ -377,6 +377,8 @@ model Outlet {
   dailySummaries      DailySummary[]
   gstReports          GSTReport[]
 
+  operatorDoars       OperatorDoar[]
+
   @@index([tenantId])
   @@index([tenantId, isActive])
 }
@@ -757,6 +759,7 @@ model Inventory {
   stockLogs      StockLog[]
   wastageRecords WastageRecord[]
   transferItems  StockTransferItem[]
+  productionLogs ProductionRawLog[]
 
   @@index([outletId, type])
   @@index([outletId, itemName])
@@ -823,6 +826,8 @@ model ProductionBatch {
   outlet           Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
   createdByUserId  String
   createdByUser    User      @relation(fields: [createdByUserId], references: [id])
+
+  rawMaterialLogs  ProductionRawLog[]
 
   @@index([outletId, date])
 }
@@ -1893,4 +1898,37 @@ model Announcement {
   isActive  Boolean  @default(true)
   expiresAt DateTime?
   createdAt DateTime @default(now())
+}
+
+// ==========================================
+// 62. STAFF OPERATORS (DOARS)
+// ==========================================
+model OperatorDoar {
+  id        String   @id @default(uuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  outletId  String
+  outlet    Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([outletId, name])
+}
+
+// ==========================================
+// 63. PRODUCTION RAW MATERIAL LOGS (Exact Deduction Tracking)
+// ==========================================
+model ProductionRawLog {
+  id               String   @id @default(uuid())
+  quantityDeducted Float
+  unit             String
+  createdAt        DateTime @default(now())
+
+  inventoryId      String
+  inventory        Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  batchId          String
+  batch            ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@index([inventoryId])
 }
