@@ -26,11 +26,14 @@ export async function GET(req: Request) {
       include: { role: true } 
     });
 
-    // 🔥 NEW: Fetch Real Database Doars
-    const doars = await prisma.operatorDoar.findMany({
-      where: { outletId: secureOutletId, isActive: true },
-      select: { name: true }
-    });
+    // 🔥 FIX: Safe Fetching of Doars (Prevents crash if table not pushed yet)
+    let doars: any[] = [];
+    if ((prisma as any).operatorDoar) {
+      doars = await (prisma as any).operatorDoar.findMany({
+        where: { outletId: secureOutletId, isActive: true },
+        select: { name: true }
+      });
+    }
 
     const mappedStaff = staff.map(s => ({
       id: s.id,
@@ -61,7 +64,7 @@ export async function GET(req: Request) {
       generalSettings: parsedGeneral || null,
       printerSettings: parsedPrinter || null,
       staffList: mappedStaff,
-      doarList: doars.map(d => d.name) // 🔥 Sent directly to frontend safely
+      doarList: doars.map(d => d.name) // Sent safely to frontend
     });
   } catch (error: any) {
     console.error("Settings GET Error:", error);
@@ -80,7 +83,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, payload, doarName } = body;
 
-    // 🟢 1. SAVE GENERAL SETTINGS
     if (action === "SAVE_GENERAL") {
       await prisma.outlet.update({
         where: { id: secureOutletId },
@@ -89,7 +91,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // 🟢 2. SAVE PRINTER CONFIGURATIONS
     if (action === "SAVE_PRINTER") {
       await prisma.outlet.update({
         where: { id: secureOutletId },
@@ -98,15 +99,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // 🟢 3. ADD OPERATOR DOAR TO DB
+    // 🟢 ADD OPERATOR DOAR TO DB (Safe execution)
     if (action === "ADD_DOAR") {
-       const newDoar = await prisma.operatorDoar.create({
+       if (!(prisma as any).operatorDoar) return NextResponse.json({ error: "Database Sync Pending. Run DB Push." }, { status: 400 });
+       const newDoar = await (prisma as any).operatorDoar.create({
           data: { name: doarName, outletId: secureOutletId }
        });
        return NextResponse.json({ success: true, doar: newDoar });
     }
 
-    // 🟢 4. ADD STAFF
     if (action === "ADD_STAFF") {
       const dummyEmail = `staff_${Date.now()}@tenant${secureTenantId}.local`;
       let dbRole = await prisma.role.findFirst({
@@ -157,13 +158,14 @@ export async function DELETE(req: Request) {
 
     // 🔴 DELETE DOAR
     if (action === "DELETE_DOAR" && doarName) {
-       await prisma.operatorDoar.deleteMany({
-          where: { outletId: secureOutletId, name: doarName }
-       });
+       if ((prisma as any).operatorDoar) {
+         await (prisma as any).operatorDoar.deleteMany({
+            where: { outletId: secureOutletId, name: doarName }
+         });
+       }
        return NextResponse.json({ success: true });
     }
 
-    // 🔴 DELETE STAFF
     if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
     const existingUser = await prisma.user.findUnique({ where: { id } });

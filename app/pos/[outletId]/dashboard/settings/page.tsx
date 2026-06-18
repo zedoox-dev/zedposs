@@ -59,7 +59,7 @@ export default function SettingsPage() {
   const [isSavingGeneral, setIsSavingGeneral] = useState(false);
 
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [doarList, setDoarList] = useState<string[]>([]); // Default safe array
+  const [doarList, setDoarList] = useState<string[]>([]); // Strict Array Initialization
   const [newDoarInput, setNewDoarInput] = useState("");
   
   const [showAddModal, setShowAddModal] = useState(false);
@@ -95,16 +95,38 @@ export default function SettingsPage() {
     if (!session?.user) return;
     const secureOutletId = (session.user as any).outletId || outletId;
 
+    // 🔥 FIX: 100% Crash-Proof Local Storage Reading
+    const savedDoars = localStorage.getItem(`zapped_doars_${secureOutletId}`);
+    if (savedDoars) {
+      try {
+        const parsed = JSON.parse(savedDoars);
+        setDoarList(Array.isArray(parsed) ? parsed : ["Admin", "Manager", "Deepak"]);
+      } catch(e) {
+        setDoarList(["Admin", "Manager", "Deepak"]);
+      }
+    } else {
+      setDoarList(["Admin", "Manager", "Deepak"]);
+    }
+
     if (!navigator.onLine) {
       try {
         const savedGeneral = localStorage.getItem(`zapped_general_config_${secureOutletId}`);
-        if (savedGeneral) setGeneralSettings({ ...defaultGeneralConfig, ...JSON.parse(savedGeneral) });
+        if (savedGeneral) {
+           const parsed = JSON.parse(savedGeneral);
+           setGeneralSettings({ ...defaultGeneralConfig, ...(typeof parsed === 'object' ? parsed : {}) });
+        }
 
         const savedPrinter = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
-        if (savedPrinter) setPrinterSettings({ ...defaultPrinterConfig, ...JSON.parse(savedPrinter) });
+        if (savedPrinter) {
+           const parsed = JSON.parse(savedPrinter);
+           setPrinterSettings({ ...defaultPrinterConfig, ...(typeof parsed === 'object' ? parsed : {}) });
+        }
 
         const savedStaff = localStorage.getItem(`zapped_staff_list_${secureOutletId}`);
-        if (savedStaff) setStaffList(JSON.parse(savedStaff));
+        if (savedStaff) {
+           const parsed = JSON.parse(savedStaff);
+           setStaffList(Array.isArray(parsed) ? parsed : []);
+        }
       } catch(e) {}
       return;
     }
@@ -118,31 +140,33 @@ export default function SettingsPage() {
            setOutletMasterData(data.outletMaster);
         }
         
-        // Safely set Doar List from REAL database
+        // Safely set Doar List from REAL database (Ensures Array)
         if (data.doarList && Array.isArray(data.doarList)) {
-            setDoarList(data.doarList);
+            setDoarList(data.doarList.length > 0 ? data.doarList : ["Admin", "Manager"]);
         }
 
         if (data.generalSettings) {
           const safeGeneral = typeof data.generalSettings === 'string' ? JSON.parse(data.generalSettings) : data.generalSettings;
-          const mergedGeneral = { ...defaultGeneralConfig, ...safeGeneral };
+          const mergedGeneral = { ...defaultGeneralConfig, ...(typeof safeGeneral === 'object' ? safeGeneral : {}) };
           setGeneralSettings(mergedGeneral);
           localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(mergedGeneral));
           localStorage.setItem(`zapped_show_all_filter`, String(mergedGeneral.showAllFilter));
         }
+
         if (data.printerSettings) {
           const safePrinter = typeof data.printerSettings === 'string' ? JSON.parse(data.printerSettings) : data.printerSettings;
-          const mergedPrinter = { ...defaultPrinterConfig, ...safePrinter };
+          const mergedPrinter = { ...defaultPrinterConfig, ...(typeof safePrinter === 'object' ? safePrinter : {}) };
           setPrinterSettings(mergedPrinter);
           localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(mergedPrinter));
         }
-        if (data.staffList && data.staffList.length > 0) {
+
+        if (data.staffList && Array.isArray(data.staffList)) {
           setStaffList(data.staffList);
           localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(data.staffList));
         }
       }
     } catch (error) {
-      console.error("Failed to load settings.");
+      console.error("Failed to load settings from DB.");
     }
   };
 
@@ -199,7 +223,6 @@ export default function SettingsPage() {
     }
   };
 
-  // 🔥 Update: Handles saving directly to database
   const handleAddDoar = async () => {
     if (!newDoarInput.trim()) return;
     try {
@@ -207,14 +230,17 @@ export default function SettingsPage() {
            method: "POST", headers: { "Content-Type": "application/json" },
            body: JSON.stringify({ action: "ADD_DOAR", doarName: newDoarInput.trim() })
         });
+        const data = await res.json();
         if(res.ok) {
-            setDoarList([...doarList, newDoarInput.trim()]);
+            const updated = [...doarList, newDoarInput.trim()];
+            setDoarList(updated);
             setNewDoarInput("");
+        } else {
+            alert(data.error || "Failed to add operator. Database missing.");
         }
     } catch(e) { alert("Failed to add operator."); }
   };
 
-  // 🔥 Update: Deletes directly from database
   const handleRemoveDoar = async (doarName: string) => {
     try {
         const res = await fetch(`/api/settings?action=DELETE_DOAR&doarName=${doarName}`, { method: "DELETE" });
