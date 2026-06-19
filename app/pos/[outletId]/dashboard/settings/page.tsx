@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash } from "lucide-react";
+import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
