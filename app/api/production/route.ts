@@ -79,20 +79,36 @@ export async function GET(req: Request) {
       finishedGoodId: r.menuItemId
     }));
 
-    // 🔥 4. Fetch Exact Deduction Logic for Print Views
+    // 🔥 4. Fetch Exact Deduction Logic (Linked with ProductionRawLog)
     const productionBatches = await prisma.productionBatch.findMany({
       where: { outletId: secureOutletId, date: dateQuery, isDeleted: false },
-      include: { finishedGood: true, createdByUser: true },
+      include: { 
+        finishedGood: true, 
+        createdByUser: true,
+        rawMaterialLogs: { include: { inventory: true } } 
+      },
       orderBy: { date: 'desc' }
     });
 
     const mappedBatches = productionBatches.map(b => {
       const menuMatch = b.batchNumber.match(/\[MENU:(.*?)\]/);
-      let rmDeductions = [];
-      try {
-        const rmMatch = b.batchNumber.match(/\[RM_LOG:(.*?)\]/);
-        if(rmMatch) rmDeductions = JSON.parse(rmMatch[1]);
-      } catch(e) {}
+      let rmDeductions: any[] = [];
+      
+      // Map securely from the new database table relation
+      if (b.rawMaterialLogs && b.rawMaterialLogs.length > 0) {
+        rmDeductions = b.rawMaterialLogs.map(log => ({
+           id: log.inventoryId,
+           name: log.inventory?.itemName || "Unknown RM",
+           unit: log.unit,
+           deducted: log.quantityDeducted
+        }));
+      } else {
+        // Fallback backward compatibility for old string logs
+        try {
+          const rmMatch = b.batchNumber.match(/\[RM_LOG:(.*?)\]/);
+          if(rmMatch) rmDeductions = JSON.parse(rmMatch[1]);
+        } catch(e) {}
+      }
 
       return {
         ...b,
@@ -210,8 +226,10 @@ export async function POST(req: Request) {
           }
         }
 
-        // 🔥 EXACT GRAM-TO-GRAM DEDUCTION LOGIC
-        const rmLogsForPrint = [];
+        // 🔥 EXACT GRAM-TO-GRAM DEDUCTION LOGIC & DB RELATIONS
+        const rawLogCreations = [];
+        const rmLogsForPrintStr = [];
+
         for (const rm of actualMaterialsUsed) {
           const netDeduction = parseFloat(rm.actualUsed || "0") + parseFloat(rm.rawWastage || "0");
           if (netDeduction > 0) {
@@ -219,12 +237,32 @@ export async function POST(req: Request) {
               where: { id: rm.rawMaterialId },
               data: { stockLevel: { decrement: netDeduction } }
             });
-            rmLogsForPrint.push({ id: rm.rawMaterialId, name: rm.name, unit: rm.unit, deducted: netDeduction });
+
+            rawLogCreations.push({
+               inventoryId: rm.rawMaterialId,
+               quantityDeducted: netDeduction,
+               unit: rm.unit
+            });
+
+            rmLogsForPrintStr.push({ id: rm.rawMaterialId, name: rm.name, unit: rm.unit, deducted: netDeduction });
+
+            // Ensure Wastage Record is tracked mapping strictly
+            if (parseFloat(rm.rawWastage || "0") > 0) {
+                await tx.wastageRecord.create({
+                    data: {
+                        quantity: parseFloat(rm.rawWastage),
+                        reason: `Raw Material Waste during ${menuItem.name} Production`,
+                        inventoryId: rm.rawMaterialId,
+                        outletId: secureOutletId,
+                        recordedById: dbUser.id
+                    }
+                });
+            }
           }
         }
 
         const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const rmLogStr = JSON.stringify(rmLogsForPrint);
+        const rmLogStr = JSON.stringify(rmLogsForPrintStr);
         const structuredBatchNo = `PB-${Date.now().toString().slice(-6)}-${uniqueSuffix}[WASTE:${netWasted}][MENU:${menuItemId}][RM_LOG:${rmLogStr}]`;
 
         const batch = await tx.productionBatch.create({
@@ -233,9 +271,25 @@ export async function POST(req: Request) {
             finishedGoodId: invItem.id, 
             quantityProduced: netProduced,
             outletId: secureOutletId,
-            createdByUserId: dbUser.id 
+            createdByUserId: dbUser.id,
+            rawMaterialLogs: {
+                create: rawLogCreations
+            }
           }
         });
+
+        // Ensure Finished Good Wastage Record is mapped securely
+        if (netWasted > 0) {
+            await tx.wastageRecord.create({
+                data: {
+                    quantity: netWasted,
+                    reason: `Finished Goods Waste: ${menuItem.name}`,
+                    inventoryId: invItem.id,
+                    outletId: secureOutletId,
+                    recordedById: dbUser.id
+                }
+            });
+        }
 
         return batch;
       });

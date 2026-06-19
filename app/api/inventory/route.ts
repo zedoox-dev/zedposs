@@ -226,7 +226,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: true, vendor: updatedVendor });
     }
 
-    // 🔥 FULL PRISMA INTEGRATION FOR GRN (PURCHASE ENTRY)
+    // 🔥 FULL PRISMA INTEGRATION FOR GRN (PURCHASE ENTRY) - CRASH FIXED
     if (action === "ADD_PURCHASE") {
       const { rate, qty, vendorName, invoiceNo, paymentMode, totalAmount, isUrgent } = purchaseData;
 
@@ -241,13 +241,14 @@ export async function PUT(req: Request) {
           data: { stockLevel: { increment: parseFloat(qty) } }
         });
 
+        // Crash Fix: Safely lookup vendor or create if missing (even for HQ)
         let targetVendor = await tx.vendor.findFirst({
           where: { tenantId: dbOutlet.tenantId, name: vendorName }
         });
 
-        if (!targetVendor && vendorName !== "HQ") {
+        if (!targetVendor) {
           targetVendor = await tx.vendor.create({
-            data: { tenantId: dbOutlet.tenantId, name: vendorName, phone: "N/A" }
+            data: { tenantId: dbOutlet.tenantId, name: vendorName || "HQ", phone: "N/A" }
           });
         }
 
@@ -261,7 +262,7 @@ export async function PUT(req: Request) {
         const po = await tx.purchaseOrder.create({
           data: {
             outletId: secureOutletId,
-            vendorId: targetVendor?.id || (await tx.vendor.findFirst({where: {tenantId: dbOutlet.tenantId}}))!.id, 
+            vendorId: targetVendor.id, // 100% Safe Now
             invoiceNumber: invoiceNo || `GRN-${Date.now()}`,
             totalAmount: parseFloat(totalAmount),
             netAmount: parseFloat(totalAmount), 

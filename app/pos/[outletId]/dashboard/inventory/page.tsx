@@ -247,8 +247,8 @@ export default function InventoryAndPurchaseERP() {
         setPurchaseDoar(""); setPurchaseVendor(""); setPurchasePayment("CASH");
         if (!isMobileMode) {
           fetchInventoryAndProduction();
-          // Provide instant local feedback if API is slow
-          setPurchaseLogs(prev => [{...payload.purchaseData, id: Date.now(), itemName: inventory.find(i=>i.id===purchaseItem)?.itemName, date: new Date().toISOString(), qty: purchaseQty}, ...prev]);
+          // Crash Prevented: Fallback is strictly mapping variables safely.
+          setPurchaseLogs(prev => [{...payload.purchaseData, id: Date.now().toString(), itemName: inventory.find(i=>i.id===purchaseItem)?.itemName, date: new Date().toISOString(), qty: purchaseQty}, ...prev]);
         }
       } else {
         alert(data.error || "Purchase Registration Failed.");
@@ -352,20 +352,24 @@ export default function InventoryAndPurchaseERP() {
   const filteredPurchaseLogs = purchaseLogs.filter(log => isLogWithinDate(log.date));
   const filteredHistory = history.filter(h => isLogWithinDate(h.date)); 
 
-  // 🔥 1. EXACT CONSUMPTION MATH USING [RM_LOG] FROM DB
+  // 🔥 1. EXACT CONSUMPTION MATH USING rawMaterialsLogged Array Mapped Form Database
   const calculateConsumedQuantity = (inventoryId: string) => {
     let totalConsumedVolume = 0;
     filteredHistory.forEach(batch => {
-      try {
-        const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/); 
-        if(rmMatch) {
-          const logs = JSON.parse(rmMatch[1]);
-          const found = logs.find((l:any) => l.id === inventoryId);
-          if (found) {
-            totalConsumedVolume += parseFloat(found.deducted);
-          }
-        }
-      } catch(e) {}
+      if (batch.rawMaterialsLogged && Array.isArray(batch.rawMaterialsLogged)) {
+         const found = batch.rawMaterialsLogged.find((l:any) => l.id === inventoryId);
+         if (found) totalConsumedVolume += parseFloat(found.deducted);
+      } else {
+         // Fallback support for older legacy logs
+         try {
+           const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/);
+           if(rmMatch) {
+             const logs = JSON.parse(rmMatch[1]);
+             const found = logs.find((l:any) => l.id === inventoryId);
+             if (found) totalConsumedVolume += parseFloat(found.deducted);
+           }
+         } catch(e) {}
+      }
     });
     return totalConsumedVolume;
   };
@@ -678,10 +682,15 @@ export default function InventoryAndPurchaseERP() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                    {filteredHistory.map((batch, idx) => {
                       let rmLogs = [];
-                      try {
-                         const match = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/);
-                         if (match) rmLogs = JSON.parse(match[1]);
-                      } catch(e) {}
+                      if (batch.rawMaterialsLogged && Array.isArray(batch.rawMaterialsLogged)) {
+                         rmLogs = batch.rawMaterialsLogged;
+                      } else {
+                         try {
+                            const match = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/);
+                            if (match) rmLogs = JSON.parse(match[1]);
+                         } catch(e) {}
+                      }
+                      
                       const waste = batch.batchNumber.match(/\[WASTE:(.*?)\]/) ? parseFloat(batch.batchNumber.match(/\[WASTE:(.*?)\]/)[1]) : 0;
                       
                       return (
@@ -1058,6 +1067,7 @@ export default function InventoryAndPurchaseERP() {
           </div>
 
           <div className="my-4">
+            
             {activeView === 'INVENTORY' && (
               <table className="w-full text-[11px] mt-2 border-collapse">
                 <thead><tr className="border-b-2 border-black text-left"><th className="pb-1 w-10">S.NO</th><th className="pb-1">SKU INVENTORY ITEMS DESCRIPTION</th><th className="pb-1 text-right">QUANTITY VALUE</th></tr></thead>
@@ -1149,7 +1159,6 @@ export default function InventoryAndPurchaseERP() {
               </table>
             )}
           </div>
-
           <div className="flex justify-between mt-10 pt-4 border-t border-black text-[10px] font-bold uppercase">
             <div className="text-center"><div className="w-32 border-b border-black mb-1 h-8"></div>Manager Signature</div>
             <div className="text-center"><div className="w-32 border-b border-black mb-1 h-8"></div>Auditor Verification</div>
