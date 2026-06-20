@@ -9,19 +9,16 @@ export async function GET(req: Request) {
   const urlToken = searchParams.get("token");
   const queryOutletId = searchParams.get("outletId");
 
-  // 🟢 PUBLIC MOBILE GRN FORM VALIDATION
   if (formOnly === "true" && queryOutletId) {
     const out = await prisma.outlet.findUnique({ where: { id: queryOutletId } });
     if (!out) return NextResponse.json({ expired: true });
 
     const settings: any = out.generalSettings ? (typeof out.generalSettings === 'string' ? JSON.parse(out.generalSettings) : out.generalSettings) : {};
     
-    // Check if salt matches DB
     if (settings.qrPurchaseToken && settings.qrPurchaseToken !== urlToken) {
       return NextResponse.json({ expired: true });
     }
     
-    // Send inventory list for mobile dropdown (Strictly NO MENU ITEMS)
     const inventory = await prisma.inventory.findMany({ 
         where: { outletId: queryOutletId, isDeleted: false, type: { not: "FINISHED_GOOD" } }, 
         select: { id: true, itemName: true, unit: true } 
@@ -32,7 +29,6 @@ export async function GET(req: Request) {
         select: { name: true } 
     });
 
-    // 🔥 Fetch strict Database Operator Doars for Mobile Form
     const doars = await prisma.operatorDoar.findMany({
       where: { outletId: queryOutletId, isActive: true },
       select: { name: true }
@@ -47,7 +43,6 @@ export async function GET(req: Request) {
     });
   }
 
-  // 🔒 STRICT SECURITY: GET SESSION TOKENS FOR DASHBOARD
   const session = await getServerSession(authOptions);
   if (!session || !session.user) {
     return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
@@ -61,21 +56,35 @@ export async function GET(req: Request) {
   }
 
   try {
-    // 1. Fetch Inventory SKUs strictly for this outlet
     const inventory = await prisma.inventory.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       orderBy: { itemName: 'asc' }
     });
 
-    // 2. Fetch Vendors (Strictly tenantId to avoid FK Crash, but filtered for this UI)
+    // Fetch Vendors with their exact Settlement Payment History
     const vendors = await prisma.vendor.findMany({
       where: { tenantId: secureTenantId, isDeleted: false },
+      include: {
+        purchases: {
+           where: { notes: "VENDOR_SETTLEMENT" },
+           include: { payments: true },
+           orderBy: { date: 'desc' }
+        }
+      },
       orderBy: { name: 'asc' }
     });
 
-    const mappedVendors = vendors.map(v => ({ ...v, outstanding: v.outstandingAmt }));
+    const mappedVendors = vendors.map(v => {
+       const paymentHistory = v.purchases.flatMap(po => po.payments.map(pay => ({
+          id: pay.id,
+          date: pay.date,
+          amount: pay.amount,
+          mode: pay.paymentMode,
+          ref: pay.referenceNo
+       })));
+       return { ...v, outstanding: v.outstandingAmt, paymentHistory };
+    });
 
-    // 3. Fetch Purchase Orders (GRN Logs) strictly for this outlet
     const purchases = await prisma.purchaseOrder.findMany({
       where: { outletId: secureOutletId, isDeleted: false },
       include: {
@@ -104,7 +113,6 @@ export async function GET(req: Request) {
       }))
     );
 
-    // 🔥 Fetch strict Database Operator Doars for Dashboard Form
     const doars = await prisma.operatorDoar.findMany({
       where: { outletId: secureOutletId, isActive: true },
       select: { name: true }
@@ -126,7 +134,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, itemName, type, unit, stockLevel, minStock, vendorData, newToken, outletId } = body;
 
-    // 🟢 REGENERATE MOBILE GRN TOKEN
     if (action === "REGENERATE_TOKEN") {
       const session = await getServerSession(authOptions);
       if (!session || !session.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -149,7 +156,6 @@ export async function POST(req: Request) {
     const secureOutletId = (session.user as any).outletId;
     const secureTenantId = (session.user as any).tenantId;
 
-    // ACTION: ADD NEW INVENTORY SKU
     if (action === "ADD_SKU") {
       const item = await prisma.inventory.create({
         data: {
@@ -164,7 +170,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, item });
     }
 
-    // ACTION: ADD NEW VENDOR
     if (action === "ADD_VENDOR") {
       let creditDays = 0;
       if (vendorData.terms === "NET_15") creditDays = 15;
@@ -176,8 +181,13 @@ export async function POST(req: Request) {
           name: String(vendorData.name).toUpperCase(),
           contactPerson: vendorData.contactPerson,
           phone: vendorData.phone,
+          email: vendorData.email || null,
           address: vendorData.address,
-          gstin: vendorData.gstin,
+          gstin: vendorData.gstin || null,
+          pan: vendorData.pan || null,
+          bankName: vendorData.bankName || null,
+          accountNo: vendorData.accountNo || null,
+          ifsc: vendorData.ifsc || null,
           creditDays: creditDays,
           outstandingAmt: parseFloat(vendorData.outstanding) || 0
         }
@@ -195,7 +205,7 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { action, itemId, newStock, purchaseData, outletId, isMobileEntry, token, vendorId, payAmount } = body;
+    const { action, itemId, purchaseData, outletId, isMobileEntry, token, vendorId, payAmount, paymentMode, bankName } = body;
 
     const session = await getServerSession(authOptions);
     const secureOutletId = outletId || (session?.user as any)?.outletId;
@@ -209,7 +219,6 @@ export async function PUT(req: Request) {
     const dbOutlet = await prisma.outlet.findUnique({ where: { id: secureOutletId } });
     if (!dbOutlet) return NextResponse.json({ error: "Invalid Outlet." }, { status: 400 });
 
-    // Verify Mobile Token
     if (isMobileEntry) {
       const settings: any = dbOutlet.generalSettings ? (typeof dbOutlet.generalSettings === 'string' ? JSON.parse(dbOutlet.generalSettings) : dbOutlet.generalSettings) : {};
       if (settings.qrPurchaseToken !== token) {
@@ -217,16 +226,41 @@ export async function PUT(req: Request) {
       }
     }
 
-    // 💰 ACTION: SETTLE VENDOR DUES
+    // 💰 ACTION: SETTLE VENDOR DUES & LOG HISTORY
     if (action === "PAY_VENDOR_DUE" && session?.user) {
-      const updatedVendor = await prisma.vendor.update({
-        where: { id: vendorId },
-        data: { outstandingAmt: { decrement: parseFloat(payAmount) } }
+      const result = await prisma.$transaction(async (tx) => {
+         const updatedVendor = await tx.vendor.update({
+           where: { id: vendorId },
+           data: { outstandingAmt: { decrement: parseFloat(payAmount) } }
+         });
+
+         // Log payment as a Settlement Node in DB
+         await tx.purchaseOrder.create({
+            data: {
+               outletId: secureOutletId,
+               vendorId: vendorId,
+               invoiceNumber: `SETTLEMENT-${Date.now()}`,
+               totalAmount: 0,
+               netAmount: 0,
+               status: "RECEIVED",
+               paymentStatus: "PAID",
+               amountPaid: parseFloat(payAmount),
+               notes: "VENDOR_SETTLEMENT",
+               payments: {
+                  create: {
+                     amount: parseFloat(payAmount),
+                     paymentMode: paymentMode || "CASH",
+                     referenceNo: bankName || "N/A"
+                  }
+               }
+            }
+         });
+
+         return updatedVendor;
       });
-      return NextResponse.json({ success: true, vendor: updatedVendor });
+      return NextResponse.json({ success: true, vendor: result });
     }
 
-    // 🔥 FULL PRISMA INTEGRATION FOR GRN (PURCHASE ENTRY) - CRASH FIXED
     if (action === "ADD_PURCHASE") {
       const { rate, qty, vendorName, invoiceNo, paymentMode, totalAmount, isUrgent } = purchaseData;
 
@@ -241,7 +275,6 @@ export async function PUT(req: Request) {
           data: { stockLevel: { increment: parseFloat(qty) } }
         });
 
-        // Crash Fix: Safely lookup vendor or create if missing (even for HQ)
         let targetVendor = await tx.vendor.findFirst({
           where: { tenantId: dbOutlet.tenantId, name: vendorName }
         });
@@ -262,7 +295,7 @@ export async function PUT(req: Request) {
         const po = await tx.purchaseOrder.create({
           data: {
             outletId: secureOutletId,
-            vendorId: targetVendor.id, // 100% Safe Now
+            vendorId: targetVendor.id, 
             invoiceNumber: invoiceNo || `GRN-${Date.now()}`,
             totalAmount: parseFloat(totalAmount),
             netAmount: parseFloat(totalAmount), 

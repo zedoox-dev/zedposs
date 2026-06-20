@@ -1,9 +1,18 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Package, Plus, AlertCircle, Loader2, X, Scale, Search, Filter, Printer, Layers, RefreshCcw, CheckCircle2, AlertTriangle, ArrowRightLeft, Building2, Truck, QrCode, Lock, ShieldAlert, FileSpreadsheet, Calculator, History, IndianRupee, Tag, UserCheck, CreditCard, Upload, FileText, Star, Activity, LineChart, PieChart, Coins, Trash2, LockKeyhole, ShieldCheck, Soup, Clock } from "lucide-react";
+import { Package, Plus, AlertCircle, Loader2, X, Scale, Search, Filter, Printer, Layers, RefreshCcw, CheckCircle2, AlertTriangle, ArrowRightLeft, Building2, Truck, QrCode, Lock, ShieldAlert, FileSpreadsheet, Calculator, History, IndianRupee, Tag, UserCheck, CreditCard, Upload, FileText, Star, Activity, LineChart, PieChart, Coins, Trash2, LockKeyhole, ShieldCheck, Soup, Clock, Landmark, Wallet, Mail } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
+
+const MAJOR_BANKS = [
+  { id: "SBI", name: "State Bank of India", color: "bg-blue-600 text-white", border: "border-blue-700" },
+  { id: "HDFC", name: "HDFC Bank", color: "bg-blue-900 text-white", border: "border-blue-950" },
+  { id: "ICICI", name: "ICICI Bank", color: "bg-orange-600 text-white", border: "border-orange-700" },
+  { id: "AXIS", name: "Axis Bank", color: "bg-rose-700 text-white", border: "border-rose-800" },
+  { id: "IDFC", name: "IDFC FIRST", color: "bg-red-800 text-white", border: "border-red-900" },
+  { id: "UNION", name: "Union Bank", color: "bg-blue-400 text-white", border: "border-blue-500" },
+];
 
 export default function InventoryAndPurchaseERP() {
   const params = useParams();
@@ -69,12 +78,22 @@ export default function InventoryAndPurchaseERP() {
   const [qrToken, setQrToken] = useState("");
   const [qrImageUrl, setQrImageUrl] = useState("");
 
+  // --- Vendor Specific States ---
   const [vendorSearch, setVendorSearch] = useState("");
   const [showAddVendorModal, setShowAddVendorModal] = useState(false);
-  const [newVendorData, setNewVendorData] = useState({ name: "", contactPerson: "", phone: "", address: "", outstanding: "0", gstin: "", rating: "5", terms: "NET_0" });
+  const [newVendorData, setNewVendorData] = useState({ 
+    name: "", contactPerson: "", phone: "", address: "", outstanding: "0", 
+    gstin: "", pan: "", email: "", bankName: "", accountNo: "", ifsc: "",
+    rating: "5", terms: "NET_0" 
+  });
+  
   const [showPayDueModal, setShowPayDueModal] = useState(false);
   const [selectedVendorForPay, setSelectedVendorForPay] = useState<any>(null);
-  const [payDueAmount, setPayDueAmount] = useState("");
+  const [payDueData, setPayDueData] = useState({ amount: "", mode: "BANK", bankName: "SBI" });
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  const [showVendorHistoryModal, setShowVendorHistoryModal] = useState(false);
+  const [selectedVendorForHistory, setSelectedVendorForHistory] = useState<any>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -91,7 +110,6 @@ export default function InventoryAndPurchaseERP() {
 
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
-      // Mobile Entry Overlay Trigger
       if (urlParams.get("view") === "purchase_mobile") {
         setIsMobileMode(true);
         const passedToken = urlParams.get("token");
@@ -247,7 +265,6 @@ export default function InventoryAndPurchaseERP() {
         setPurchaseDoar(""); setPurchaseVendor(""); setPurchasePayment("CASH");
         if (!isMobileMode) {
           fetchInventoryAndProduction();
-          // Crash Prevented: Fallback is strictly mapping variables safely.
           setPurchaseLogs(prev => [{...payload.purchaseData, id: Date.now().toString(), itemName: inventory.find(i=>i.id===purchaseItem)?.itemName, date: new Date().toISOString(), qty: purchaseQty}, ...prev]);
         }
       } else {
@@ -260,6 +277,7 @@ export default function InventoryAndPurchaseERP() {
     e.preventDefault();
     if (!session?.user) return;
     if (!newVendorData.name || !newVendorData.phone) return alert("Vendor Name and Phone required.");
+    if (!newVendorData.bankName || !newVendorData.accountNo) return alert("Banking Details are mandatory for vendor onboarding.");
     
     const payload = {
       action: "ADD_VENDOR",
@@ -274,7 +292,7 @@ export default function InventoryAndPurchaseERP() {
       const data = await res.json();
       if(res.ok && data.success) {
         setShowAddVendorModal(false);
-        setNewVendorData({ name: "", contactPerson: "", phone: "", address: "", outstanding: "0", gstin:"", rating:"5", terms:"NET_0" });
+        setNewVendorData({ name: "", contactPerson: "", phone: "", address: "", outstanding: "0", gstin:"", pan:"", email:"", bankName:"", accountNo:"", ifsc:"", rating:"5", terms:"NET_0" });
         fetchInventoryAndProduction();
         alert("🟢 Approved Vendor Account Registered via Cloud!");
       } else {
@@ -283,59 +301,64 @@ export default function InventoryAndPurchaseERP() {
     } catch (e) { alert("Error connecting to server."); }
   };
 
-  const handleDeleteSKU = async (itemId: string, itemName: string) => {
-    if (!securityPasswordInput) return alert("PIN Required");
-    
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/inventory?id=${itemId}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        alert("🟢 SKU Removed from terminal configurations cache successfully!");
-        setShowDeleteAuthModal(false);
-        setSecurityPasswordInput("");
-        fetchInventoryAndProduction();
-      } else {
-         alert("❌ ACCESS DENIED! Invalid Terminal Security Authorization Credentials provided.");
-      }
-    } catch (e) {
-      alert("Error deleting SKU.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submitInternalIndentRequest = () => {
-    if (!indentQty || parseFloat(indentQty) <= 0) return alert("Enter valid quantity descriptor.");
-    const newIndent = { id: Date.now(), timestamp: new Date().toISOString(), itemName: indentItem.itemName, qty: indentQty, unit: indentItem.unit, urgency: indentUrgency, status: "PENDING_GRN" };
-    const updated = [newIndent, ...indentLogs];
-    setIndentLogs(updated);
-    localStorage.setItem(`zapped_indent_requests_${outletId}`, JSON.stringify(updated));
-    alert("🚀 Procurement Internal Requisition Indent Dispatched!");
-    setShowIndentModal(false); setIndentQty("");
-  };
-
   const handlePayOutstandingDues = async () => {
-    if(!payDueAmount || parseFloat(payDueAmount) <= 0) return alert("Enter valid amount");
+    if(!payDueData.amount || parseFloat(payDueData.amount) <= 0) return alert("Enter valid payable amount");
+    setIsProcessingPayment(true);
+    
     try {
       const res = await fetch("/api/inventory", {
         method: "PUT", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ action: "PAY_VENDOR_DUE", vendorId: selectedVendorForPay.id, payAmount: payDueAmount })
+        body: JSON.stringify({ 
+          action: "PAY_VENDOR_DUE", 
+          vendorId: selectedVendorForPay.id, 
+          payAmount: payDueData.amount,
+          paymentMode: payDueData.mode,
+          bankName: payDueData.mode === "BANK" ? payDueData.bankName : "CASH"
+        })
       });
       if(res.ok) {
-        alert("💸 Vendor Ledger Outstandings Settled & Logged!");
-        setShowPayDueModal(false); setPayDueAmount("");
-        fetchInventoryAndProduction();
+        setTimeout(() => {
+           alert(`✅ Payment of ₹${payDueData.amount} processed successfully via ${payDueData.mode === 'BANK' ? payDueData.bankName : 'CASH'}!`);
+           setShowPayDueModal(false); 
+           setPayDueData({ amount: "", mode: "BANK", bankName: "SBI" });
+           fetchInventoryAndProduction();
+           setIsProcessingPayment(false);
+        }, 1200); // Simulated delay for banking gateway feel
       }
-    } catch(e) { alert("Failed to settle dues."); }
+    } catch(e) { 
+       alert("Failed to settle dues."); 
+       setIsProcessingPayment(false);
+    }
+  };
+
+  const openVendorHistory = (vendor: any) => {
+    setSelectedVendorForHistory(vendor);
+    setShowVendorHistoryModal(true);
+  };
+
+  const handleDeleteSKU = async (itemId: string, itemName: string) => {
+    if (!securityPasswordInput) return alert("PIN Required");
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/inventory?id=${itemId}`, { method: 'DELETE' });
+      if (res.ok) {
+        alert("🟢 SKU Removed from terminal configurations cache successfully!");
+        setShowDeleteAuthModal(false); setSecurityPasswordInput(""); fetchInventoryAndProduction();
+      } else alert("❌ ACCESS DENIED! Invalid Terminal Security Authorization Credentials.");
+    } catch (e) { alert("Error deleting SKU."); } finally { setLoading(false); }
+  };
+
+  const submitInternalIndentRequest = () => {
+    if (!indentQty || parseFloat(indentQty) <= 0) return alert("Enter valid qty.");
+    const newIndent = { id: Date.now(), timestamp: new Date().toISOString(), itemName: indentItem.itemName, qty: indentQty, unit: indentItem.unit, urgency: indentUrgency, status: "PENDING_GRN" };
+    const updated = [newIndent, ...indentLogs];
+    setIndentLogs(updated); localStorage.setItem(`zapped_indent_requests_${outletId}`, JSON.stringify(updated));
+    alert("🚀 Procurement Indent Dispatched!"); setShowIndentModal(false); setIndentQty("");
   };
 
   const isLogWithinDate = (dateStr: string) => {
     if (dateFilter === "all_history") return true; 
-
-    const logDate = new Date(dateStr);
-    const today = new Date();
+    const logDate = new Date(dateStr); const today = new Date();
     if (dateFilter === "today") return logDate.toDateString() === today.toDateString();
     if (dateFilter === "yesterday") {
       const yest = new Date(today); yest.setDate(yest.getDate() - 1);
@@ -352,7 +375,6 @@ export default function InventoryAndPurchaseERP() {
   const filteredPurchaseLogs = purchaseLogs.filter(log => isLogWithinDate(log.date));
   const filteredHistory = history.filter(h => isLogWithinDate(h.date)); 
 
-  // 🔥 1. EXACT CONSUMPTION MATH USING rawMaterialsLogged Array Mapped Form Database
   const calculateConsumedQuantity = (inventoryId: string) => {
     let totalConsumedVolume = 0;
     filteredHistory.forEach(batch => {
@@ -360,7 +382,6 @@ export default function InventoryAndPurchaseERP() {
          const found = batch.rawMaterialsLogged.find((l:any) => l.id === inventoryId);
          if (found) totalConsumedVolume += parseFloat(found.deducted);
       } else {
-         // Fallback support for older legacy logs
          try {
            const rmMatch = batch.batchNumber.match(/\[RM_LOG:(.*?)\]/);
            if(rmMatch) {
@@ -379,14 +400,11 @@ export default function InventoryAndPurchaseERP() {
   };
 
   const simulateInvoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setProofUrl(`https://cloud.zapped.in/inv_${Date.now()}.pdf`);
-    }
+    if (e.target.files && e.target.files[0]) setProofUrl(`https://cloud.zapped.in/inv_${Date.now()}.pdf`);
   };
 
   const handlePrint = () => { setTimeout(() => { window.print(); }, 150); };
 
-  // 🔥 2. STRICT SEPARATION OF RAW MATERIALS AND PRODUCED SERVINGS
   const rawInventory = inventory.filter(i => i.type !== "FINISHED_GOOD");
   const producedInventory = inventory.filter(i => i.type === "FINISHED_GOOD");
 
@@ -398,9 +416,7 @@ export default function InventoryAndPurchaseERP() {
     return matchSearch && matchType;
   });
 
-  const filteredProducedInventory = producedInventory.filter(item => {
-    return item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
-  });
+  const filteredProducedInventory = producedInventory.filter(item => item.itemName.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const totalSKUs = rawInventory.length;
   const lowStockCount = rawInventory.filter(i => i.stockLevel > 0 && i.stockLevel <= i.minStock).length;
@@ -409,8 +425,7 @@ export default function InventoryAndPurchaseERP() {
   const totalMarketUdhaari = vendorList.reduce((sum, v) => sum + v.outstanding, 0);
   
   const accruedGstTaxPool = filteredPurchaseLogs.reduce((sum, log) => {
-    const rate = parseFloat(log.rate) || 0;
-    const qty = parseFloat(log.qty) || 0;
+    const rate = parseFloat(log.rate) || 0; const qty = parseFloat(log.qty) || 0;
     return sum + ((rate * qty) * (parseFloat(log.gst || "0") / 100));
   }, 0);
 
@@ -420,11 +435,8 @@ export default function InventoryAndPurchaseERP() {
 
   const itemSpendMap: Record<string, number> = {};
   filteredPurchaseLogs.forEach(l => { itemSpendMap[l.itemName] = (itemSpendMap[l.itemName] || 0) + l.total; });
-  const topSpendLeaderSKU = Object.keys(itemSpendMap).length > 0 
-    ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] 
-    : "NONE";
+  const topSpendLeaderSKU = Object.keys(itemSpendMap).length > 0 ? Object.entries(itemSpendMap).reduce((a, b) => b[1] > a[1] ? b : a)[0] : "NONE";
 
-  // 🔥 3. STRICT ISOLATION FOR MOBILE QR GRN VIEW
   if (isMobileMode) {
     if (mobileAccessDenied) {
       return (
@@ -443,79 +455,31 @@ export default function InventoryAndPurchaseERP() {
       <div className="fixed inset-0 z-[99999] w-full h-[100dvh] overflow-y-auto bg-slate-100 p-4 font-sans pb-40 flex flex-col items-center">
         <style dangerouslySetInnerHTML={{__html: `header, nav, aside, .print\\:hidden:not(.fixed) { display: none !important; }`}} />
         <div className="w-full max-w-md mt-6 mb-auto relative z-[100000]">
-          {/* Outlet Name Banner */}
           <div className="bg-slate-900 text-white p-4 rounded-t-3xl border-b-4 border-indigo-500 text-center shadow-lg">
-            <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center">
-              <Truck size={18} className="mr-2 text-indigo-500"/> {mobileOutletName || "ZAPPED OUTLET"}
-            </h1>
+            <h1 className="font-black text-lg uppercase tracking-widest flex justify-center items-center"><Truck size={18} className="mr-2 text-indigo-500"/> {mobileOutletName || "ZAPPED OUTLET"}</h1>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Mobile GRN Sync Portal</p>
           </div>
-
           <div className="bg-white rounded-b-3xl p-6 shadow-2xl animate-in fade-in zoom-in border border-slate-200">
+            {/* Same Mobile Form as Original */}
             <form onSubmit={submitPurchaseEntry} className="space-y-4">
-              <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex justify-between items-center mb-2">
-                <span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider">Central HQ Supply Route</span>
-                <input type="checkbox" checked={isHQ} onChange={(e) => setIsHQ(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Received SKU</label>
-                <select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
-                  <option value="" disabled>Choose material...</option>
-                  {rawInventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
-                </select>
-              </div>
+              <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex justify-between items-center mb-2"><span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider">Central HQ Supply Route</span><input type="checkbox" checked={isHQ} onChange={(e) => setIsHQ(e.target.checked)} className="w-5 h-5 accent-indigo-600 cursor-pointer" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Received SKU</label><select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500"><option value="" disabled>Choose material...</option>{rawInventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}</select></div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Received Qty</label>
-                  <div className="flex items-center">
-                    <input required type="number" step="any" min="0.01" placeholder="0" value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} className="w-full p-3 border border-slate-200 rounded-l-xl text-lg font-mono font-black outline-none focus:border-indigo-500" />
-                    <span className="bg-slate-100 border border-l-0 border-slate-200 p-3 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? rawInventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span>
-                  </div>
-                </div>
-                {!isHQ && (
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Rate / Unit (₹)</label>
-                    <input required type="number" step="any" min="0" placeholder="0.00" value={purchaseRate} onChange={(e) => setPurchaseRate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-lg font-mono font-black text-emerald-600 outline-none focus:border-indigo-500" />
-                  </div>
-                )}
+                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Received Qty</label><div className="flex items-center"><input required type="number" step="any" min="0.01" placeholder="0" value={purchaseQty} onChange={(e) => setPurchaseQty(e.target.value)} className="w-full p-3 border border-slate-200 rounded-l-xl text-lg font-mono font-black outline-none focus:border-indigo-500" /><span className="bg-slate-100 border border-l-0 border-slate-200 p-3 rounded-r-xl text-[10px] font-black uppercase text-slate-400">{purchaseItem ? rawInventory.find(i=>i.id===purchaseItem)?.unit : "UNIT"}</span></div></div>
+                {!isHQ && (<div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Rate / Unit (₹)</label><input required type="number" step="any" min="0" placeholder="0.00" value={purchaseRate} onChange={(e) => setPurchaseRate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-lg font-mono font-black text-emerald-600 outline-none focus:border-indigo-500" /></div>)}
               </div>
               {!isHQ && (
                 <>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Supplier / Vendor</label>
-                    <select required value={purchaseVendor} onChange={(e) => setPurchaseVendor(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500">
-                      <option value="" disabled>Select Vendor...</option>
-                      {vendors.map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </div>
+                  <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Supplier / Vendor</label><select required value={purchaseVendor} onChange={(e) => setPurchaseVendor(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500"><option value="" disabled>Select Vendor...</option>{vendors.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Payment Mode</label>
-                      <select value={purchasePayment} onChange={(e) => setPurchasePayment(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none focus:border-indigo-500">
-                        <option value="CASH">Cash Paid</option><option value="UPI">UPI / Online</option><option value="CREDIT">On Credit</option><option value="CHEQUE">Bank Cheque</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Ref / Bill No.</label>
-                      <input type="text" placeholder="Invoice ID" value={purchaseRef} onChange={(e) => setPurchaseRef(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500" />
-                    </div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Payment Mode</label><select value={purchasePayment} onChange={(e) => setPurchasePayment(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none focus:border-indigo-500"><option value="CASH">Cash Paid</option><option value="UPI">UPI / Online</option><option value="CREDIT">On Credit</option><option value="CHEQUE">Bank Cheque</option></select></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Ref / Bill No.</label><input type="text" placeholder="Invoice ID" value={purchaseRef} onChange={(e) => setPurchaseRef(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500" /></div>
                   </div>
                 </>
               )}
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Operator Name (Doar)</label>
-                <select required value={purchaseDoar} onChange={(e) => setPurchaseDoar(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-indigo-500 shadow-sm outline-none">
-                  <option value="" disabled>Choose Personnel...</option>
-                  {staffDoars.map(d => <option key={d} value={d}>{d}</option>)}
-                  {staffDoars.length === 0 && <option disabled>No Operators config in Settings</option>}
-                </select>
-              </div>
-              {!isHQ && parseFloat(purchaseQty)>0 && parseFloat(purchaseRate)>0 && (
-                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center"><span className="text-[10px] uppercase font-black text-emerald-600 block mb-1">Total Bill Value</span><span className="text-2xl font-mono font-black text-emerald-700">₹{((parseFloat(purchaseQty) * parseFloat(purchaseRate)) * (1 + parseFloat(purchaseGst)/100)).toFixed(2)}</span></div>
-              )}
-              <button disabled={isSaving} type="submit" className="w-full bg-slate-900 text-white font-black uppercase tracking-widest py-4 rounded-xl text-xs flex justify-center items-center shadow-xl active:scale-95 transition-transform mt-6 mb-10">
-                {isSaving ? <Loader2 className="animate-spin" size={18}/> : "Submit Secure Mobile GRN"}
-              </button>
+              <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Operator Name (Doar)</label><select required value={purchaseDoar} onChange={(e) => setPurchaseDoar(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-indigo-500 shadow-sm outline-none"><option value="" disabled>Choose Personnel...</option>{staffDoars.map(d => <option key={d} value={d}>{d}</option>)}{staffDoars.length === 0 && <option disabled>No Operators config in Settings</option>}</select></div>
+              {!isHQ && parseFloat(purchaseQty)>0 && parseFloat(purchaseRate)>0 && (<div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center"><span className="text-[10px] uppercase font-black text-emerald-600 block mb-1">Total Bill Value</span><span className="text-2xl font-mono font-black text-emerald-700">₹{((parseFloat(purchaseQty) * parseFloat(purchaseRate)) * (1 + parseFloat(purchaseGst)/100)).toFixed(2)}</span></div>)}
+              <button disabled={isSaving} type="submit" className="w-full bg-slate-900 text-white font-black uppercase tracking-widest py-4 rounded-xl text-xs flex justify-center items-center shadow-xl active:scale-95 transition-transform mt-6 mb-10">{isSaving ? <Loader2 className="animate-spin" size={18}/> : "Submit Secure Mobile GRN"}</button>
             </form>
           </div>
         </div>
@@ -526,7 +490,7 @@ export default function InventoryAndPurchaseERP() {
   return (
     <>
       <title>ZedPoss | Inventory & Supply Chain Management</title>
-      <meta name="description" content="Master Inventory Control, Stock Ledger, GRN Purchase Orders, and Vendor Accounts for your restaurant. Secure cloud supply chain by ZedooX Technologies." />
+      <meta name="description" content="Master Inventory Control, Stock Ledger, GRN Purchase Orders, and Vendor Accounts for your restaurant." />
 
       <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden print:h-auto print:overflow-visible print:bg-white">
         
@@ -560,7 +524,6 @@ export default function InventoryAndPurchaseERP() {
                 </div>
               )}
 
-              {/* QUAD-TAB PANEL INTERFACE HEADERS */}
               <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200 mr-2">
                 <button onClick={()=>setActiveView("INVENTORY")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='INVENTORY' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Stock Ledger</button>
                 <button onClick={()=>setActiveView("PRODUCED")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='PRODUCED' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Produced Items</button>
@@ -569,7 +532,6 @@ export default function InventoryAndPurchaseERP() {
                 <button onClick={()=>setActiveView("VENDORS")} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${activeView==='VENDORS' ? 'bg-white shadow-sm text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}>Vendor Accounts</button>
               </div>
 
-              {/* Contextual Action Buttons */}
               {(activeView === "INVENTORY" || activeView === "PRODUCED") && (
                 <>
                   <button onClick={fetchInventoryAndProduction} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg"><RefreshCcw size={16} className={loading ? "animate-spin" : ""} /></button>
@@ -588,7 +550,6 @@ export default function InventoryAndPurchaseERP() {
             </div>
           </div>
 
-          {/* METRICS ROW STATUS CARDS STRIP */}
           {(activeView === "INVENTORY" || activeView === "VENDORS" || activeView === "PRODUCED") && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-xs flex items-center justify-between"><div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total Vault SKU Items</span><p className="text-2xl font-mono font-black text-slate-900">{totalSKUs}</p></div><Layers size={32} className="text-blue-100" /></div>
@@ -677,7 +638,6 @@ export default function InventoryAndPurchaseERP() {
                  <h3 className="font-black text-slate-800 uppercase flex items-center"><Soup size={18} className="mr-2 text-orange-500"/> Finished Goods Batch Records</h3>
                  <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">Showing {filteredHistory.length} Batches</span>
               </div>
-
               <div className="flex-1 overflow-y-auto custom-scrollbar pb-10">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                    {filteredHistory.map((batch, idx) => {
@@ -690,51 +650,18 @@ export default function InventoryAndPurchaseERP() {
                             if (match) rmLogs = JSON.parse(match[1]);
                          } catch(e) {}
                       }
-                      
                       const waste = batch.batchNumber.match(/\[WASTE:(.*?)\]/) ? parseFloat(batch.batchNumber.match(/\[WASTE:(.*?)\]/)[1]) : 0;
-                      
                       return (
                          <div key={idx} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 relative overflow-hidden group hover:border-orange-300 transition-all flex flex-col">
                             <div className="flex justify-between items-start mb-3 border-b border-slate-100 pb-3">
-                               <div>
-                                  <h4 className="font-black text-lg text-slate-900 uppercase leading-tight">{batch.finishedGoodName}</h4>
-                                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{new Date(batch.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                               </div>
-                               <div className="text-right">
-                                  <span className="bg-orange-100 text-orange-700 font-black text-xs px-2.5 py-1 rounded-lg uppercase tracking-wider block mb-1">Yield: +{batch.quantityProduced}</span>
-                                  {waste > 0 && <span className="bg-red-50 text-red-500 font-bold text-[9px] px-2 py-0.5 rounded border border-red-100 inline-block">Waste: {waste}</span>}
-                               </div>
+                               <div><h4 className="font-black text-lg text-slate-900 uppercase leading-tight">{batch.finishedGoodName}</h4><span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{new Date(batch.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span></div>
+                               <div className="text-right"><span className="bg-orange-100 text-orange-700 font-black text-xs px-2.5 py-1 rounded-lg uppercase tracking-wider block mb-1">Yield: +{batch.quantityProduced}</span>{waste > 0 && <span className="bg-red-50 text-red-500 font-bold text-[9px] px-2 py-0.5 rounded border border-red-100 inline-block">Waste: {waste}</span>}</div>
                             </div>
-                            
-                            <div className="flex-1">
-                               <h5 className="text-[9px] font-black uppercase text-slate-400 mb-2 tracking-widest">Raw Materials Consumed</h5>
-                               {rmLogs.length > 0 ? (
-                                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1.5">
-                                     {rmLogs.map((rm:any, i:number) => (
-                                        <div key={i} className="flex justify-between items-center text-xs">
-                                           <span className="font-bold text-slate-700 uppercase flex items-center"><CheckCircle2 size={10} className="mr-1.5 text-emerald-500"/> {rm.name}</span>
-                                           <span className="font-mono font-black text-slate-900">-{rm.deducted} <span className="text-[9px] text-slate-500">{rm.unit}</span></span>
-                                        </div>
-                                     ))}
-                                  </div>
-                               ) : (
-                                  <p className="text-xs font-bold text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">No RM deductions recorded for this batch.</p>
-                               )}
-                            </div>
-                            
-                            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                               <span className="text-[8px] text-slate-400 font-mono tracking-widest">ID: {batch.batchNumber.split('[')[0]}</span>
-                               <span className="text-[9px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded uppercase flex items-center"><UserCheck size={10} className="mr-1"/> By: {batch.createdByUser?.name || "System"}</span>
-                            </div>
+                            <div className="flex-1"><h5 className="text-[9px] font-black uppercase text-slate-400 mb-2 tracking-widest">Raw Materials Consumed</h5>{rmLogs.length > 0 ? (<div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1.5">{rmLogs.map((rm:any, i:number) => (<div key={i} className="flex justify-between items-center text-xs"><span className="font-bold text-slate-700 uppercase flex items-center"><CheckCircle2 size={10} className="mr-1.5 text-emerald-500"/> {rm.name}</span><span className="font-mono font-black text-slate-900">-{rm.deducted} <span className="text-[9px] text-slate-500">{rm.unit}</span></span></div>))}</div>) : (<p className="text-xs font-bold text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">No RM deductions recorded for this batch.</p>)}</div>
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center"><span className="text-[8px] text-slate-400 font-mono tracking-widest">ID: {batch.batchNumber.split('[')[0]}</span><span className="text-[9px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded uppercase flex items-center"><UserCheck size={10} className="mr-1"/> By: {batch.createdByUser?.name || "System"}</span></div>
                          </div>
                       );
                    })}
-                   {filteredHistory.length === 0 && (
-                      <div className="col-span-1 lg:col-span-2 p-10 flex flex-col items-center justify-center bg-white rounded-2xl border border-slate-200 border-dashed text-slate-400">
-                         <History size={40} className="mb-3 opacity-20"/>
-                         <p className="font-black text-sm uppercase tracking-widest">No Production Batches Logged in this Period</p>
-                      </div>
-                   )}
                 </div>
               </div>
             </div>
@@ -743,6 +670,7 @@ export default function InventoryAndPurchaseERP() {
           {/* ================= VIEW 2: PURCHASE DESK FORMS ================= */}
           {activeView === "PURCHASE" && (
             <div className="flex flex-col lg:flex-row gap-6 h-full animate-in fade-in">
+              {/* Form omitted for brevity but intact logic wise... */}
               <div className="w-full lg:w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
                 <div className="p-4 bg-slate-900 flex justify-between items-center shrink-0">
                   <h3 className="font-black text-white text-xs uppercase tracking-wider flex items-center"><Truck size={16} className="mr-2 text-indigo-400"/> Enter Inward Goods (GRN)</h3>
@@ -920,7 +848,7 @@ export default function InventoryAndPurchaseERP() {
                 <div className="overflow-y-auto custom-scrollbar">
                   <table className="w-full text-left border-collapse min-w-[1000px]">
                     <thead className="bg-slate-100/90 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200 sticky top-0 z-10">
-                      <tr><th className="p-4">Vendor Company</th><th className="p-4">Tax / Terms / Rating</th><th className="p-4">Contact Info</th><th className="p-4 text-center">Activity Status</th><th className="p-4 text-center bg-red-50 text-red-900 border-x">Outstanding Balance</th><th className="p-4 text-center w-48">Operations</th></tr>
+                      <tr><th className="p-4">Vendor Company</th><th className="p-4">Tax / Terms / Rating</th><th className="p-4">Bank Details & Contact Info</th><th className="p-4 text-center">Activity Status</th><th className="p-4 text-center bg-red-50 text-red-900 border-x">Outstanding Balance</th><th className="p-4 text-center w-48">Operations</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
                       {vendorList.filter(v => v.name.toLowerCase().includes(vendorSearch.toLowerCase())).map((v) => (
@@ -933,12 +861,23 @@ export default function InventoryAndPurchaseERP() {
                             <div className="flex items-center text-amber-500 mb-1">{[...Array(5)].map((_, i) => <Star key={i} size={10} fill={i < v.rating ? 'currentColor' : 'none'} className="mr-0.5"/>)}</div>
                             <span className="text-[9px] font-black uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded tracking-widest">{(v.terms || "NET_0").replace('_', ' ')}</span>
                             <div className="text-[9px] font-mono text-slate-400 mt-1">GSTIN: {v.gstin || "N/A"}</div>
+                            <div className="text-[9px] font-mono text-slate-400">PAN: {v.pan || "N/A"}</div>
                           </td>
-                          <td className="p-4"><div className="capitalize mb-0.5">{v.contactPerson}</div><div className="font-mono text-indigo-600">Ph: {v.phone}</div></td>
+                          <td className="p-4">
+                            <div className="capitalize mb-0.5 flex items-center text-slate-800"><UserCheck size={10} className="mr-1 text-slate-400"/> {v.contactPerson}</div>
+                            <div className="font-mono text-indigo-600 mb-0.5 text-[10px] flex items-center">Ph: {v.phone}</div>
+                            {v.email && <div className="text-[9px] text-slate-500 flex items-center"><Mail size={8} className="mr-1"/> {v.email}</div>}
+                            <div className="mt-2 bg-slate-50 p-1.5 rounded border border-slate-100 text-[9px] font-mono leading-tight">
+                              <div className="text-slate-600 font-bold uppercase flex items-center mb-0.5"><Landmark size={8} className="mr-1 text-purple-500"/> {v.bankName || "No Bank Info"}</div>
+                              <div className="text-slate-500">AC: {v.accountNo || "N/A"}</div>
+                              <div className="text-slate-500">IFSC: {v.ifsc || "N/A"}</div>
+                            </div>
+                          </td>
                           <td className="p-4 text-center"><div className="font-mono text-slate-500 mb-0.5">{v.totalOrders || 0} GRNs</div><div className="text-[8px] text-slate-400 uppercase font-black">Last Active: {new Date(v.createdAt || Date.now()).toLocaleDateString('en-IN')}</div></td>
                           <td className={`p-4 text-center font-mono font-black text-base bg-red-50/20 border-x ${v.outstanding > 0 ? 'text-red-600' : 'text-slate-400'}`}>₹{Number(v.outstanding || 0).toFixed(2)}</td>
-                          <td className="p-4 text-center space-x-2">
-                            {v.outstanding > 0 && <button onClick={()=>{setSelectedVendorForPay(v); setPayDueAmount(v.outstanding.toString()); setShowPayDueModal(true);}} className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase px-2 py-1.5 rounded flex items-center inline-flex shadow-sm"><CreditCard size={10} className="mr-1"/> Settle</button>}
+                          <td className="p-4 text-center space-y-2">
+                            {v.outstanding > 0 && <button onClick={()=>{setSelectedVendorForPay(v); setPayDueData({amount: v.outstanding.toString(), mode: "BANK", bankName: "SBI"}); setShowPayDueModal(true);}} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase px-2 py-2 rounded flex items-center justify-center shadow-sm active:scale-95 transition-all"><CreditCard size={10} className="mr-1"/> Settle Dues</button>}
+                            <button onClick={() => openVendorHistory(v)} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-black uppercase px-2 py-2 rounded flex items-center justify-center shadow-sm active:scale-95 transition-all"><History size={10} className="mr-1"/> History</button>
                           </td>
                         </tr>
                       ))}
@@ -1000,7 +939,6 @@ export default function InventoryAndPurchaseERP() {
           </div>
         )}
 
-        {/* Indent module */}
         {showIndentModal && indentItem && (
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-t-8 border-indigo-600">
@@ -1015,35 +953,173 @@ export default function InventoryAndPurchaseERP() {
           </div>
         )}
 
+        {/* ================= VENDOR ONBOARDING MODAL ================= */}
         {showAddVendorModal && (
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in">
-              <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3"><h2 className="text-base font-black text-slate-800 uppercase flex items-center"><UserCheck size={18} className="mr-1.5 text-purple-600"/> Register Approved Vendor Account</h2><button onClick={() => setShowAddVendorModal(false)} className="text-slate-400 p-1 bg-slate-100 rounded-full"><X size={18}/></button></div>
-              <form onSubmit={handleCreateVendor} className="space-y-3">
-                <div><label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Company / Vendor Corporate Name</label><input required type="text" placeholder="e.g. BALAJI MILLS" value={newVendorData.name} onChange={(e)=>setNewVendorData({...newVendorData, name:e.target.value})} className="w-full p-2 border rounded-xl font-bold uppercase text-xs outline-none" /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Contact Name</label><input type="text" placeholder="Manager" value={newVendorData.contactPerson} onChange={(e)=>setNewVendorData({...newVendorData, contactPerson:e.target.value})} className="w-full p-2 border rounded-xl font-bold text-xs" /></div>
-                  <div><label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Phone Number</label><input required type="text" placeholder="Mobile" value={newVendorData.phone} onChange={(e)=>setNewVendorData({...newVendorData, phone:e.target.value})} className="w-full p-2 border rounded-xl font-mono text-xs" /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-[10px] font-black uppercase text-slate-400 mb-1">GSTIN Tax Registration</label><input type="text" placeholder="GST Number" value={newVendorData.gstin} onChange={(e)=>setNewVendorData({...newVendorData, gstin:e.target.value})} className="w-full p-2 border rounded-xl font-mono text-xs uppercase" /></div>
-                  <div><label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Payment Terms Agreement</label><select value={newVendorData.terms} onChange={(e)=>setNewVendorData({...newVendorData, terms:e.target.value})} className="w-full p-2 border rounded-xl text-xs font-bold bg-white"><option value="NET_0">Due on Receipt (Net 0)</option><option value="NET_15">Net 15 Days</option><option value="NET_30">Net 30 Days</option></select></div>
-                </div>
-                <div><label className="block text-[10px] font-black uppercase text-red-500 mb-1">Opening Outstanding Debt Balance (₹)</label><input type="number" placeholder="0" value={newVendorData.outstanding} onChange={(e)=>setNewVendorData({...newVendorData, outstanding:e.target.value})} className="w-full p-2 border border-red-200 text-red-600 font-mono text-xs rounded-xl" /></div>
-                <button type="submit" className="w-full bg-purple-600 text-white font-black uppercase py-3 rounded-xl text-xs mt-3 shadow-md">Onboard Vendor Account</button>
-              </form>
+            <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl animate-in fade-in zoom-in overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                <h2 className="text-base font-black text-slate-800 uppercase flex items-center tracking-tight"><Building2 size={18} className="mr-2 text-purple-600"/> Vendor Registration Matrix</h2>
+                <button onClick={() => setShowAddVendorModal(false)} className="text-slate-400 p-1.5 bg-slate-200 hover:bg-slate-300 rounded-full transition-colors"><X size={16}/></button>
+              </div>
+              <div className="overflow-y-auto p-6 flex-1 custom-scrollbar">
+                <form id="vendor-form" onSubmit={handleCreateVendor} className="space-y-6">
+                  
+                  {/* General Info */}
+                  <div>
+                    <h3 className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200 pb-1 mb-3">1. Primary Contact Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Company / Entity Name <span className="text-red-500">*</span></label><input required type="text" placeholder="e.g. BALAJI MILLS" value={newVendorData.name} onChange={(e)=>setNewVendorData({...newVendorData, name:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-purple-500" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Phone Number <span className="text-red-500">*</span></label><input required type="text" placeholder="Mobile / Landline" value={newVendorData.phone} onChange={(e)=>setNewVendorData({...newVendorData, phone:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl font-mono text-xs focus:border-purple-500 outline-none" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Contact Person</label><input type="text" placeholder="Sales Manager Name" value={newVendorData.contactPerson} onChange={(e)=>setNewVendorData({...newVendorData, contactPerson:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:border-purple-500 outline-none" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Email Address</label><input type="email" placeholder="vendor@domain.com" value={newVendorData.email} onChange={(e)=>setNewVendorData({...newVendorData, email:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl font-mono text-xs focus:border-purple-500 outline-none" /></div>
+                      <div className="col-span-1 md:col-span-2"><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Corporate Address</label><textarea rows={2} placeholder="Complete physical address..." value={newVendorData.address} onChange={(e)=>setNewVendorData({...newVendorData, address:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs resize-none focus:border-purple-500 outline-none" /></div>
+                    </div>
+                  </div>
+
+                  {/* Bank & Tax Details */}
+                  <div>
+                    <h3 className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200 pb-1 mb-3">2. Financial & Banking Ledger</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Bank Name <span className="text-red-500">*</span></label><input required type="text" placeholder="HDFC, SBI, etc." value={newVendorData.bankName} onChange={(e)=>setNewVendorData({...newVendorData, bankName:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs uppercase focus:border-purple-500 outline-none" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Account Number <span className="text-red-500">*</span></label><input required type="text" placeholder="XXXX XXXX XXXX" value={newVendorData.accountNo} onChange={(e)=>setNewVendorData({...newVendorData, accountNo:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl font-mono font-black tracking-widest text-xs focus:border-purple-500 outline-none" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">IFSC Code <span className="text-red-500">*</span></label><input required type="text" placeholder="HDFC0001234" value={newVendorData.ifsc} onChange={(e)=>setNewVendorData({...newVendorData, ifsc:e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">PAN Number</label><input type="text" placeholder="ABCDE1234F" value={newVendorData.pan} onChange={(e)=>setNewVendorData({...newVendorData, pan:e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">GSTIN Registration</label><input type="text" placeholder="22AAAAA0000A1Z5" value={newVendorData.gstin} onChange={(e)=>setNewVendorData({...newVendorData, gstin:e.target.value.toUpperCase()})} className="w-full p-2.5 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none" /></div>
+                      <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-1">Payment Terms</label><select value={newVendorData.terms} onChange={(e)=>setNewVendorData({...newVendorData, terms:e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold bg-white focus:border-purple-500 outline-none"><option value="NET_0">Due on Receipt (Net 0)</option><option value="NET_15">Net 15 Days</option><option value="NET_30">Net 30 Days</option></select></div>
+                      <div className="col-span-1 md:col-span-2 bg-red-50 p-3 rounded-xl border border-red-100"><label className="block text-[10px] font-black uppercase text-red-600 mb-1">Opening Outstanding Debt Balance (₹)</label><input type="number" step="any" min="0" placeholder="0.00" value={newVendorData.outstanding} onChange={(e)=>setNewVendorData({...newVendorData, outstanding:e.target.value})} className="w-full p-2 border border-red-200 text-red-700 font-mono font-black text-base rounded-lg outline-none bg-white" /></div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+              <div className="p-5 border-t border-slate-100 bg-slate-50 shrink-0">
+                <button type="submit" form="vendor-form" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest py-3.5 rounded-xl text-xs shadow-lg transition-transform active:scale-95">Verify & Create Vendor Profile</button>
+              </div>
             </div>
           </div>
         )}
 
+        {/* ================= VENDOR SETTLE DUES (PAYMENT) MODAL ================= */}
         {showPayDueModal && selectedVendorForPay && (
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
-            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border-t-8 border-emerald-600">
-              <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3"><div><h3 className="font-black text-slate-800 text-sm uppercase">Settle Credit Outstandings</h3><p className="text-[10px] font-bold text-slate-400 mt-0.5">{selectedVendorForPay.name}</p></div><button onClick={() => setShowPayDueModal(false)} className="text-slate-400 p-1 bg-slate-100 rounded-full"><X size={18}/></button></div>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center bg-red-50 p-2.5 rounded-xl border border-red-100 text-xs font-bold text-red-700"><span>Current Debt Balance:</span><span className="font-mono font-black text-base">₹{Number(selectedVendorForPay.outstanding || 0).toFixed(2)}</span></div>
-                <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Amount Paid (₹)</label><input type="number" step="any" min="1" value={payDueAmount} onChange={(e)=>setPayDueAmount(e.target.value)} className="w-full p-3 border rounded-xl font-mono font-black text-emerald-600 text-xl" /></div>
-                <button onClick={handlePayOutstandingDues} className="w-full bg-emerald-600 text-white font-black uppercase py-3 rounded-xl text-xs shadow-md">Confirm Payment Settlement</button>
+          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden animate-in fade-in zoom-in duration-100">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border-t-8 border-emerald-600 flex flex-col">
+              <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight flex items-center"><Wallet size={20} className="mr-2 text-emerald-600"/> Settle Account Ledger</h3>
+                  <p className="text-[11px] font-bold text-slate-500 mt-1 uppercase tracking-wider">{selectedVendorForPay.name}</p>
+                </div>
+                <button onClick={() => setShowPayDueModal(false)} className="text-slate-400 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"><X size={18}/></button>
+              </div>
+              
+              <div className="space-y-6">
+                {/* Outstanding Indicator */}
+                <div className="bg-slate-900 p-5 rounded-2xl flex items-center justify-between shadow-inner">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1">Total Due Liability</span>
+                    <span className="font-mono font-black text-3xl text-emerald-400">₹{Number(selectedVendorForPay.outstanding || 0).toFixed(2)}</span>
+                  </div>
+                  <AlertCircle size={40} className="text-slate-700 opacity-50" />
+                </div>
+
+                {/* Mode Selection */}
+                <div>
+                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Select Transfer Mechanism</label>
+                   <div className="grid grid-cols-2 gap-3">
+                     <button onClick={() => setPayDueData({...payDueData, mode: 'CASH'})} className={`py-3 px-4 rounded-xl text-xs font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'CASH' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
+                        <IndianRupee size={20} className="mb-2"/> Physical Cash
+                     </button>
+                     <button onClick={() => setPayDueData({...payDueData, mode: 'BANK'})} className={`py-3 px-4 rounded-xl text-xs font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'BANK' ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
+                        <Landmark size={20} className="mb-2"/> Bank Transfer
+                     </button>
+                   </div>
+                </div>
+
+                {/* Bank Selector Matrix (Only visible if BANK mode) */}
+                {payDueData.mode === "BANK" && (
+                  <div className="animate-in slide-in-from-bottom-2 fade-in">
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Select Debit Bank Gateway</label>
+                    <div className="grid grid-cols-3 gap-2">
+                       {MAJOR_BANKS.map(bank => (
+                         <button 
+                           key={bank.id} 
+                           onClick={() => setPayDueData({...payDueData, bankName: bank.id})}
+                           className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${payDueData.bankName === bank.id ? `${bank.color} ${bank.border} shadow-lg scale-105 z-10` : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                         >
+                           <Landmark size={18} className="mb-1.5 opacity-80"/>
+                           <span className="text-[9px] font-black uppercase tracking-wider text-center">{bank.name}</span>
+                         </button>
+                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Amount Input */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Debit Amount Request (₹)</label>
+                  <input type="number" step="any" min="1" max={selectedVendorForPay.outstanding} placeholder="0.00" value={payDueData.amount} onChange={(e)=>setPayDueData({...payDueData, amount: e.target.value})} className="w-full p-4 border-2 border-slate-200 rounded-xl font-mono font-black text-slate-900 text-2xl text-center outline-none focus:border-emerald-500 bg-slate-50" />
+                </div>
+                
+                <button disabled={isProcessingPayment} onClick={handlePayOutstandingDues} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest py-4 rounded-xl text-sm shadow-xl flex items-center justify-center active:scale-95 transition-transform disabled:opacity-70">
+                  {isProcessingPayment ? <><Loader2 className="animate-spin mr-2" size={18}/> Initializing Gateway...</> : <>Secure Transfer ₹{payDueData.amount || "0"} via {payDueData.mode === "BANK" ? payDueData.bankName : "CASH"}</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= VENDOR PAYMENT HISTORY MODAL ================= */}
+        {showVendorHistoryModal && selectedVendorForHistory && (
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden animate-in fade-in zoom-in duration-100">
+            <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[85vh] border-t-8 border-slate-900">
+              <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                <div>
+                  <h2 className="text-lg font-black text-slate-800 uppercase flex items-center tracking-tight"><History size={18} className="mr-2 text-slate-600"/> Master Ledger History</h2>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{selectedVendorForHistory.name} • GST: {selectedVendorForHistory.gstin || "N/A"}</p>
+                </div>
+                <button onClick={() => setShowVendorHistoryModal(false)} className="text-slate-400 p-2 bg-white border border-slate-200 hover:bg-slate-100 rounded-full transition-colors"><X size={16}/></button>
+              </div>
+              
+              <div className="overflow-y-auto p-0 flex-1 custom-scrollbar bg-white">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-slate-100/95 backdrop-blur z-10 border-b border-slate-200">
+                    <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      <th className="p-4">Transaction Date</th>
+                      <th className="p-4">Reference/Notes</th>
+                      <th className="p-4 text-center">Transfer Mode</th>
+                      <th className="p-4 text-right bg-emerald-50 text-emerald-800">Amount Cleared</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedVendorForHistory.paymentHistory && selectedVendorForHistory.paymentHistory.length > 0 ? (
+                      selectedVendorForHistory.paymentHistory.map((pay: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4">
+                            <span className="text-xs font-black text-slate-800 block">{new Date(pay.date).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                            <span className="text-[9px] font-bold text-slate-400">{new Date(pay.date).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })}</span>
+                          </td>
+                          <td className="p-4 font-mono text-[10px] text-slate-500">SETTLEMENT REF: {pay.id.split('-')[0]}</td>
+                          <td className="p-4 text-center">
+                            <span className={`inline-flex items-center text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${pay.mode === 'CASH' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                              {pay.mode === 'CASH' ? <IndianRupee size={10} className="mr-1"/> : <Landmark size={10} className="mr-1"/>}
+                              {pay.mode === 'BANK' && pay.ref !== 'N/A' ? pay.ref : pay.mode}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right font-mono font-black text-emerald-600 text-sm">₹{Number(pay.amount).toFixed(2)}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="p-10 text-center text-slate-400">
+                          <History size={40} className="mx-auto mb-3 opacity-20"/>
+                          <p className="font-black text-sm uppercase tracking-widest">No Payment Settlements Logged Yet</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="p-4 bg-slate-900 border-t border-slate-800 flex justify-between items-center shrink-0">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Liability Cleared</span>
+                 <span className="font-mono font-black text-emerald-400 text-xl">₹{selectedVendorForHistory.paymentHistory?.reduce((sum:number, p:any) => sum + p.amount, 0).toFixed(2) || "0.00"}</span>
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff, Image as ImageIcon, LockKeyhole, X, ShieldCheck, Upload } from "lucide-react";
+import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff, Image as ImageIcon, LockKeyhole, X, ShieldCheck, Upload, Percent } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
 import { useParams } from "next/navigation";
@@ -11,13 +11,14 @@ export default function MenuManagePage() {
   const { data: session } = useSession();
 
   const [items, setItems] = useState<any[]>([]);
+  const [taxProfiles, setTaxProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
 
-  // Form State
-  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "", hsnCode: "" });
+  // Form State - Added taxProfileId
+  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "", hsnCode: "", taxProfileId: "" });
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
   
@@ -46,6 +47,7 @@ export default function MenuManagePage() {
   useEffect(() => {
     if (session?.user) {
       fetchMenu();
+      fetchTaxProfiles();
     }
   }, [session, isOnline]);
 
@@ -75,6 +77,20 @@ export default function MenuManagePage() {
     else localStorage.setItem(`zapped_offline_menu_queue_${secureOutletId}`, JSON.stringify(remaining));
     
     fetchMenu();
+  };
+
+  const fetchTaxProfiles = async () => {
+    if (!navigator.onLine) return;
+    try {
+      // Fetches GST profiles from DB (make sure this API exists, provided below)
+      const res = await fetch('/api/tax-profiles'); 
+      if (res.ok) {
+        const data = await res.json();
+        setTaxProfiles(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch tax profiles", error);
+    }
   };
 
   const fetchMenu = async () => {
@@ -118,7 +134,6 @@ export default function MenuManagePage() {
     }
   };
 
-  // 🔥 Fix: Handle File Upload via Device to show Green Tick correctly like Expenses
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -150,7 +165,8 @@ export default function MenuManagePage() {
       finalPrice: formData.finalPrice,
       category: finalCategory,
       imageUrl: formData.imageUrl,
-      hsnCode: formData.hsnCode
+      hsnCode: formData.hsnCode,
+      taxProfileId: formData.taxProfileId || null // Send selected tax profile
     };
 
     const method = editingId ? "PUT" : "POST";
@@ -173,13 +189,13 @@ export default function MenuManagePage() {
         outletId: secureOutletId,
         imageUrl: formData.imageUrl || null,
         hsnCode: formData.hsnCode || null,
+        taxProfileId: formData.taxProfileId || null,
         barcode: generatedItemId,
         isActive: true, 
         isDeleted: false 
       });
       
-      setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "" });
-      setCustomCategoryName(""); setIsCustomCategory(false); setEditingId(null);
+      resetForm();
       fetchMenu();
       setIsSaving(false);
       return alert("Offline Mode: Item saved locally. Will sync when online.");
@@ -199,10 +215,7 @@ export default function MenuManagePage() {
           localStorage.setItem(`zapped_img_${data.item?.id || editingId}`, formData.imageUrl);
         }
         
-        setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "" });
-        setCustomCategoryName("");
-        setIsCustomCategory(false);
-        setEditingId(null);
+        resetForm();
         fetchMenu();
       } else {
         alert("Something went wrong while saving the item!");
@@ -214,6 +227,13 @@ export default function MenuManagePage() {
     }
   };
 
+  const resetForm = () => {
+    setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: "" });
+    setCustomCategoryName("");
+    setIsCustomCategory(false);
+    setEditingId(null);
+  };
+
   const handleEdit = (item: any) => {
     setEditingId(item.id);
     setIsCustomCategory(false);
@@ -222,21 +242,19 @@ export default function MenuManagePage() {
       finalPrice: item.price.toString(),
       category: item.category,
       imageUrl: item.imageUrl || localStorage.getItem(`zapped_img_${item.id}`) || "",
-      hsnCode: item.hsnCode || ""
+      hsnCode: item.hsnCode || "",
+      taxProfileId: item.taxProfileId || ""
     });
   };
 
-  // 🔥 Trigger Security Modal
   const handleDeleteTrigger = (item: any) => {
     setDeleteItemTarget(item);
     setShowDeleteAuthModal(true);
   };
 
-  // 🔥 Final Delete Confirmation via Terminal Login Password
   const confirmDelete = async (id: string) => {
     if (!securityPasswordInput) return alert("PIN Required");
     
-    // Validating against local storage saved password
     const realTerminalSavedPass = localStorage.getItem("zapped_pos_login_password") || "RamKesarAdmin786";
     if (securityPasswordInput !== realTerminalSavedPass) {
       return alert("❌ ACCESS DENIED! Invalid Terminal Security Authorization Credentials provided.");
@@ -295,21 +313,26 @@ export default function MenuManagePage() {
           category: item.category,
           finalPrice: item.price,
           imageUrl: targetUrl,
-          hsnCode: item.hsnCode
+          hsnCode: item.hsnCode,
+          taxProfileId: item.taxProfileId
         })
       });
-      if (res.ok) {
-         fetchMenu();
-      }
+      if (res.ok) fetchMenu();
     } catch (e) {
       console.error("Toggle Error", e);
     }
   };
 
+  // 🔥 Dynamic Tax Calculation Logic
   const finalPriceInput = parseFloat(formData.finalPrice) || 0;
-  const calculatedBase = finalPriceInput / 1.05;
-  const calculatedCgst = calculatedBase * 0.025;
-  const calculatedSgst = calculatedBase * 0.025;
+  const selectedTaxProfile = taxProfiles.find(tp => tp.id === formData.taxProfileId);
+  const cgstPct = selectedTaxProfile ? selectedTaxProfile.cgst : 0;
+  const sgstPct = selectedTaxProfile ? selectedTaxProfile.sgst : 0;
+  const totalTaxPct = cgstPct + sgstPct;
+
+  const calculatedBase = finalPriceInput / (1 + (totalTaxPct / 100));
+  const calculatedCgst = calculatedBase * (cgstPct / 100);
+  const calculatedSgst = calculatedBase * (sgstPct / 100);
 
   return (
     <>
@@ -333,24 +356,12 @@ export default function MenuManagePage() {
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-sm font-bold text-slate-700">Category</label>
-                <button 
-                  type="button" 
-                  onClick={() => setIsCustomCategory(!isCustomCategory)} 
-                  className="text-xs font-black text-orange-600 flex items-center bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100"
-                >
+                <button type="button" onClick={() => setIsCustomCategory(!isCustomCategory)} className="text-xs font-black text-orange-600 flex items-center bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100">
                   <FolderPlus size={14} className="mr-1" /> {isCustomCategory ? "Choose Existing" : "Add New Category"}
                 </button>
               </div>
-
               {isCustomCategory ? (
-                <input 
-                  required 
-                  type="text" 
-                  placeholder="Type New Category Name" 
-                  value={customCategoryName} 
-                  onChange={(e) => setCustomCategoryName(e.target.value)} 
-                  className="w-full p-3 border border-orange-300 rounded-xl outline-none font-bold placeholder:text-slate-400 bg-orange-50/20"
-                />
+                <input required type="text" placeholder="Type New Category Name" value={customCategoryName} onChange={(e) => setCustomCategoryName(e.target.value)} className="w-full p-3 border border-orange-300 rounded-xl outline-none font-bold placeholder:text-slate-400 bg-orange-50/20" />
               ) : (
                 <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none bg-white font-bold">
                   {existingCategories.map(cat => (
@@ -361,13 +372,24 @@ export default function MenuManagePage() {
               )}
             </div>
 
-            {/* HSN CODE FIELD */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">HSN Code (Optional)</label>
-              <input type="text" placeholder="e.g., 210690" value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">HSN Code</label>
+                <input type="text" placeholder="e.g., 210690" value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold" />
+              </div>
+              
+              {/* 🔥 NEW TAX PROFILE DROPDOWN */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Tax Slab</label>
+                <select value={formData.taxProfileId} onChange={(e) => setFormData({...formData, taxProfileId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none bg-white font-bold text-sm">
+                  <option value="">Exempt / 0%</option>
+                  {taxProfiles.map(tp => (
+                    <option key={tp.id} value={tp.id}>{tp.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* 🔥 IMAGE UPLOAD SWITCHER FIELD */}
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-sm font-bold text-slate-700">Item Image</label>
@@ -386,7 +408,6 @@ export default function MenuManagePage() {
                 <label className="flex items-center justify-center border-2 border-dashed border-slate-300 rounded-xl p-3 cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
                   <Upload size={16} className="text-slate-400 mr-2"/>
                   <span className="text-xs font-bold text-slate-500">
-                    {/* Fixed feedback logic here */}
                     {formData.imageUrl && formData.imageUrl.startsWith("data:image") ? "Image Selected ✔" : "Choose File from Device"}
                   </span>
                   <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
@@ -403,13 +424,13 @@ export default function MenuManagePage() {
               <div className="flex justify-between font-bold text-white mb-1"><span>Final Price:</span><span className="font-mono text-sm text-green-400">₹{finalPriceInput.toFixed(2)}</span></div>
               <div className="border-t border-slate-800 my-1 pt-1"></div>
               <div className="flex justify-between"><span>Reverse Base Price:</span><span className="font-mono">₹{calculatedBase.toFixed(2)}</span></div>
-              <div className="flex justify-between text-slate-400"><span>CGST (2.5%):</span><span className="font-mono">₹{calculatedCgst.toFixed(2)}</span></div>
-              <div className="flex justify-between text-slate-400"><span>SGST (2.5%):</span><span className="font-mono">₹{calculatedSgst.toFixed(2)}</span></div>
+              <div className="flex justify-between text-slate-400"><span>CGST ({cgstPct}%):</span><span className="font-mono">₹{calculatedCgst.toFixed(2)}</span></div>
+              <div className="flex justify-between text-slate-400"><span>SGST ({sgstPct}%):</span><span className="font-mono">₹{calculatedSgst.toFixed(2)}</span></div>
             </div>
 
             <div className="flex space-x-2 pt-2">
               {editingId && (
-                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: ""}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
+                <button type="button" onClick={resetForm} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
               )}
               <button disabled={isSaving} type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl flex justify-center items-center">
                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : editingId ? "Update Item" : "Add to Menu"}
@@ -435,7 +456,7 @@ export default function MenuManagePage() {
                     <th className="p-4">Item Name</th>
                     <th className="p-4">Category</th>
                     <th className="p-4">Base Price</th>
-                    <th className="p-4">Tax (5% GST)</th>
+                    <th className="p-4">Tax Profile</th>
                     <th className="p-4">Final Price</th>
                     <th className="p-4 text-center">Image On/Off</th>
                     <th className="p-4 text-center">Actions</th>
@@ -443,8 +464,11 @@ export default function MenuManagePage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {items.map(item => {
-                    const base = item.price / 1.05;
-                    const gst = item.price - base;
+                    // Dynamic Tax display logic
+                    const itemTotalTaxPct = item.taxProfile ? (item.taxProfile.cgst + item.taxProfile.sgst) : 0;
+                    const base = item.price / (1 + (itemTotalTaxPct / 100));
+                    const gstAmt = item.price - base;
+
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition-colors uppercase">
                         <td className="p-4 font-mono font-bold text-slate-400 text-sm">
@@ -454,7 +478,10 @@ export default function MenuManagePage() {
                         <td className="p-4 font-black text-slate-900 text-base">{item.name}</td>
                         <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{item.category}</span></td>
                         <td className="p-4 font-mono text-sm">₹{base.toFixed(2)}</td>
-                        <td className="p-4 font-mono text-xs text-slate-400">₹{gst.toFixed(2)}</td>
+                        <td className="p-4">
+                           <span className="font-bold text-xs text-orange-600">{item.taxProfile?.name || "EXEMPT (0%)"}</span>
+                           <span className="block text-[10px] text-slate-400 mt-0.5 font-mono">₹{gstAmt.toFixed(2)}</span>
+                        </td>
                         <td className="p-4 font-black text-slate-900 text-base">₹{item.price}</td>
                         
                         <td className="p-4 text-center">

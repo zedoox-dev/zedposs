@@ -15,7 +15,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Outlet ID missing from authorization token." }, { status: 400 });
     }
 
-    // Fetch items with their linked category name from MenuCategory table
+    // 🔥 Added `taxProfile` to the include object
     const menuItems = await prisma.menuItem.findMany({
       where: { 
         outletId: secureOutletId, 
@@ -23,15 +23,16 @@ export async function GET(req: Request) {
         isDeleted: false 
       },
       include: {
-        category: true // Fetching relation data
+        category: true,
+        taxProfile: true // Connect fetching of linked Tax Profile
       },
       orderBy: { createdAt: 'asc' }
     });
     
-    // Mapping format back to what frontend expects (item.category as a string)
     const formattedItems = menuItems.map(item => ({
       ...item,
-      category: item.category?.name || "Uncategorized"
+      category: item.category?.name || "Uncategorized",
+      taxProfile: item.taxProfile // Keep the whole tax object for frontend calculations
     }));
 
     return NextResponse.json(formattedItems);
@@ -49,10 +50,9 @@ export async function POST(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
     
     const body = await req.json();
-    const { name, finalPrice, category, imageUrl, hsnCode } = body;
+    const { name, finalPrice, category, imageUrl, hsnCode, taxProfileId } = body; // Received taxProfileId
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Check if the Category exists for this Tenant, if not Create it.
       let categoryRecord = await tx.menuCategory.findFirst({
         where: { name: category, tenantId: secureTenantId }
       });
@@ -63,18 +63,17 @@ export async function POST(req: Request) {
         });
       }
 
-      // 2. Generate 5-Digit Auto ID
       const generatedItemId = Math.floor(10000 + Math.random() * 90000).toString();
 
-      // 3. Create the MenuItem using the categoryId
       const newItem = await tx.menuItem.create({
         data: {
           name,
-          categoryId: categoryRecord.id, // Linked securely!
+          categoryId: categoryRecord.id,
+          taxProfileId: taxProfileId || null, // 🔥 Save Tax Profile relation
           price: parseFloat(finalPrice), 
           imageUrl: imageUrl === "" ? null : (imageUrl || null),
           hsnCode: hsnCode === "" ? null : (hsnCode || null),
-          barcode: generatedItemId, // Saving 5-digit auto ID in DB
+          barcode: generatedItemId,
           tenantId: secureTenantId, 
           outletId: secureOutletId,
           isActive: true,
@@ -101,7 +100,7 @@ export async function PUT(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
 
     const body = await req.json();
-    const { id, name, finalPrice, category, imageUrl, hsnCode } = body;
+    const { id, name, finalPrice, category, imageUrl, hsnCode, taxProfileId } = body;
 
     const existingItem = await prisma.menuItem.findUnique({ where: { id: id } });
     if (!existingItem || existingItem.outletId !== secureOutletId) {
@@ -109,7 +108,6 @@ export async function PUT(req: Request) {
     }
 
     const updatedItem = await prisma.$transaction(async (tx) => {
-      // Find or create category on edit as well
       let categoryRecord = await tx.menuCategory.findFirst({
         where: { name: category, tenantId: secureTenantId }
       });
@@ -125,6 +123,7 @@ export async function PUT(req: Request) {
         data: {
           name,
           categoryId: categoryRecord.id,
+          taxProfileId: taxProfileId !== undefined ? (taxProfileId === "" ? null : taxProfileId) : existingItem.taxProfileId, // Update logic for Tax Profile
           price: parseFloat(finalPrice),
           imageUrl: imageUrl !== undefined ? (imageUrl === "" ? null : imageUrl) : existingItem.imageUrl,
           hsnCode: hsnCode !== undefined ? (hsnCode === "" ? null : hsnCode) : existingItem.hsnCode
