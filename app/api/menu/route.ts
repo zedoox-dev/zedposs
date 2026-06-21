@@ -11,7 +11,6 @@ export async function GET(req: Request) {
     }
 
     const secureOutletId = (session.user as any).outletId;
-    const secureTenantId = (session.user as any).tenantId; // 🔥 Extract Tenant ID to fetch related Tax Profiles
     if (!secureOutletId) {
       return NextResponse.json({ error: "Outlet ID missing from authorization token." }, { status: 400 });
     }
@@ -25,24 +24,17 @@ export async function GET(req: Request) {
       },
       include: {
         category: true,
-        taxProfile: true // 🔥 Linking Tax Profile with every row
+        taxProfile: true // Link existing TaxProfile data securely
       },
       orderBy: { createdAt: 'asc' }
     });
     
-    // Fetch all tax profiles configured for this tenant
-    const taxProfiles = await prisma.taxProfile.findMany({
-      where: { tenantId: secureTenantId }
-    });
-    
-    // Mapping format back to what frontend expects
     const formattedItems = menuItems.map(item => ({
       ...item,
       category: item.category?.name || "Uncategorized"
     }));
 
-    // 🔥 Sending both menu items AND tax profiles in the same API call
-    return NextResponse.json({ items: formattedItems, taxProfiles });
+    return NextResponse.json({ items: formattedItems });
   } catch (error: any) {
     return NextResponse.json({ error: "Failed to fetch secure menu items" }, { status: 500 });
   }
@@ -57,10 +49,10 @@ export async function POST(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
     
     const body = await req.json();
-    const { name, finalPrice, category, imageUrl, hsnCode, taxProfileId } = body;
+    const { name, finalPrice, category, imageUrl, hsnCode, customGst } = body;
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Check if the Category exists for this Tenant, if not Create it.
+      // 1. Check/Create Category
       let categoryRecord = await tx.menuCategory.findFirst({
         where: { name: category, tenantId: secureTenantId }
       });
@@ -71,15 +63,43 @@ export async function POST(req: Request) {
         });
       }
 
-      // 2. Generate 5-Digit Auto ID
+      // 2. 🔥 SMART MANUAL GST LOGIC: Auto-Find or Auto-Create Tax Profile
+      const totalGst = parseFloat(customGst) || 0;
+      const halfGst = totalGst / 2;
+
+      // Assign closest TaxSlab Enum based on standard slabs, logic protects Prisma
+      let slabEnum: any = "GST_0";
+      if (totalGst > 0 && totalGst <= 5) slabEnum = "GST_5";
+      else if (totalGst > 5 && totalGst <= 12) slabEnum = "GST_12";
+      else if (totalGst > 12 && totalGst <= 18) slabEnum = "GST_18";
+      else if (totalGst > 18) slabEnum = "GST_28";
+
+      let taxRecord = await tx.taxProfile.findFirst({
+        where: { tenantId: secureTenantId, cgst: halfGst, sgst: halfGst }
+      });
+
+      if (!taxRecord) {
+        taxRecord = await tx.taxProfile.create({
+          data: {
+            name: `GST ${totalGst}%`,
+            taxSlab: slabEnum,
+            cgst: halfGst,
+            sgst: halfGst,
+            igst: totalGst,
+            tenantId: secureTenantId
+          }
+        });
+      }
+
+      // 3. Generate 5-Digit Auto ID
       const generatedItemId = Math.floor(10000 + Math.random() * 90000).toString();
 
-      // 3. Create the MenuItem using the categoryId AND taxProfileId
+      // 4. Create the MenuItem
       const newItem = await tx.menuItem.create({
         data: {
           name,
-          categoryId: categoryRecord.id, // Linked securely!
-          taxProfileId: taxProfileId === "" ? null : (taxProfileId || null), // 🔥 Securely linking the manual GST
+          categoryId: categoryRecord.id,
+          taxProfileId: taxRecord.id, // Linked Custom Tax Profile!
           price: parseFloat(finalPrice), 
           imageUrl: imageUrl === "" ? null : (imageUrl || null),
           hsnCode: hsnCode === "" ? null : (hsnCode || null),
@@ -110,7 +130,7 @@ export async function PUT(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
 
     const body = await req.json();
-    const { id, name, finalPrice, category, imageUrl, hsnCode, taxProfileId } = body;
+    const { id, name, finalPrice, category, imageUrl, hsnCode, customGst } = body;
 
     const existingItem = await prisma.menuItem.findUnique({ where: { id: id } });
     if (!existingItem || existingItem.outletId !== secureOutletId) {
@@ -118,7 +138,7 @@ export async function PUT(req: Request) {
     }
 
     const updatedItem = await prisma.$transaction(async (tx) => {
-      // Find or create category on edit as well
+      // Find or create category on edit
       let categoryRecord = await tx.menuCategory.findFirst({
         where: { name: category, tenantId: secureTenantId }
       });
@@ -129,12 +149,44 @@ export async function PUT(req: Request) {
         });
       }
 
+      // 🔥 Protect existing tax mapping if toggle image updates without customGst
+      let finalTaxProfileId = existingItem.taxProfileId;
+
+      if (customGst !== undefined) {
+        const totalGst = parseFloat(customGst) || 0;
+        const halfGst = totalGst / 2;
+
+        let slabEnum: any = "GST_0";
+        if (totalGst > 0 && totalGst <= 5) slabEnum = "GST_5";
+        else if (totalGst > 5 && totalGst <= 12) slabEnum = "GST_12";
+        else if (totalGst > 12 && totalGst <= 18) slabEnum = "GST_18";
+        else if (totalGst > 18) slabEnum = "GST_28";
+
+        let taxRecord = await tx.taxProfile.findFirst({
+          where: { tenantId: secureTenantId, cgst: halfGst, sgst: halfGst }
+        });
+
+        if (!taxRecord) {
+          taxRecord = await tx.taxProfile.create({
+            data: {
+              name: `GST ${totalGst}%`,
+              taxSlab: slabEnum,
+              cgst: halfGst,
+              sgst: halfGst,
+              igst: totalGst,
+              tenantId: secureTenantId
+            }
+          });
+        }
+        finalTaxProfileId = taxRecord.id;
+      }
+
       return await tx.menuItem.update({
         where: { id: id },
         data: {
           name,
           categoryId: categoryRecord.id,
-          taxProfileId: taxProfileId !== undefined ? (taxProfileId === "" ? null : taxProfileId) : existingItem.taxProfileId, // 🔥 Updating Tax Setup
+          taxProfileId: finalTaxProfileId, // Updated or protected!
           price: parseFloat(finalPrice),
           imageUrl: imageUrl !== undefined ? (imageUrl === "" ? null : imageUrl) : existingItem.imageUrl,
           hsnCode: hsnCode !== undefined ? (hsnCode === "" ? null : hsnCode) : existingItem.hsnCode

@@ -212,7 +212,7 @@ export default function InventoryAndPurchaseERP() {
     };
 
     try {
-      const res = await fetch("/api/inventory", {
+      const res = await fetch("/POST", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sanitizedPayload)
       });
@@ -224,6 +224,7 @@ export default function InventoryAndPurchaseERP() {
     } catch (err) { alert("Network Error mapping parameters."); } finally { setIsSaving(false); }
   };
 
+  // 🔥 CRASH-PROOF GRN INWARD SUBMISSION FLOW
   const submitPurchaseEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isMobileMode && !session?.user) return;
@@ -239,7 +240,7 @@ export default function InventoryAndPurchaseERP() {
       action: "ADD_PURCHASE",
       itemId: purchaseItem,
       outletId,
-      isMobileModeEntry: isMobileMode,
+      isMobileEntry: isMobileMode,
       token: qrToken,
       purchaseData: {
         rate: isHQ ? "0" : purchaseRate,
@@ -260,13 +261,31 @@ export default function InventoryAndPurchaseERP() {
       const data = await res.json();
       if (res.ok && data.success) {
         alert("GRN Confirmed & Stock Incremented via Cloud!");
+        
+        if (!isMobileMode) {
+          const selectedItem = inventory.find(i => i.id === purchaseItem);
+          const newLog = {
+            id: Date.now().toString(),
+            date: new Date().toISOString(),
+            poNumber: purchaseRef || "N/A",
+            itemName: selectedItem?.itemName || "Unknown",
+            inventoryId: purchaseItem,
+            unit: selectedItem?.unit || "UNIT",
+            qty: parseFloat(purchaseQty),
+            rate: parseFloat(purchaseRate || "0"),
+            total: billTotal, // Match exact mapping matrix key rule
+            vendor: targetVendorName, // Match exact mapping matrix key rule
+            paymentMode: purchasePayment === "CREDIT" ? "CREDIT" : "CASH",
+            isUrgent: isUrgent,
+            doar: purchaseDoar
+          };
+          setPurchaseLogs(prev => [newLog, ...prev]);
+          fetchInventoryAndProduction();
+        }
+
         setPurchaseItem(""); setPurchaseQty(""); setPurchaseRate(""); setPurchaseGst("0");
         setPurchaseRef(""); setPurchaseNotes(""); setProofUrl(""); setIsUrgent(false);
         setPurchaseDoar(""); setPurchaseVendor(""); setPurchasePayment("CASH");
-        if (!isMobileMode) {
-          fetchInventoryAndProduction();
-          setPurchaseLogs(prev => [{...payload.purchaseData, id: Date.now().toString(), itemName: inventory.find(i=>i.id===purchaseItem)?.itemName, date: new Date().toISOString(), qty: purchaseQty}, ...prev]);
-        }
       } else {
         alert(data.error || "Purchase Registration Failed.");
       }
@@ -301,7 +320,6 @@ export default function InventoryAndPurchaseERP() {
     } catch (e) { alert("Error connecting to server."); }
   };
 
-  // 🔥 HIGH-FIDELITY DEEP LINK REDIRECTION REDIRECT HANDLER
   const handlePayOutstandingDues = async () => {
     if(!payDueData.amount || parseFloat(payDueData.amount) <= 0) return alert("Enter valid payable amount");
     setIsProcessingPayment(true);
@@ -319,7 +337,6 @@ export default function InventoryAndPurchaseERP() {
       });
       
       if(res.ok) {
-        // Real Production Level Redirection with deep link checksum format
         if (payDueData.mode === "BANK") {
           const settlementId = `SETTLE-${Date.now()}`;
           const description = `RamKesar Foods Settle ${selectedVendorForPay.name}`;
@@ -347,8 +364,6 @@ export default function InventoryAndPurchaseERP() {
             default:
               bankPortalUrl = `https://www.npci.org.in/upi?amount=${payDueData.amount}&notes=${encodeURIComponent(description)}`;
           }
-          
-          // Execute isolated direct browser window context deep link trigger
           window.open(bankPortalUrl, "_blank");
         }
 
@@ -454,7 +469,7 @@ export default function InventoryAndPurchaseERP() {
   const filteredProducedInventory = producedInventory.filter(item => item.itemName.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const totalSKUs = rawInventory.length;
-  const lowStockCount = rawInventory.filter(i => i.stockLevel > 0 && i.stockLevel <= i.minStock).length;
+  const lowStockCount = rawInventory.filter(i => i.stockLevel > 0 && i.stockLevel <= item.minStock).length;
   const outOfStockCount = rawInventory.filter(i => i.stockLevel <= 0).length;
   const totalProcurementFiltered = filteredPurchaseLogs.reduce((sum, log) => sum + log.total, 0);
   const totalMarketUdhaari = vendorList.reduce((sum, v) => sum + v.outstanding, 0);

@@ -11,14 +11,13 @@ export default function MenuManagePage() {
   const { data: session } = useSession();
 
   const [items, setItems] = useState<any[]>([]);
-  const [taxProfiles, setTaxProfiles] = useState<any[]>([]); // 🔥 Added Tax Profiles State
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof window !== "undefined" ? navigator.onLine : true);
 
-  // Form State - Added taxProfileId
-  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "", hsnCode: "", taxProfileId: "" });
+  // Form State - 🔥 Added customGst for manual control
+  const [formData, setFormData] = useState({ name: "", finalPrice: "", category: "", imageUrl: "", hsnCode: "", customGst: "5" });
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
   
@@ -102,13 +101,8 @@ export default function MenuManagePage() {
       const res = await fetch(`/api/menu`);
       const data = await res.json();
       
-      // Adapted for new API response containing { items, taxProfiles }
       const menuData = data.items ? data.items : (Array.isArray(data) ? data : []);
       setItems(menuData);
-
-      if (data.taxProfiles) {
-        setTaxProfiles(data.taxProfiles);
-      }
 
       await localDB.menuItems.clear(); 
       if (menuData.length > 0) {
@@ -157,7 +151,7 @@ export default function MenuManagePage() {
       category: finalCategory,
       imageUrl: formData.imageUrl,
       hsnCode: formData.hsnCode,
-      taxProfileId: formData.taxProfileId // 🔥 Sending dynamic tax ID
+      customGst: formData.customGst // 🔥 Sending Manual GST value
     };
 
     const method = editingId ? "PUT" : "POST";
@@ -173,18 +167,21 @@ export default function MenuManagePage() {
       queue.push({ method, body: bodyData });
       localStorage.setItem(`zapped_offline_menu_queue_${secureOutletId}`, JSON.stringify(queue));
       
+      const manualGstVal = parseFloat(formData.customGst) || 0;
+
       await localDB.menuItems.put({ 
         ...bodyData, 
         price: parseFloat(payload.finalPrice), 
         outletId: secureOutletId,
         imageUrl: formData.imageUrl || null,
         hsnCode: formData.hsnCode || null,
+        taxProfile: { name: `GST ${manualGstVal}%`, cgst: manualGstVal/2, sgst: manualGstVal/2 }, // Mocks offline table relation
         barcode: generatedItemId,
         isActive: true, 
         isDeleted: false 
       });
       
-      setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: "" });
+      setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", customGst: "5" });
       setCustomCategoryName(""); setIsCustomCategory(false); setEditingId(null);
       fetchMenu();
       setIsSaving(false);
@@ -204,7 +201,7 @@ export default function MenuManagePage() {
           localStorage.setItem(`zapped_img_${data.item?.id || editingId}`, formData.imageUrl);
         }
         
-        setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: "" });
+        setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", customGst: "5" });
         setCustomCategoryName("");
         setIsCustomCategory(false);
         setEditingId(null);
@@ -222,13 +219,17 @@ export default function MenuManagePage() {
   const handleEdit = (item: any) => {
     setEditingId(item.id);
     setIsCustomCategory(false);
+    
+    // Auto-detect existing tax value for manual input field
+    const existingGst = item.taxProfile ? (item.taxProfile.cgst + item.taxProfile.sgst).toString() : "5";
+
     setFormData({
       name: item.name,
       finalPrice: item.price.toString(),
       category: item.category,
       imageUrl: item.imageUrl || localStorage.getItem(`zapped_img_${item.id}`) || "",
       hsnCode: item.hsnCode || "",
-      taxProfileId: item.taxProfileId || "" // 🔥 Loading saved tax profile
+      customGst: existingGst 
     });
   };
 
@@ -298,8 +299,8 @@ export default function MenuManagePage() {
           category: item.category,
           finalPrice: item.price,
           imageUrl: targetUrl,
-          hsnCode: item.hsnCode,
-          taxProfileId: item.taxProfileId // Maintain existing tax setup
+          hsnCode: item.hsnCode
+          // Custom GST is omitted, backend will protect the existing TaxProfile
         })
       });
       if (res.ok) {
@@ -310,14 +311,13 @@ export default function MenuManagePage() {
     }
   };
 
-  // 🔥 Dynamic Tax Calculations based on selected profile
+  // 🔥 Dynamic Tax Calculations based on MANUAL input
   const finalPriceInput = parseFloat(formData.finalPrice) || 0;
-  const selectedTaxProfile = taxProfiles.find(t => t.id === formData.taxProfileId);
-  const taxRatePercent = selectedTaxProfile ? (selectedTaxProfile.cgst + selectedTaxProfile.sgst) : 5; // Default 5% if none selected
+  const taxRatePercent = parseFloat(formData.customGst) || 0;
   
   const calculatedBase = finalPriceInput / (1 + (taxRatePercent / 100));
-  const calculatedCgst = calculatedBase * (selectedTaxProfile ? (selectedTaxProfile.cgst / 100) : 0.025);
-  const calculatedSgst = calculatedBase * (selectedTaxProfile ? (selectedTaxProfile.sgst / 100) : 0.025);
+  const calculatedCgst = calculatedBase * (taxRatePercent / 2 / 100);
+  const calculatedSgst = calculatedBase * (taxRatePercent / 2 / 100);
 
   return (
     <>
@@ -375,17 +375,18 @@ export default function MenuManagePage() {
               <input type="text" placeholder="e.g., 210690" value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold" />
             </div>
 
-            {/* 🔥 TAX PROFILE DROPDOWN */}
+            {/* 🔥 MANUAL GST PERCENTAGE FIELD (Completely open to typing) */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Tax Profile / GST Slab</label>
-              <select value={formData.taxProfileId} onChange={(e) => setFormData({...formData, taxProfileId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none bg-white font-bold text-slate-700">
-                <option value="">Default (5% GST - 2.5% CGST/SGST)</option>
-                {taxProfiles.map(tax => (
-                  <option key={tax.id} value={tax.id}>
-                    {tax.name} ({tax.cgst}% CGST + {tax.sgst}% SGST)
-                  </option>
-                ))}
-              </select>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Total GST % (e.g., 0, 5, 12, 18)</label>
+              <input 
+                required 
+                type="number" 
+                step="0.01"
+                placeholder="e.g., 5" 
+                value={formData.customGst} 
+                onChange={(e) => setFormData({...formData, customGst: e.target.value})} 
+                className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold text-slate-800 bg-slate-50" 
+              />
             </div>
 
             {/* IMAGE UPLOAD SWITCHER FIELD */}
@@ -424,18 +425,18 @@ export default function MenuManagePage() {
               <div className="border-t border-slate-800 my-1 pt-1"></div>
               <div className="flex justify-between"><span>Reverse Base Price:</span><span className="font-mono">₹{calculatedBase.toFixed(2)}</span></div>
               <div className="flex justify-between text-slate-400">
-                <span>CGST ({selectedTaxProfile ? selectedTaxProfile.cgst : 2.5}%):</span>
+                <span>CGST ({(taxRatePercent / 2).toFixed(1)}%):</span>
                 <span className="font-mono">₹{calculatedCgst.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-slate-400">
-                <span>SGST ({selectedTaxProfile ? selectedTaxProfile.sgst : 2.5}%):</span>
+                <span>SGST ({(taxRatePercent / 2).toFixed(1)}%):</span>
                 <span className="font-mono">₹{calculatedSgst.toFixed(2)}</span>
               </div>
             </div>
 
             <div className="flex space-x-2 pt-2">
               {editingId && (
-                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: ""}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
+                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", customGst: "5"}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
               )}
               <button disabled={isSaving} type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl flex justify-center items-center">
                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : editingId ? "Update Item" : "Add to Menu"}
@@ -486,7 +487,7 @@ export default function MenuManagePage() {
                         <td className="p-4">
                           <span className="block font-mono text-xs text-slate-400 font-bold">₹{gst.toFixed(2)}</span>
                           <span className="block text-[9px] text-orange-600 font-bold bg-orange-50 px-1 py-0.5 rounded w-fit mt-0.5">
-                            {item.taxProfile ? `${item.taxProfile.name}` : `DEFAULT (5%)`}
+                            {item.taxProfile ? `${item.taxProfile.name}` : `GST 5%`}
                           </span>
                         </td>
                         <td className="p-4 font-black text-slate-900 text-base">₹{item.price}</td>
