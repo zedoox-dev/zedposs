@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff, Image as ImageIcon, LockKeyhole, X, ShieldCheck, Upload, Percent } from "lucide-react";
+import { Utensils, Plus, Loader2, Edit2, Trash2, FolderPlus, WifiOff, Image as ImageIcon, LockKeyhole, X, ShieldCheck, Upload } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { localDB } from "@/lib/localDb";
 import { useParams } from "next/navigation";
@@ -11,7 +11,7 @@ export default function MenuManagePage() {
   const { data: session } = useSession();
 
   const [items, setItems] = useState<any[]>([]);
-  const [taxProfiles, setTaxProfiles] = useState<any[]>([]);
+  const [taxProfiles, setTaxProfiles] = useState<any[]>([]); // 🔥 Added Tax Profiles State
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -22,10 +22,10 @@ export default function MenuManagePage() {
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
   
-  // 🔥 New Image Upload Switcher State
+  // Image Upload Switcher State
   const [imageUploadMode, setImageUploadMode] = useState<"URL" | "FILE">("URL");
 
-  // 🔥 Delete Security States
+  // Delete Security States
   const [showDeleteAuthModal, setShowDeleteAuthModal] = useState(false);
   const [deleteItemTarget, setDeleteItemTarget] = useState<any>(null);
   const [securityPasswordInput, setSecurityPasswordInput] = useState("");
@@ -47,7 +47,6 @@ export default function MenuManagePage() {
   useEffect(() => {
     if (session?.user) {
       fetchMenu();
-      fetchTaxProfiles();
     }
   }, [session, isOnline]);
 
@@ -79,20 +78,6 @@ export default function MenuManagePage() {
     fetchMenu();
   };
 
-  const fetchTaxProfiles = async () => {
-    if (!navigator.onLine) return;
-    try {
-      // Fetches GST profiles from DB (make sure this API exists, provided below)
-      const res = await fetch('/api/tax-profiles'); 
-      if (res.ok) {
-        const data = await res.json();
-        setTaxProfiles(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch tax profiles", error);
-    }
-  };
-
   const fetchMenu = async () => {
     if (!session?.user) return;
     const secureOutletId = (session.user as any).outletId || outletId;
@@ -101,7 +86,7 @@ export default function MenuManagePage() {
     if (!navigator.onLine) {
       try {
         const localMenus = await localDB.menuItems.where('outletId').equals(secureOutletId).toArray();
-        const activeMenus = localMenus.filter(m => m.isActive !== false && m.isDeleted !== true);
+        const activeMenus = localMenus.filter((m: any) => m.isActive !== false && m.isDeleted !== true);
         setItems(activeMenus);
         if (activeMenus.length > 0 && !formData.category) {
           setFormData(prev => ({ ...prev, category: activeMenus[0].category }));
@@ -116,8 +101,14 @@ export default function MenuManagePage() {
     try {
       const res = await fetch(`/api/menu`);
       const data = await res.json();
-      const menuData = Array.isArray(data) ? data : [];
+      
+      // Adapted for new API response containing { items, taxProfiles }
+      const menuData = data.items ? data.items : (Array.isArray(data) ? data : []);
       setItems(menuData);
+
+      if (data.taxProfiles) {
+        setTaxProfiles(data.taxProfiles);
+      }
 
       await localDB.menuItems.clear(); 
       if (menuData.length > 0) {
@@ -166,12 +157,11 @@ export default function MenuManagePage() {
       category: finalCategory,
       imageUrl: formData.imageUrl,
       hsnCode: formData.hsnCode,
-      taxProfileId: formData.taxProfileId || null // Send selected tax profile
+      taxProfileId: formData.taxProfileId // 🔥 Sending dynamic tax ID
     };
 
     const method = editingId ? "PUT" : "POST";
     
-    // Offline ID generation placeholder
     const generatedItemId = Math.floor(10000 + Math.random() * 90000).toString();
 
     const bodyData = editingId 
@@ -189,13 +179,13 @@ export default function MenuManagePage() {
         outletId: secureOutletId,
         imageUrl: formData.imageUrl || null,
         hsnCode: formData.hsnCode || null,
-        taxProfileId: formData.taxProfileId || null,
         barcode: generatedItemId,
         isActive: true, 
         isDeleted: false 
       });
       
-      resetForm();
+      setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: "" });
+      setCustomCategoryName(""); setIsCustomCategory(false); setEditingId(null);
       fetchMenu();
       setIsSaving(false);
       return alert("Offline Mode: Item saved locally. Will sync when online.");
@@ -210,12 +200,14 @@ export default function MenuManagePage() {
 
       if (res.ok) {
         const data = await res.json();
-        // Backup Image URL to local storage automatically if provided
         if (formData.imageUrl) {
           localStorage.setItem(`zapped_img_${data.item?.id || editingId}`, formData.imageUrl);
         }
         
-        resetForm();
+        setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: "" });
+        setCustomCategoryName("");
+        setIsCustomCategory(false);
+        setEditingId(null);
         fetchMenu();
       } else {
         alert("Something went wrong while saving the item!");
@@ -227,13 +219,6 @@ export default function MenuManagePage() {
     }
   };
 
-  const resetForm = () => {
-    setFormData({ name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: "" });
-    setCustomCategoryName("");
-    setIsCustomCategory(false);
-    setEditingId(null);
-  };
-
   const handleEdit = (item: any) => {
     setEditingId(item.id);
     setIsCustomCategory(false);
@@ -243,7 +228,7 @@ export default function MenuManagePage() {
       category: item.category,
       imageUrl: item.imageUrl || localStorage.getItem(`zapped_img_${item.id}`) || "",
       hsnCode: item.hsnCode || "",
-      taxProfileId: item.taxProfileId || ""
+      taxProfileId: item.taxProfileId || "" // 🔥 Loading saved tax profile
     });
   };
 
@@ -314,25 +299,25 @@ export default function MenuManagePage() {
           finalPrice: item.price,
           imageUrl: targetUrl,
           hsnCode: item.hsnCode,
-          taxProfileId: item.taxProfileId
+          taxProfileId: item.taxProfileId // Maintain existing tax setup
         })
       });
-      if (res.ok) fetchMenu();
+      if (res.ok) {
+         fetchMenu();
+      }
     } catch (e) {
       console.error("Toggle Error", e);
     }
   };
 
-  // 🔥 Dynamic Tax Calculation Logic
+  // 🔥 Dynamic Tax Calculations based on selected profile
   const finalPriceInput = parseFloat(formData.finalPrice) || 0;
-  const selectedTaxProfile = taxProfiles.find(tp => tp.id === formData.taxProfileId);
-  const cgstPct = selectedTaxProfile ? selectedTaxProfile.cgst : 0;
-  const sgstPct = selectedTaxProfile ? selectedTaxProfile.sgst : 0;
-  const totalTaxPct = cgstPct + sgstPct;
-
-  const calculatedBase = finalPriceInput / (1 + (totalTaxPct / 100));
-  const calculatedCgst = calculatedBase * (cgstPct / 100);
-  const calculatedSgst = calculatedBase * (sgstPct / 100);
+  const selectedTaxProfile = taxProfiles.find(t => t.id === formData.taxProfileId);
+  const taxRatePercent = selectedTaxProfile ? (selectedTaxProfile.cgst + selectedTaxProfile.sgst) : 5; // Default 5% if none selected
+  
+  const calculatedBase = finalPriceInput / (1 + (taxRatePercent / 100));
+  const calculatedCgst = calculatedBase * (selectedTaxProfile ? (selectedTaxProfile.cgst / 100) : 0.025);
+  const calculatedSgst = calculatedBase * (selectedTaxProfile ? (selectedTaxProfile.sgst / 100) : 0.025);
 
   return (
     <>
@@ -356,12 +341,24 @@ export default function MenuManagePage() {
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-sm font-bold text-slate-700">Category</label>
-                <button type="button" onClick={() => setIsCustomCategory(!isCustomCategory)} className="text-xs font-black text-orange-600 flex items-center bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100">
+                <button 
+                  type="button" 
+                  onClick={() => setIsCustomCategory(!isCustomCategory)} 
+                  className="text-xs font-black text-orange-600 flex items-center bg-orange-50 px-2 py-1 rounded-lg hover:bg-orange-100"
+                >
                   <FolderPlus size={14} className="mr-1" /> {isCustomCategory ? "Choose Existing" : "Add New Category"}
                 </button>
               </div>
+
               {isCustomCategory ? (
-                <input required type="text" placeholder="Type New Category Name" value={customCategoryName} onChange={(e) => setCustomCategoryName(e.target.value)} className="w-full p-3 border border-orange-300 rounded-xl outline-none font-bold placeholder:text-slate-400 bg-orange-50/20" />
+                <input 
+                  required 
+                  type="text" 
+                  placeholder="Type New Category Name" 
+                  value={customCategoryName} 
+                  onChange={(e) => setCustomCategoryName(e.target.value)} 
+                  className="w-full p-3 border border-orange-300 rounded-xl outline-none font-bold placeholder:text-slate-400 bg-orange-50/20"
+                />
               ) : (
                 <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none bg-white font-bold">
                   {existingCategories.map(cat => (
@@ -372,24 +369,26 @@ export default function MenuManagePage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">HSN Code</label>
-                <input type="text" placeholder="e.g., 210690" value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold" />
-              </div>
-              
-              {/* 🔥 NEW TAX PROFILE DROPDOWN */}
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Tax Slab</label>
-                <select value={formData.taxProfileId} onChange={(e) => setFormData({...formData, taxProfileId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none bg-white font-bold text-sm">
-                  <option value="">Exempt / 0%</option>
-                  {taxProfiles.map(tp => (
-                    <option key={tp.id} value={tp.id}>{tp.name}</option>
-                  ))}
-                </select>
-              </div>
+            {/* HSN CODE FIELD */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">HSN Code (Optional)</label>
+              <input type="text" placeholder="e.g., 210690" value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none font-bold" />
             </div>
 
+            {/* 🔥 TAX PROFILE DROPDOWN */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Tax Profile / GST Slab</label>
+              <select value={formData.taxProfileId} onChange={(e) => setFormData({...formData, taxProfileId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none bg-white font-bold text-slate-700">
+                <option value="">Default (5% GST - 2.5% CGST/SGST)</option>
+                {taxProfiles.map(tax => (
+                  <option key={tax.id} value={tax.id}>
+                    {tax.name} ({tax.cgst}% CGST + {tax.sgst}% SGST)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* IMAGE UPLOAD SWITCHER FIELD */}
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-sm font-bold text-slate-700">Item Image</label>
@@ -424,13 +423,19 @@ export default function MenuManagePage() {
               <div className="flex justify-between font-bold text-white mb-1"><span>Final Price:</span><span className="font-mono text-sm text-green-400">₹{finalPriceInput.toFixed(2)}</span></div>
               <div className="border-t border-slate-800 my-1 pt-1"></div>
               <div className="flex justify-between"><span>Reverse Base Price:</span><span className="font-mono">₹{calculatedBase.toFixed(2)}</span></div>
-              <div className="flex justify-between text-slate-400"><span>CGST ({cgstPct}%):</span><span className="font-mono">₹{calculatedCgst.toFixed(2)}</span></div>
-              <div className="flex justify-between text-slate-400"><span>SGST ({sgstPct}%):</span><span className="font-mono">₹{calculatedSgst.toFixed(2)}</span></div>
+              <div className="flex justify-between text-slate-400">
+                <span>CGST ({selectedTaxProfile ? selectedTaxProfile.cgst : 2.5}%):</span>
+                <span className="font-mono">₹{calculatedCgst.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>SGST ({selectedTaxProfile ? selectedTaxProfile.sgst : 2.5}%):</span>
+                <span className="font-mono">₹{calculatedSgst.toFixed(2)}</span>
+              </div>
             </div>
 
             <div className="flex space-x-2 pt-2">
               {editingId && (
-                <button type="button" onClick={resetForm} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
+                <button type="button" onClick={() => { setEditingId(null); setFormData({name: "", finalPrice: "", category: existingCategories[0] as string || "", imageUrl: "", hsnCode: "", taxProfileId: ""}); }} className="w-1/2 bg-slate-200 font-bold py-3 rounded-xl">Cancel</button>
               )}
               <button disabled={isSaving} type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl flex justify-center items-center">
                 {isSaving ? <Loader2 className="animate-spin" size={20} /> : editingId ? "Update Item" : "Add to Menu"}
@@ -456,7 +461,7 @@ export default function MenuManagePage() {
                     <th className="p-4">Item Name</th>
                     <th className="p-4">Category</th>
                     <th className="p-4">Base Price</th>
-                    <th className="p-4">Tax Profile</th>
+                    <th className="p-4">Tax Breakdown</th>
                     <th className="p-4">Final Price</th>
                     <th className="p-4 text-center">Image On/Off</th>
                     <th className="p-4 text-center">Actions</th>
@@ -464,10 +469,10 @@ export default function MenuManagePage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {items.map(item => {
-                    // Dynamic Tax display logic
-                    const itemTotalTaxPct = item.taxProfile ? (item.taxProfile.cgst + item.taxProfile.sgst) : 0;
-                    const base = item.price / (1 + (itemTotalTaxPct / 100));
-                    const gstAmt = item.price - base;
+                    // Dynamic Tax logic for table
+                    const itemTaxRate = item.taxProfile ? (item.taxProfile.cgst + item.taxProfile.sgst) : 5;
+                    const base = item.price / (1 + (itemTaxRate / 100));
+                    const gst = item.price - base;
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition-colors uppercase">
@@ -479,8 +484,10 @@ export default function MenuManagePage() {
                         <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{item.category}</span></td>
                         <td className="p-4 font-mono text-sm">₹{base.toFixed(2)}</td>
                         <td className="p-4">
-                           <span className="font-bold text-xs text-orange-600">{item.taxProfile?.name || "EXEMPT (0%)"}</span>
-                           <span className="block text-[10px] text-slate-400 mt-0.5 font-mono">₹{gstAmt.toFixed(2)}</span>
+                          <span className="block font-mono text-xs text-slate-400 font-bold">₹{gst.toFixed(2)}</span>
+                          <span className="block text-[9px] text-orange-600 font-bold bg-orange-50 px-1 py-0.5 rounded w-fit mt-0.5">
+                            {item.taxProfile ? `${item.taxProfile.name}` : `DEFAULT (5%)`}
+                          </span>
                         </td>
                         <td className="p-4 font-black text-slate-900 text-base">₹{item.price}</td>
                         
