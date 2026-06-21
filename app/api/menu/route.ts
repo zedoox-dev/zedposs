@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       },
       include: {
         category: true,
-        taxProfile: true // Link existing TaxProfile data securely
+        taxProfile: true // 🔥 Pulling dynamic Tax Profile for rendering
       },
       orderBy: { createdAt: 'asc' }
     });
@@ -49,10 +49,10 @@ export async function POST(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
     
     const body = await req.json();
-    const { name, finalPrice, category, imageUrl, hsnCode, customGst } = body;
+    const { name, finalPrice, category, imageUrl, hsnCode, cgst, sgst } = body;
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Check/Create Category
+      // 1. Check if the Category exists for this Tenant, if not Create it.
       let categoryRecord = await tx.menuCategory.findFirst({
         where: { name: category, tenantId: secureTenantId }
       });
@@ -63,29 +63,31 @@ export async function POST(req: Request) {
         });
       }
 
-      // 2. 🔥 SMART MANUAL GST LOGIC: Auto-Find or Auto-Create Tax Profile
-      const totalGst = parseFloat(customGst) || 0;
-      const halfGst = totalGst / 2;
+      // 2. Map and Manage Dynamic Custom Tax Profile 
+      const inputCgst = parseFloat(cgst) || 0;
+      const inputSgst = parseFloat(sgst) || 0;
+      const totalTax = inputCgst + inputSgst;
 
-      // Assign closest TaxSlab Enum based on standard slabs, logic protects Prisma
-      let slabEnum: any = "GST_0";
-      if (totalGst > 0 && totalGst <= 5) slabEnum = "GST_5";
-      else if (totalGst > 5 && totalGst <= 12) slabEnum = "GST_12";
-      else if (totalGst > 12 && totalGst <= 18) slabEnum = "GST_18";
-      else if (totalGst > 18) slabEnum = "GST_28";
+      // Smart Mapping to Prisma TaxSlab Enums
+      let mappedSlab: any = "GST_0";
+      if (totalTax > 0 && totalTax <= 5) mappedSlab = "GST_5";
+      else if (totalTax > 5 && totalTax <= 12) mappedSlab = "GST_12";
+      else if (totalTax > 12 && totalTax <= 18) mappedSlab = "GST_18";
+      else if (totalTax > 18) mappedSlab = "GST_28";
 
+      // Look for exactly matching tax setup, otherwise create a new custom one
       let taxRecord = await tx.taxProfile.findFirst({
-        where: { tenantId: secureTenantId, cgst: halfGst, sgst: halfGst }
+        where: { tenantId: secureTenantId, cgst: inputCgst, sgst: inputSgst }
       });
 
       if (!taxRecord) {
         taxRecord = await tx.taxProfile.create({
           data: {
-            name: `GST ${totalGst}%`,
-            taxSlab: slabEnum,
-            cgst: halfGst,
-            sgst: halfGst,
-            igst: totalGst,
+            name: `GST ${totalTax}%`,
+            taxSlab: mappedSlab,
+            cgst: inputCgst,
+            sgst: inputSgst,
+            igst: totalTax,
             tenantId: secureTenantId
           }
         });
@@ -94,12 +96,12 @@ export async function POST(req: Request) {
       // 3. Generate 5-Digit Auto ID
       const generatedItemId = Math.floor(10000 + Math.random() * 90000).toString();
 
-      // 4. Create the MenuItem
+      // 4. Create the MenuItem mapping dynamic Tax Profile
       const newItem = await tx.menuItem.create({
         data: {
           name,
-          categoryId: categoryRecord.id,
-          taxProfileId: taxRecord.id, // Linked Custom Tax Profile!
+          categoryId: categoryRecord.id, 
+          taxProfileId: taxRecord.id, // 🔥 Automatically assigned proper Tax Profile
           price: parseFloat(finalPrice), 
           imageUrl: imageUrl === "" ? null : (imageUrl || null),
           hsnCode: hsnCode === "" ? null : (hsnCode || null),
@@ -130,7 +132,7 @@ export async function PUT(req: Request) {
     const secureTenantId = (session.user as any).tenantId;
 
     const body = await req.json();
-    const { id, name, finalPrice, category, imageUrl, hsnCode, customGst } = body;
+    const { id, name, finalPrice, category, imageUrl, hsnCode, cgst, sgst } = body;
 
     const existingItem = await prisma.menuItem.findUnique({ where: { id: id } });
     if (!existingItem || existingItem.outletId !== secureOutletId) {
@@ -138,7 +140,7 @@ export async function PUT(req: Request) {
     }
 
     const updatedItem = await prisma.$transaction(async (tx) => {
-      // Find or create category on edit
+      // Find or create category
       let categoryRecord = await tx.menuCategory.findFirst({
         where: { name: category, tenantId: secureTenantId }
       });
@@ -149,36 +151,37 @@ export async function PUT(req: Request) {
         });
       }
 
-      // 🔥 Protect existing tax mapping if toggle image updates without customGst
-      let finalTaxProfileId = existingItem.taxProfileId;
+      // Re-evaluate Dynamic Tax Profile on update
+      let targetTaxProfileId = existingItem.taxProfileId;
 
-      if (customGst !== undefined) {
-        const totalGst = parseFloat(customGst) || 0;
-        const halfGst = totalGst / 2;
+      if (cgst !== undefined && sgst !== undefined) {
+        const inputCgst = parseFloat(cgst) || 0;
+        const inputSgst = parseFloat(sgst) || 0;
+        const totalTax = inputCgst + inputSgst;
 
-        let slabEnum: any = "GST_0";
-        if (totalGst > 0 && totalGst <= 5) slabEnum = "GST_5";
-        else if (totalGst > 5 && totalGst <= 12) slabEnum = "GST_12";
-        else if (totalGst > 12 && totalGst <= 18) slabEnum = "GST_18";
-        else if (totalGst > 18) slabEnum = "GST_28";
+        let mappedSlab: any = "GST_0";
+        if (totalTax > 0 && totalTax <= 5) mappedSlab = "GST_5";
+        else if (totalTax > 5 && totalTax <= 12) mappedSlab = "GST_12";
+        else if (totalTax > 12 && totalTax <= 18) mappedSlab = "GST_18";
+        else if (totalTax > 18) mappedSlab = "GST_28";
 
         let taxRecord = await tx.taxProfile.findFirst({
-          where: { tenantId: secureTenantId, cgst: halfGst, sgst: halfGst }
+          where: { tenantId: secureTenantId, cgst: inputCgst, sgst: inputSgst }
         });
 
         if (!taxRecord) {
           taxRecord = await tx.taxProfile.create({
             data: {
-              name: `GST ${totalGst}%`,
-              taxSlab: slabEnum,
-              cgst: halfGst,
-              sgst: halfGst,
-              igst: totalGst,
+              name: `GST ${totalTax}%`,
+              taxSlab: mappedSlab,
+              cgst: inputCgst,
+              sgst: inputSgst,
+              igst: totalTax,
               tenantId: secureTenantId
             }
           });
         }
-        finalTaxProfileId = taxRecord.id;
+        targetTaxProfileId = taxRecord.id;
       }
 
       return await tx.menuItem.update({
@@ -186,7 +189,7 @@ export async function PUT(req: Request) {
         data: {
           name,
           categoryId: categoryRecord.id,
-          taxProfileId: finalTaxProfileId, // Updated or protected!
+          taxProfileId: targetTaxProfileId, // 🔥 Updating dynamic tax connection
           price: parseFloat(finalPrice),
           imageUrl: imageUrl !== undefined ? (imageUrl === "" ? null : imageUrl) : existingItem.imageUrl,
           hsnCode: hsnCode !== undefined ? (hsnCode === "" ? null : hsnCode) : existingItem.hsnCode

@@ -212,7 +212,7 @@ export default function InventoryAndPurchaseERP() {
     };
 
     try {
-      const res = await fetch("/POST", {
+      const res = await fetch("/api/inventory", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sanitizedPayload)
       });
@@ -224,7 +224,6 @@ export default function InventoryAndPurchaseERP() {
     } catch (err) { alert("Network Error mapping parameters."); } finally { setIsSaving(false); }
   };
 
-  // 🔥 CRASH-PROOF GRN INWARD SUBMISSION FLOW
   const submitPurchaseEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isMobileMode && !session?.user) return;
@@ -273,8 +272,8 @@ export default function InventoryAndPurchaseERP() {
             unit: selectedItem?.unit || "UNIT",
             qty: parseFloat(purchaseQty),
             rate: parseFloat(purchaseRate || "0"),
-            total: billTotal, // Match exact mapping matrix key rule
-            vendor: targetVendorName, // Match exact mapping matrix key rule
+            total: billTotal, 
+            vendor: targetVendorName, 
             paymentMode: purchasePayment === "CREDIT" ? "CREDIT" : "CASH",
             isUrgent: isUrgent,
             doar: purchaseDoar
@@ -386,26 +385,6 @@ export default function InventoryAndPurchaseERP() {
     setShowVendorHistoryModal(true);
   };
 
-  const handleDeleteSKU = async (itemId: string, itemName: string) => {
-    if (!securityPasswordInput) return alert("PIN Required");
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/inventory?id=${itemId}`, { method: 'DELETE' });
-      if (res.ok) {
-        alert("🟢 SKU Removed from terminal configurations cache successfully!");
-        setShowDeleteAuthModal(false); setSecurityPasswordInput(""); fetchInventoryAndProduction();
-      } else alert("❌ ACCESS DENIED! Invalid Terminal Security Authorization Credentials.");
-    } catch (e) { alert("Error deleting SKU."); } finally { setLoading(false); }
-  };
-
-  const submitInternalIndentRequest = () => {
-    if (!indentQty || parseFloat(indentQty) <= 0) return alert("Enter valid qty.");
-    const newIndent = { id: Date.now(), timestamp: new Date().toISOString(), itemName: indentItem.itemName, qty: indentQty, unit: indentItem.unit, urgency: indentUrgency, status: "PENDING_GRN" };
-    const updated = [newIndent, ...indentLogs];
-    setIndentLogs(updated); localStorage.setItem(`zapped_indent_requests_${outletId}`, JSON.stringify(updated));
-    alert("🚀 Procurement Indent Dispatched!"); setShowIndentModal(false); setIndentQty("");
-  };
-
   const isLogWithinDate = (dateStr: string) => {
     if (dateFilter === "all_history") return true; 
     const logDate = new Date(dateStr); const today = new Date();
@@ -469,7 +448,7 @@ export default function InventoryAndPurchaseERP() {
   const filteredProducedInventory = producedInventory.filter(item => item.itemName.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const totalSKUs = rawInventory.length;
-  const lowStockCount = rawInventory.filter(i => i.stockLevel > 0 && i.stockLevel <= item.minStock).length;
+  const lowStockCount = rawInventory.filter(i => i.stockLevel > 0 && i.stockLevel <= i.minStock).length;
   const outOfStockCount = rawInventory.filter(i => i.stockLevel <= 0).length;
   const totalProcurementFiltered = filteredPurchaseLogs.reduce((sum, log) => sum + log.total, 0);
   const totalMarketUdhaari = vendorList.reduce((sum, v) => sum + v.outstanding, 0);
@@ -551,7 +530,7 @@ export default function InventoryAndPurchaseERP() {
           }
         `}} />
 
-        {/* ------------------- DESKTOP HEADER & TRIP-AXIS NAVIGATION PANEL ------------------- */}
+        {/* ------------------- DESKTOP HEADER & NAVIGATION PANEL ------------------- */}
         <div className="p-6 pb-0 bg-white border-b border-slate-200 shrink-0 print:hidden">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <div>
@@ -716,7 +695,7 @@ export default function InventoryAndPurchaseERP() {
             </div>
           )}
 
-          {/* ================= VIEW 2: PURCHASE DESK FORMS ================= */}
+          {/* ================= VIEW 2: PURCHASE DESK FORMS (100% COMPLETE & RESTORED) ================= */}
           {activeView === "PURCHASE" && (
             <div className="flex flex-col lg:flex-row gap-6 h-full animate-in fade-in">
               <div className="w-full lg:w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
@@ -729,7 +708,7 @@ export default function InventoryAndPurchaseERP() {
                     <div className="flex gap-4 items-end">
                       <div className="flex-1">
                         <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Received SKU</label>
-                        <select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500 shadow-sm">
+                        <select required value={purchaseItem} onChange={(e) => setPurchaseItem(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white focus:border-indigo-500 shadow-sm">
                           <option value="" disabled>Choose material...</option>
                           {rawInventory.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
                         </select>

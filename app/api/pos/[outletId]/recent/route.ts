@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+ximport { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 export async function GET(req: Request, { params }: { params: { outletId: string } }) {
@@ -6,13 +6,27 @@ export async function GET(req: Request, { params }: { params: { outletId: string
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
+    // Fetching deeply connected data based on your schema
     const recentOrders = await prisma.order.findMany({
       where: {
         outletId: params.outletId,
         isDeleted: false,
         createdAt: { gte: startOfToday }
       },
-      include: { items: { include: { menuItem: true } } },
+      include: { 
+        items: { 
+          include: { 
+            menuItem: true,
+            modifiers: {
+              include: { modifier: true }
+            }
+          } 
+        },
+        customer: true,
+        table: true,
+        gstBreakdown: true,
+        payment: true
+      },
       orderBy: { createdAt: 'desc' }
     });
 
