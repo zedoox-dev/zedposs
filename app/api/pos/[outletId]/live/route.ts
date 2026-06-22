@@ -3,12 +3,16 @@ import prisma from "@/lib/prisma";
 
 export async function GET(req: Request, { params }: { params: { outletId: string } }) {
   try {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
     const liveOrders = await prisma.order.findMany({
       where: {
         outletId: params.outletId,
         isDeleted: false,
-        // Sirf active orders fetch karenge
-        status: { notIn: ["COMPLETED", "CANCELLED", "REFUNDED", "VOID"] }
+        createdAt: { gte: startOfToday },
+        // Cancelled, Void aur Refunded ko chhod kar sab dikhayega (Completed bhi)
+        status: { notIn: ["CANCELLED", "REFUNDED", "VOID"] }
       },
       include: { 
         items: { 
@@ -22,7 +26,7 @@ export async function GET(req: Request, { params }: { params: { outletId: string
         onlineOrder: true,
         table: true
       },
-      orderBy: { createdAt: 'asc' } // Oldest first (FIFO for kitchen)
+      orderBy: { createdAt: 'desc' } // Naye order sabse upar
     });
 
     return NextResponse.json({ success: true, data: liveOrders });

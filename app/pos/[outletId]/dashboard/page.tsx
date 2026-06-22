@@ -168,7 +168,7 @@ export default function BillingPage() {
     setCouponCode("");
   };
 
-  // 🔥 MULTI-ITEM DYNAMIC TAX ENGINE
+  // MULTI-ITEM DYNAMIC TAX ENGINE
   const itemTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   
   let baseTotal = 0;
@@ -188,6 +188,10 @@ export default function BillingPage() {
     cgst += (itemCgstAmount * item.qty);
     sgst += (itemSgstAmount * item.qty);
   });
+
+  // 🔥 Calculate Effective Percentages for Professional Display
+  const displayCgstPercent = baseTotal > 0 ? Number((cgst / baseTotal * 100).toFixed(2)) : 0;
+  const displaySgstPercent = baseTotal > 0 ? Number((sgst / baseTotal * 100).toFixed(2)) : 0;
 
   const manualDiscountAmt = discount.mode === "PERCENT" ? (itemTotal * (discount.value / 100)) : discount.value;
   const discountAmt = manualDiscountAmt + couponDiscount;
@@ -347,7 +351,6 @@ export default function BillingPage() {
                 <div key={item.id} className="flex items-center justify-between p-1.5 bg-white rounded-xl border border-slate-200 shadow-xs text-xs">
                   <div className="flex-1 min-w-0 pr-2">
                     <h4 className="font-black text-slate-900 text-sm uppercase truncate leading-tight">{item.name}</h4>
-                    {/* 🔥 UI FIX: Dynamic item base price mapped below! */}
                     <span className="text-[10px] font-medium text-slate-400">
                       BASE: ₹{(item.price / (1 + ((item.taxProfile?.cgst || 2.5) + (item.taxProfile?.sgst || 2.5)) / 100)).toFixed(2)}
                     </span>
@@ -367,9 +370,9 @@ export default function BillingPage() {
               {showTaxDropdown && (
                 <div className="space-y-1.5 mb-2 text-xs font-bold text-slate-400 border-b border-solid border-slate-200 pb-2.5">
                   <div className="flex justify-between text-slate-600"><span>BASE AMOUNT</span><span className="font-mono">₹{baseTotal.toFixed(2)}</span></div>
-                  {/* 🔥 Removed hardcoded 2.5% to display actual dynamic total sums */}
-                  <div className="flex justify-between"><span>TOTAL CGST</span><span className="font-mono">+ ₹{cgst.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>TOTAL SGST</span><span className="font-mono">+ ₹{sgst.toFixed(2)}</span></div>
+                  {/* 🔥 UI FIX: Dynamic Custom Percentage Display */}
+                  <div className="flex justify-between"><span>CGST @ {displayCgstPercent}%</span><span className="font-mono">+ ₹{cgst.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span>SGST @ {displaySgstPercent}%</span><span className="font-mono">+ ₹{sgst.toFixed(2)}</span></div>
 
                   <div className="mt-2 pt-2 border-t border-slate-100">
                     <div className="flex items-center space-x-2">
@@ -520,9 +523,16 @@ export default function BillingPage() {
               
               <div className="w-full text-[10px] font-bold border-t border-b border-solid border-black pb-1 pt-1 px-1 mb-1">
                 <div className="flex justify-between"><span>Base Amount</span><span>₹{lastPrintedOrder.baseTotal?.toFixed(2)}</span></div>
-                {/* 🔥 Updated for Dynamic Global Render */}
-                <div className="flex justify-between"><span>Total CGST</span><span>₹{lastPrintedOrder.cgst?.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span>Total SGST</span><span>₹{lastPrintedOrder.sgst?.toFixed(2)}</span></div>
+                
+                {/* 🔥 UI FIX: Dynamic Professional Percentage Print Display */}
+                <div className="flex justify-between">
+                  <span>CGST @ {lastPrintedOrder.baseTotal > 0 ? Number((lastPrintedOrder.cgst / lastPrintedOrder.baseTotal * 100).toFixed(2)) : 0}%</span>
+                  <span>₹{lastPrintedOrder.cgst?.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>SGST @ {lastPrintedOrder.baseTotal > 0 ? Number((lastPrintedOrder.sgst / lastPrintedOrder.baseTotal * 100).toFixed(2)) : 0}%</span>
+                  <span>₹{lastPrintedOrder.sgst?.toFixed(2)}</span>
+                </div>
                 
                 {lastPrintedOrder.discountAmt > 0 && <div className="flex justify-between text-red-700 border-t border-dotted border-black/30 mt-0.5 pt-0.5"><span>Discount Applied</span><span>-₹{lastPrintedOrder.discountAmt?.toFixed(2)}</span></div>}
                 {lastPrintedOrder.packingAmt > 0 && <div className="flex justify-between"><span>Packing Charge</span><span>+₹{lastPrintedOrder.packingAmt?.toFixed(2)}</span></div>}
