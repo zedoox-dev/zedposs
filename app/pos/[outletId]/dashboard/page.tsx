@@ -168,10 +168,26 @@ export default function BillingPage() {
     setCouponCode("");
   };
 
+  // 🔥 MULTI-ITEM DYNAMIC TAX ENGINE
   const itemTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const baseTotal = itemTotal / 1.05;
-  const cgst = baseTotal * 0.025;
-  const sgst = baseTotal * 0.025;
+  
+  let baseTotal = 0;
+  let cgst = 0;
+  let sgst = 0;
+
+  cart.forEach(item => {
+    const itemCgstRate = item.taxProfile?.cgst ?? 2.5;
+    const itemSgstRate = item.taxProfile?.sgst ?? 2.5;
+    const itemTotalTaxRate = itemCgstRate + itemSgstRate;
+    
+    const itemBasePrice = item.price / (1 + (itemTotalTaxRate / 100));
+    const itemCgstAmount = itemBasePrice * (itemCgstRate / 100);
+    const itemSgstAmount = itemBasePrice * (itemSgstRate / 100);
+
+    baseTotal += (itemBasePrice * item.qty);
+    cgst += (itemCgstAmount * item.qty);
+    sgst += (itemSgstAmount * item.qty);
+  });
 
   const manualDiscountAmt = discount.mode === "PERCENT" ? (itemTotal * (discount.value / 100)) : discount.value;
   const discountAmt = manualDiscountAmt + couponDiscount;
@@ -331,7 +347,10 @@ export default function BillingPage() {
                 <div key={item.id} className="flex items-center justify-between p-1.5 bg-white rounded-xl border border-slate-200 shadow-xs text-xs">
                   <div className="flex-1 min-w-0 pr-2">
                     <h4 className="font-black text-slate-900 text-sm uppercase truncate leading-tight">{item.name}</h4>
-                    <span className="text-[10px] font-medium text-slate-400">BASE: ₹{(item.price / 1.05).toFixed(2)}</span>
+                    {/* 🔥 UI FIX: Dynamic item base price mapped below! */}
+                    <span className="text-[10px] font-medium text-slate-400">
+                      BASE: ₹{(item.price / (1 + ((item.taxProfile?.cgst || 2.5) + (item.taxProfile?.sgst || 2.5)) / 100)).toFixed(2)}
+                    </span>
                   </div>
                   <div className="flex items-center space-x-2 bg-slate-50 rounded-lg p-0.5 border border-slate-100 shrink-0">
                     <button onClick={() => decreaseQty(item.id)} className="w-5 h-5 flex justify-center items-center bg-white text-slate-600 rounded shadow-xs"><Minus size={10}/></button>
@@ -348,8 +367,9 @@ export default function BillingPage() {
               {showTaxDropdown && (
                 <div className="space-y-1.5 mb-2 text-xs font-bold text-slate-400 border-b border-solid border-slate-200 pb-2.5">
                   <div className="flex justify-between text-slate-600"><span>BASE AMOUNT</span><span className="font-mono">₹{baseTotal.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>CGST @ 2.5%</span><span className="font-mono">+ ₹{cgst.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>SGST @ 2.5%</span><span className="font-mono">+ ₹{sgst.toFixed(2)}</span></div>
+                  {/* 🔥 Removed hardcoded 2.5% to display actual dynamic total sums */}
+                  <div className="flex justify-between"><span>TOTAL CGST</span><span className="font-mono">+ ₹{cgst.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span>TOTAL SGST</span><span className="font-mono">+ ₹{sgst.toFixed(2)}</span></div>
 
                   <div className="mt-2 pt-2 border-t border-slate-100">
                     <div className="flex items-center space-x-2">
@@ -424,7 +444,6 @@ export default function BillingPage() {
             </div>
 
             <div className="p-3 bg-slate-50 border-t border-slate-200 shrink-0 space-y-2">
-              {/* 🔥 UI FIX 1: PERFECT CIRCLE BUTTONS (EVEN SMALLER w-12 h-12) */}
               <div className="grid grid-cols-4 gap-2 px-2">
                 {[ { id: "CASH", icon: <Banknote size={14}/>, label: "Cash" }, { id: "CARD", icon: <CreditCard size={14}/>, label: "Card/UPI" }, { id: "MIXED", icon: <SplitSquareHorizontal size={14}/>, label: "Part" }, { id: "COMPLIMENTARY", icon: <Gift size={14}/>, label: "Comp" }].map(mode => (
                   <button key={mode.id} onClick={() => setPaymentMode(mode.id)} className={`flex flex-col items-center justify-center w-12 h-12 mx-auto rounded-full border text-center transition-all ${paymentMode === mode.id ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-100"}`}>
@@ -437,7 +456,6 @@ export default function BillingPage() {
               {paymentMode === "MIXED" && <div className="flex space-x-2 pt-1"><input type="number" placeholder="Cash ₹" value={partCash} onChange={e=>setPartCash(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /><input type="number" placeholder="Card/UPI ₹" value={partCard} onChange={e=>setPartCard(e.target.value)} className="w-1/2 p-2 rounded-xl border text-xs font-bold text-center bg-white" /></div>}
               {paymentMode === "COMPLIMENTARY" && <div className="flex space-x-2 pt-1"><input type="password" placeholder="Terminal Password" value={compPassword} onChange={e=>setCompPassword(e.target.value)} className="w-1/3 p-2 rounded-xl border text-xs font-bold text-center bg-white border-red-200 focus:border-red-500 outline-none" /><input type="text" placeholder="Reason" value={compReason} onChange={e=>setCompReason(e.target.value)} className="w-2/3 p-2 rounded-xl border text-xs font-bold bg-white" /></div>}
 
-              {/* 🔥 UI FIX 2: BOTTOM BUTTON TEXT EXACTLY AS REQUESTED & SIZE RETAINED */}
               <div className="grid grid-cols-4 gap-2 pt-1">
                 <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("SAVE")} className="bg-slate-200 text-slate-800 font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 hover:bg-slate-300 transition-colors text-center shadow-sm">SAVE</button>
                 <button disabled={cart.length===0||isProcessing} onClick={() => handleCheckout("PRINT")} className="bg-orange-500 text-white font-black text-[9px] uppercase h-11 rounded-lg active:scale-95 shadow-md hover:bg-orange-600 transition-colors text-center">SAVE & PRINT</button>
@@ -502,8 +520,9 @@ export default function BillingPage() {
               
               <div className="w-full text-[10px] font-bold border-t border-b border-solid border-black pb-1 pt-1 px-1 mb-1">
                 <div className="flex justify-between"><span>Base Amount</span><span>₹{lastPrintedOrder.baseTotal?.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span>CGST @ 2.5%</span><span>₹{lastPrintedOrder.cgst?.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span>SGST @ 2.5%</span><span>₹{lastPrintedOrder.sgst?.toFixed(2)}</span></div>
+                {/* 🔥 Updated for Dynamic Global Render */}
+                <div className="flex justify-between"><span>Total CGST</span><span>₹{lastPrintedOrder.cgst?.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>Total SGST</span><span>₹{lastPrintedOrder.sgst?.toFixed(2)}</span></div>
                 
                 {lastPrintedOrder.discountAmt > 0 && <div className="flex justify-between text-red-700 border-t border-dotted border-black/30 mt-0.5 pt-0.5"><span>Discount Applied</span><span>-₹{lastPrintedOrder.discountAmt?.toFixed(2)}</span></div>}
                 {lastPrintedOrder.packingAmt > 0 && <div className="flex justify-between"><span>Packing Charge</span><span>+₹{lastPrintedOrder.packingAmt?.toFixed(2)}</span></div>}
@@ -517,7 +536,6 @@ export default function BillingPage() {
               </div>
               
               <div className="w-full text-center font-bold text-[10px] pb-1 px-1 mt-1 border-b border-solid border-black">
-                {/* 🔥 UI FIX: Print par "PART" dikhayega user ke liye, bhale DB mein "MIXED" ho */}
                 PAY MODE: <span className="uppercase">{lastPrintedOrder.paymentMode === 'MIXED' ? 'PART' : lastPrintedOrder.paymentMode === 'COMPLIMENTARY' ? 'COMP' : lastPrintedOrder.paymentMode}</span>
               </div>
               

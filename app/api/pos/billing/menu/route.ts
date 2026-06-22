@@ -21,7 +21,8 @@ export async function GET(req: Request) {
         isActive: true,
         isDeleted: false 
       },
-      include: { category: true },
+      // 🔥 Include taxProfile to compute precise dynamic math in the UI loop
+      include: { category: true, taxProfile: true },
       orderBy: { createdAt: 'asc' }
     });
     
