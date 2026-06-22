@@ -5,21 +5,6 @@ import { useParams } from "next/navigation";
 
 type ViewMode = 'LIVE' | 'KOT';
 
-// Aggregator SVG Logos
-const ZomatoLogo = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" className="mr-1">
-    <rect width="24" height="24" rx="6" fill="#E23744" />
-    <path d="M7 15V13.5H12C12.8 13.5 13.5 12.8 13.5 12C13.5 11.2 12.8 10.5 12 10.5H7.5L13.5 5H7V6.5H12C11.2 6.5 10.5 7.2 10.5 8C10.5 8.8 11.2 9.5 12 9.5H16.5L10.5 15H7Z" fill="white"/>
-  </svg>
-);
-
-const SwiggyLogo = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" className="mr-1">
-    <rect width="24" height="24" rx="6" fill="#FC8019" />
-    <path d="M16.5 6.5C14.5 5 11 5 8.5 7.5L10.5 9.5C12 8.5 14 8.5 15 9.5C16 10.5 15 12.5 13 12.5C10 12.5 6.5 10 5 7.5C4.5 10.5 5.5 14 8.5 16.5C10.5 18 14 18 16.5 15.5L14.5 13.5C13 14.5 11 14.5 10 13.5C9 12.5 10 10.5 12 10.5C15 10.5 18.5 13 20 15.5C20.5 12.5 19.5 9 16.5 6.5Z" fill="white"/>
-  </svg>
-);
-
 export default function LiveOrdersPage() {
   const params = useParams();
   const [orders, setOrders] = useState<any[]>([]);
@@ -80,7 +65,7 @@ export default function LiveOrdersPage() {
       if (activeFilter === "ALL") tabMatch = true;
       else if (activeFilter === "DINE IN") tabMatch = order.orderType === "DINE_IN";
       else if (activeFilter === "DELIVERY") tabMatch = order.orderType === "DELIVERY";
-      else if (activeFilter === "PICK UP") tabMatch = order.orderType === "TAKEAWAY";
+      else if (activeFilter === "TAKEAWAY") tabMatch = order.orderType === "TAKEAWAY";
       else if (activeFilter === "ONLINE") tabMatch = order.orderType.startsWith("ONLINE_");
       else if (activeFilter === "SWIGGY") tabMatch = order.orderType === "ONLINE_SWIGGY";
       else if (activeFilter === "ZOMATO") tabMatch = order.orderType === "ONLINE_ZOMATO";
@@ -101,7 +86,8 @@ export default function LiveOrdersPage() {
     });
   }, [orders, activeFilter, searchQuery]);
 
-  const filters = ["ALL", "DINE IN", "DELIVERY", "PICK UP", "ONLINE", "SWIGGY", "ZOMATO", "RAMKESAR"];
+  // Changed PICK UP to TAKEAWAY
+  const filters = ["ALL", "DINE IN", "DELIVERY", "TAKEAWAY", "ONLINE", "SWIGGY", "ZOMATO", "RAMKESAR"];
 
   if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={40}/></div>;
 
@@ -181,11 +167,11 @@ export default function LiveOrdersPage() {
                 return 'bg-slate-50 text-slate-700 border-slate-200';
               };
 
-              // Platform Logo Logic
+              // Platform Logo Logic - Only text now, with brand colors and bold
               const renderPlatformLogo = (type: string) => {
-                if (type === 'ONLINE_ZOMATO') return <span className="flex items-center"><ZomatoLogo /> ZOMATO</span>;
-                if (type === 'ONLINE_SWIGGY') return <span className="flex items-center"><SwiggyLogo /> SWIGGY</span>;
-                return type.replace('ONLINE_', '').replace('_', ' ');
+                if (type === 'ONLINE_ZOMATO') return <span className="font-black text-red-600 tracking-wider">ZOMATO</span>;
+                if (type === 'ONLINE_SWIGGY') return <span className="font-black text-orange-600 tracking-wider">SWIGGY</span>;
+                return <span className="font-black tracking-wider">{type.replace('ONLINE_', '').replace('_', ' ')}</span>;
               };
 
               // Dynamic Status Button Data
@@ -213,7 +199,7 @@ export default function LiveOrdersPage() {
                   <div key={order.id} className="bg-white border-2 border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col hover:border-amber-400 transition-colors">
                     <div className="bg-slate-100 p-3 flex justify-between items-center border-b border-slate-200">
                       <span className="font-black text-lg text-slate-800">#{order.billNumber}</span>
-                      <span className={`text-[10px] font-black uppercase px-2 py-1 rounded border ${getPlatformStyle(order.orderType)} flex items-center`}>
+                      <span className={`text-[10px] uppercase px-2 py-1 rounded border ${getPlatformStyle(order.orderType)} flex items-center`}>
                         {renderPlatformLogo(order.orderType)}
                       </span>
                     </div>
@@ -257,7 +243,7 @@ export default function LiveOrdersPage() {
                       <span className="font-black text-lg">#{order.billNumber}</span>
                       <span className="bg-white text-slate-600 px-2 py-0.5 rounded-full text-[9px] font-black uppercase shadow-sm tracking-wider">{order.status}</span>
                     </div>
-                    <span className="text-[10px] font-black uppercase px-2 py-1 bg-white/80 shadow-sm rounded-md flex items-center">
+                    <span className="text-[10px] uppercase px-2 py-1 bg-white/80 shadow-sm rounded-md flex items-center">
                        {renderPlatformLogo(order.orderType)}
                     </span>
                   </div>

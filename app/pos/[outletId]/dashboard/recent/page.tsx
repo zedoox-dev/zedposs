@@ -14,8 +14,8 @@ export default function RecentOrdersPage() {
   // Animation state for the main page drawer
   const [isPageOpen, setIsPageOpen] = useState(false);
   
-  // States for Tabs and Details Drawer
-  const [activeTab, setActiveTab] = useState<'DINE_IN' | 'DELIVERY' | 'PICKUP'>('DINE_IN');
+  // States for Tabs and Details Drawer (PICKUP changed to TAKEAWAY)
+  const [activeTab, setActiveTab] = useState<'DINE_IN' | 'DELIVERY' | 'TAKEAWAY'>('DINE_IN');
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
 
   useEffect(() => {
@@ -39,12 +39,12 @@ export default function RecentOrdersPage() {
     fetchRecent();
   }, [params.outletId]);
 
-  // Tab Filtering Logic - Updated for Delivery/Online & Pickup
+  // Tab Filtering Logic - Updated for TAKEAWAY
   const filteredOrders = orders.filter((order) => {
     if (activeTab === 'DINE_IN') return order.orderType === 'DINE_IN';
-    if (activeTab === 'PICKUP') return order.orderType === 'PICKUP';
+    if (activeTab === 'TAKEAWAY') return order.orderType === 'TAKEAWAY';
     // All other orders (like Zomato, Swiggy, Online, Delivery) will show in Delivery tab
-    if (activeTab === 'DELIVERY') return !['DINE_IN', 'PICKUP'].includes(order.orderType); 
+    if (activeTab === 'DELIVERY') return !['DINE_IN', 'TAKEAWAY'].includes(order.orderType); 
     return true;
   });
 
@@ -70,7 +70,6 @@ export default function RecentOrdersPage() {
         {loading ? (
           <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={40}/></div>
         ) : (
-          /* Added pt-16 here to push the content down so it doesn't get hidden behind top navbars */
           <div className="p-6 pt-16 h-full flex flex-col overflow-hidden">
             {/* Top Header */}
             <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -109,10 +108,10 @@ export default function RecentOrdersPage() {
                 <Bike size={18} /> <span>Delivery</span>
               </button>
               <button 
-                onClick={() => setActiveTab('PICKUP')}
-                className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-bold transition-all duration-200 ${activeTab === 'PICKUP' ? 'bg-orange-500 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
+                onClick={() => setActiveTab('TAKEAWAY')}
+                className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-bold transition-all duration-200 ${activeTab === 'TAKEAWAY' ? 'bg-orange-500 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'}`}
               >
-                <ShoppingBag size={18} /> <span>Pickup</span>
+                <ShoppingBag size={18} /> <span>Takeaway</span>
               </button>
             </div>
 
@@ -179,7 +178,7 @@ export default function RecentOrdersPage() {
         >
           {selectedOrder && (
             <>
-              {/* Drawer Header - Added pt-16 and changed py-4 to pb-4 so it pushes down and aligns with main page */}
+              {/* Drawer Header */}
               <div className="bg-white px-6 pb-4 pt-16 border-b border-slate-200 flex justify-between items-center shrink-0">
                 <div>
                   <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
