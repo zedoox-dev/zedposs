@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone } from "lucide-react";
+import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone, Download, MonitorPlay, CheckCircle2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -71,6 +71,10 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
+  // --- NEW: PWA Installation States ---
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -79,10 +83,24 @@ export default function SettingsPage() {
 
     setIsMounted(true); 
 
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
+    // --- NEW: PWA Install Detection Logic ---
+    if (typeof window !== 'undefined') {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      setIsAppInstalled(isStandalone);
+
+      const handleBeforeInstall = (e: any) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+      };
+
+      window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+
+      return () => {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      };
+    }
   }, [outletId, session]);
 
   useEffect(() => {
@@ -306,6 +324,20 @@ export default function SettingsPage() {
     }
   };
 
+  // --- NEW: App Installation Handler ---
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        setIsAppInstalled(true);
+      }
+    } else {
+      alert("Install prompt is not ready. You might need to click the 'Install' icon in your browser's address bar.");
+    }
+  };
+
   if (!isMounted) {
     return <div className="flex h-full items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-orange-500" size={40} /></div>;
   }
@@ -332,6 +364,9 @@ export default function SettingsPage() {
               <button onClick={() => setActiveTab("printer")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'printer' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Printer size={20} /> <span>Printer Layout</span></button>
               <button onClick={() => setActiveTab("ebill")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'ebill' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><MessageSquare size={20} /> <span>E-Bill & Comm.</span></button>
               <button onClick={() => setActiveTab("staff")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'staff' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><ShieldCheck size={20} /> <span>Staff & Security</span></button>
+              
+              {/* --- NEW: Installation Tab Button --- */}
+              <button onClick={() => setActiveTab("installation")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'installation' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Download size={20} /> <span>App Installation</span></button>
             </nav>
           </div>
 
@@ -737,6 +772,59 @@ export default function SettingsPage() {
                  </div>
               </div>
             )}
+
+            {/* 5. --- NEW: APP INSTALLATION TAB --- */}
+            {activeTab === "installation" && (
+              <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
+                <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
+                  
+                  {isAppInstalled ? (
+                    <div className="space-y-4">
+                      <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle2 size={40} />
+                      </div>
+                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">App Installed</h2>
+                      <p className="text-sm font-bold text-slate-500">
+                        ZedPoss is currently running as a standalone offline app on this device. Smooth and fast billing is active!
+                      </p>
+                      <button disabled className="mt-6 w-full bg-slate-200 text-slate-500 py-3 rounded-xl font-black uppercase text-xs cursor-not-allowed">
+                        Already Installed
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 relative">
+                        <MonitorPlay size={40} />
+                        <span className="absolute -bottom-2 -right-2 bg-white text-orange-600 rounded-full p-1 shadow-sm border border-orange-100">
+                           <Download size={16} />
+                        </span>
+                      </div>
+                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Install ZedPoss Desktop App</h2>
+                      <p className="text-sm font-bold text-slate-500 px-4">
+                        Download this app directly to your computer or billing PC. It runs smoothly offline, caches your billing data instantly, and auto-updates when you reconnect!
+                      </p>
+                      
+                      <div className="pt-4 space-y-3">
+                        <button 
+                          onClick={handleInstallClick} 
+                          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
+                        >
+                          <Download size={18} className="mr-2" /> Download & Install Now
+                        </button>
+                        
+                        {!deferredPrompt && (
+                           <p className="text-[10px] text-slate-400 font-bold px-2">
+                             If the button doesn't work, look for the install icon (🖥️ or ⬇️) in your browser's address bar at the top right!
+                           </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
 

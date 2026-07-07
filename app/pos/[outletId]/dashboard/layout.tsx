@@ -37,8 +37,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isOnline, setIsOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // --- Support Ticket Mock State (Ready for Database Link) ---
+  // --- 🔥 SUPPORT TICKET DB STATES ---
   const [ticketData, setTicketData] = useState({ title: "", description: "", priority: "LOW" });
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
 
   useEffect(() => {
     // 🔥 DYNAMIC METADATA FIX FOR "CREATE NEXT APP" FLASHING
@@ -96,6 +98,50 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
        setSearchBillNo("");
     }
   }, [pathname, outletId]);
+
+  // --- 🔥 DB SUPPORT TICKET FUNCTIONS ---
+  const fetchTickets = async () => {
+    const tenantId = (session?.user as any)?.tenantId;
+    if (!tenantId) return;
+    try {
+      const res = await fetch(`/api/pos/${outletId}/tickets?tenantId=${tenantId}`);
+      const json = await res.json();
+      if (json.success) setTickets(json.data);
+    } catch (error) {
+      console.error("Failed to fetch tickets", error);
+    }
+  };
+
+  const submitTicket = async () => {
+    if (!ticketData.title || !ticketData.description) return alert("Title & Description are required.");
+    
+    const tenantId = (session?.user as any)?.tenantId;
+    const userId = (session?.user as any)?.id;
+    setIsSubmittingTicket(true);
+    
+    try {
+      const res = await fetch(`/api/pos/${outletId}/tickets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...ticketData, tenantId, userId })
+      });
+      if (res.ok) {
+        setTicketData({ title: "", description: "", priority: "LOW" });
+        fetchTickets(); // Refresh list automatically
+      }
+    } catch (error) {
+      console.error("Failed to submit ticket", error);
+    } finally {
+      setIsSubmittingTicket(false);
+    }
+  };
+
+  // Fetch tickets only when modal is opened to save performance
+  useEffect(() => {
+    if (showSupportModal && status === "authenticated") {
+      fetchTickets();
+    }
+  }, [showSupportModal, status]);
 
   const triggerBackgroundSync = async (tenantId: string, currentOutletId: string) => {
     if (!navigator.onLine) return;
@@ -183,8 +229,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      {/* 
-        NOTE: Dynamic Title handling is inside the useEffect logic above to override Next.js routing defaults securely.
+      {/* NOTE: Dynamic Title handling is inside the useEffect logic above to override Next.js routing defaults securely.
       */}
 
       <div className="flex flex-col h-screen bg-slate-50 overflow-hidden relative font-sans">
@@ -484,20 +529,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="pt-4 border-t border-slate-800">
                   <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-3">Active Outlet Ticket Status Stream</h4>
                   <div className="bg-slate-950/50 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-900">
-                    <div className="p-3 flex justify-between items-center text-[11px]">
-                      <div>
-                        <span className="font-bold text-white block">#TK-8890 - Zomato Fetch Sync Failure</span>
-                        <span className="text-[9px] text-slate-500 font-semibold uppercase">Created 2 hours ago</span>
-                      </div>
-                      <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-black px-2 py-0.5 rounded uppercase">Under Investigation</span>
-                    </div>
-                    <div className="p-3 flex justify-between items-center text-[11px]">
-                      <div>
-                        <span className="font-bold text-white block">#TK-8712 - Aggregated Day closing mismatch</span>
-                        <span className="text-[9px] text-slate-500 font-semibold uppercase">Resolved Yesterday</span>
-                      </div>
-                      <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black px-2 py-0.5 rounded uppercase">Closed / Resolved</span>
-                    </div>
+                    
+                    {tickets.length === 0 ? (
+                      <div className="p-4 text-center text-slate-500 text-[11px] font-bold">No active tickets found.</div>
+                    ) : (
+                      tickets.map((t) => (
+                        <div key={t.id} className="p-3 flex justify-between items-center text-[11px]">
+                          <div>
+                            <span className="font-bold text-white block">#{t.ticketNumber} - {t.subject}</span>
+                            <span className="text-[9px] text-slate-500 font-semibold uppercase">{new Date(t.createdAt).toLocaleString()}</span>
+                          </div>
+                          <span className={`border text-[9px] font-black px-2 py-0.5 rounded uppercase ${
+                            t.status === 'OPEN' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
+                            t.status === 'CLOSED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                            'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                          }`}>
+                            {t.status}
+                          </span>
+                        </div>
+                      ))
+                    )}
+
                   </div>
                 </div>
 
@@ -505,7 +557,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex gap-3">
                 <button onClick={() => setShowSupportModal(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-black uppercase tracking-widest py-3.5 rounded-xl transition-colors active:scale-95">Discard</button>
-                <button onClick={() => { console.log("Payload Saved:", ticketData); setShowSupportModal(false); }} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest py-3.5 rounded-xl transition-colors active:scale-95 shadow-lg shadow-orange-500/20">File Support Ticket</button>
+                <button onClick={submitTicket} disabled={isSubmittingTicket} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest py-3.5 rounded-xl transition-colors active:scale-95 shadow-lg shadow-orange-500/20 disabled:opacity-50">
+                  {isSubmittingTicket ? "Filing..." : "File Support Ticket"}
+                </button>
               </div>
 
             </div>
