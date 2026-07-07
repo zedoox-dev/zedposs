@@ -41,6 +41,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [ticketData, setTicketData] = useState({ title: "", description: "", priority: "LOW" });
   const [tickets, setTickets] = useState<any[]>([]);
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(false);
 
   useEffect(() => {
     // 🔥 DYNAMIC METADATA FIX FOR "CREATE NEXT APP" FLASHING
@@ -103,20 +104,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const fetchTickets = async () => {
     const tenantId = (session?.user as any)?.tenantId;
     if (!tenantId) return;
+    
+    setIsLoadingTickets(true);
     try {
       const res = await fetch(`/api/pos/${outletId}/tickets?tenantId=${tenantId}`);
       const json = await res.json();
-      if (json.success) setTickets(json.data);
+      if (json.success) {
+        setTickets(json.data);
+      } else {
+        console.error("Fetch Error:", json.error);
+      }
     } catch (error) {
       console.error("Failed to fetch tickets", error);
+    } finally {
+      setIsLoadingTickets(false);
     }
   };
 
   const submitTicket = async () => {
-    if (!ticketData.title || !ticketData.description) return alert("Title & Description are required.");
+    if (!ticketData.title || !ticketData.description) {
+      return alert("Validation Failed: Please fill both Title and Description.");
+    }
     
     const tenantId = (session?.user as any)?.tenantId;
     const userId = (session?.user as any)?.id;
+
+    if (!tenantId || !userId) {
+      return alert("Security Error: Tenant ID or User ID is missing from your session.");
+    }
+
     setIsSubmittingTicket(true);
     
     try {
@@ -125,18 +141,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...ticketData, tenantId, userId })
       });
-      if (res.ok) {
+      
+      const json = await res.json();
+      
+      if (res.ok && json.success) {
         setTicketData({ title: "", description: "", priority: "LOW" });
-        fetchTickets(); // Refresh list automatically
+        fetchTickets(); // Refresh the list instantly
+        alert("✅ Support Ticket has been successfully filed!");
+      } else {
+        alert("❌ Failed to file ticket: " + (json.error || "Unknown error"));
       }
     } catch (error) {
       console.error("Failed to submit ticket", error);
+      alert("❌ Network Error: Could not reach the server.");
     } finally {
       setIsSubmittingTicket(false);
     }
   };
 
-  // Fetch tickets only when modal is opened to save performance
+  // Fetch tickets only when modal is opened to save background network calls
   useEffect(() => {
     if (showSupportModal && status === "authenticated") {
       fetchTickets();
@@ -229,9 +252,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      {/* NOTE: Dynamic Title handling is inside the useEffect logic above to override Next.js routing defaults securely.
-      */}
-
+      {/* 🔥 NEW: PWA METADATA LINKS INJECTED NATIVELY FOR CLIENT COMPONENTS */}
+      <link rel="manifest" href="/manifest.json" />
+      <meta name="theme-color" content="#0f172a" />
+      <link rel="apple-touch-icon" href="/icon-192x192.png" />
+      <meta name="application-name" content="ZedPoss" />
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      <meta name="apple-mobile-web-app-title" content="ZedPoss" />
+      <meta name="format-detection" content="telephone=no" />
+      <meta name="mobile-web-app-capable" content="yes" />
+      {/* ======================================================================= */}
+      
       <div className="flex flex-col h-screen bg-slate-50 overflow-hidden relative font-sans">
         
         {/* 👑 WINDOW CONTROL BADGE (NAME | OUTLET ID) */}
@@ -265,7 +297,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           
           {/* LEFT HUB */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Open Hamburger Layout - No Background Border & Shifted Further Left */}
+            {/* Open Hamburger Layout */}
             <button onClick={() => setShowNavOverlay(true)} className="h-10 w-8 flex items-center justify-center text-slate-400 hover:text-white transition-all active:scale-95 shrink-0 pl-0 ml-0">
               <Menu size={24} />
             </button>
@@ -294,7 +326,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
 
-          {/* COMBINED QUICK LINKS & ACTIONS (Boxless Open Layout uniformly connected in one line) */}
+          {/* COMBINED QUICK LINKS & ACTIONS */}
           <div className="flex items-center shrink-0">
             <div className="flex items-center space-x-4 md:space-x-6">
               
@@ -326,7 +358,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </button>
               </div>
 
-              {/* Converted Header Actions (Hold, Alerts, Logout) connected directly with exact spacing */}
+              {/* Converted Header Actions */}
               <div className="flex items-center space-x-4 md:space-x-6">
                 {/* HOLD QUEUE ICON */}
                 <div className="relative flex flex-col items-center justify-center shrink-0">
@@ -416,6 +448,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className="flex-1 overflow-hidden relative">{children}</div>
 
+        {/* --- OVERLAYS & MODALS --- */}
         {showNavOverlay && (
           <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md z-50 p-6 flex flex-col justify-center items-center">
             <div className="w-full max-w-6xl animate-in fade-in zoom-in-95 duration-200">
@@ -464,7 +497,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         )}
 
-        {/* 🎫 DYNAMIC SUPPORT REQUEST MODAL CONTAINER (Mapped seamlessly with SupportTicket Columns) */}
+        {/* 🎫 DYNAMIC SUPPORT REQUEST MODAL CONTAINER */}
         {showSupportModal && (
           <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
@@ -484,7 +517,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
                 
-                {/* Simulated database structured input form fields */}
+                {/* 📝 DB Connected Input Form Fields */}
                 <div className="space-y-4">
                   <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center"><FileText size={14} className="mr-2 text-orange-500" /> Create Support Incident</h4>
                   
@@ -525,31 +558,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                 </div>
 
-                {/* Status Logs List (Corresponds directly with Outlet Wise History Rows) */}
+                {/* 📋 DB Connected Status Logs List */}
                 <div className="pt-4 border-t border-slate-800">
-                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-3">Active Outlet Ticket Status Stream</h4>
+                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest mb-3 flex justify-between items-center">
+                    Active Tenant Ticket Status Stream
+                    {isLoadingTickets && <CloudSync size={14} className="animate-spin text-orange-500" />}
+                  </h4>
+                  
                   <div className="bg-slate-950/50 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-900">
-                    
                     {tickets.length === 0 ? (
-                      <div className="p-4 text-center text-slate-500 text-[11px] font-bold">No active tickets found.</div>
+                      <div className="p-6 text-center text-slate-500 text-xs font-bold">
+                        {isLoadingTickets ? "Fetching tickets from server..." : "No active tickets found for this tenant."}
+                      </div>
                     ) : (
                       tickets.map((t) => (
                         <div key={t.id} className="p-3 flex justify-between items-center text-[11px]">
                           <div>
                             <span className="font-bold text-white block">#{t.ticketNumber} - {t.subject}</span>
-                            <span className="text-[9px] text-slate-500 font-semibold uppercase">{new Date(t.createdAt).toLocaleString()}</span>
+                            <span className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">{new Date(t.createdAt).toLocaleString()}</span>
                           </div>
                           <span className={`border text-[9px] font-black px-2 py-0.5 rounded uppercase ${
                             t.status === 'OPEN' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
-                            t.status === 'CLOSED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                            'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            t.status === 'IN_PROGRESS' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                            'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                           }`}>
-                            {t.status}
+                            {t.status.replace("_", " ")}
                           </span>
                         </div>
                       ))
                     )}
-
                   </div>
                 </div>
 
@@ -558,7 +595,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex gap-3">
                 <button onClick={() => setShowSupportModal(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-black uppercase tracking-widest py-3.5 rounded-xl transition-colors active:scale-95">Discard</button>
                 <button onClick={submitTicket} disabled={isSubmittingTicket} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-xs font-black uppercase tracking-widest py-3.5 rounded-xl transition-colors active:scale-95 shadow-lg shadow-orange-500/20 disabled:opacity-50">
-                  {isSubmittingTicket ? "Filing..." : "File Support Ticket"}
+                  {isSubmittingTicket ? "Filing Ticket to Server..." : "File Support Ticket"}
                 </button>
               </div>
 
