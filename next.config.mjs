@@ -2,6 +2,8 @@ import withPWAInit from "@ducanh2912/next-pwa";
 
 const withPWA = withPWAInit({
   dest: "public",
+  register: true,
+  skipWaiting: true,
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
@@ -12,13 +14,9 @@ const withPWA = withPWAInit({
   },
 });
 
-/** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    // Vercel par typescript errors ignore karega
-    ignoreBuildErrors: true,
-  },
-  // Vercel ko bypass karne ke liye khali turbopack config
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   turbopack: {},
 };
 

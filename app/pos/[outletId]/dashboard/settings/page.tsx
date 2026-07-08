@@ -330,11 +330,11 @@ export default function SettingsPage() {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
-        setDeferredPrompt(null);
         setIsAppInstalled(true);
       }
+      setDeferredPrompt(null);
     } else {
-      alert("Install prompt is not ready. You might need to click the 'Install' icon in your browser's address bar.");
+      alert("Pro-Tip: Agar install window nahi khuli, toh browser ke address bar me sabse right side par 'Install' (🖥️) icon par click karein.");
     }
   };
 

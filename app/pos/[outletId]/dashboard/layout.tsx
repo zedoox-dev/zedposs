@@ -44,14 +44,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
 
   useEffect(() => {
-    // 🔥 DYNAMIC METADATA FIX FOR "CREATE NEXT APP" FLASHING
     document.title = "ZedPoss | Complete POS & Billing Management by ZedooX";
     
     if (status !== "authenticated" || !session?.user) return;
 
-    // ==========================================
-    // 🔒 STRICT URL ISOLATION SECURITY CHECK
-    // ==========================================
     const sessionOutletId = (session.user as any).outletId;
     if (sessionOutletId && sessionOutletId !== outletId) {
       console.warn("Security Alert: Unauthorized Outlet URL access blocked.");
@@ -76,7 +72,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const savedGeneral = localStorage.getItem(`zapped_general_config_${outletId}`);
     if (savedGeneral) setGeneralSettings(JSON.parse(savedGeneral));
 
-    // Polling for Hold Orders
     const checkHolds = () => {
       const saved = localStorage.getItem(`zapped_held_orders_${outletId}`);
       if (saved) setHeldOrders(JSON.parse(saved));
@@ -93,7 +88,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [pathname, outletId, status, session, router]);
 
-  // Clean Search bar globally if location changes manually
   useEffect(() => {
     if (pathname === `/pos/${outletId}/dashboard`) {
        setSearchBillNo("");
@@ -103,11 +97,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // --- 🔥 DB SUPPORT TICKET FUNCTIONS ---
   const fetchTickets = async () => {
     const tenantId = (session?.user as any)?.tenantId;
-    if (!tenantId) return;
-    
     setIsLoadingTickets(true);
     try {
-      const res = await fetch(`/api/pos/${outletId}/tickets?tenantId=${tenantId}`);
+      // Backend will resolve Tenant ID using Outlet ID if it's missing from session
+      const res = await fetch(`/api/pos/${outletId}/tickets?tenantId=${tenantId || ""}`);
       const json = await res.json();
       if (json.success) {
         setTickets(json.data);
@@ -127,11 +120,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     
     const tenantId = (session?.user as any)?.tenantId;
-    const userId = (session?.user as any)?.id;
-
-    if (!tenantId || !userId) {
-      return alert("Security Error: Tenant ID or User ID is missing from your session.");
-    }
+    const userId = (session?.user as any)?.id || (session?.user as any)?.sub;
+    const userEmail = session?.user?.email;
 
     setIsSubmittingTicket(true);
     
@@ -139,7 +129,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const res = await fetch(`/api/pos/${outletId}/tickets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...ticketData, tenantId, userId })
+        body: JSON.stringify({ ...ticketData, tenantId, userId, userEmail })
       });
       
       const json = await res.json();
@@ -159,7 +149,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   };
 
-  // Fetch tickets only when modal is opened to save background network calls
   useEffect(() => {
     if (showSupportModal && status === "authenticated") {
       fetchTickets();
@@ -170,7 +159,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!navigator.onLine) return;
     setIsSyncing(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 150)); // Made it extremely fast (reduced from 800ms)
+      await new Promise(resolve => setTimeout(resolve, 150)); 
     } catch (error) {
       console.error("Sync failed:", error);
     } finally {
@@ -190,13 +179,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const handleNewOrder = () => {
-    setSearchBillNo(""); // Clear local state immediately
+    setSearchBillNo(""); 
     window.dispatchEvent(new CustomEvent("zapped_clear_cart"));
     router.push(`/pos/${outletId}/dashboard`);
     router.refresh();
   };
 
-  // Real-time instantaneous character match push
   const handleLiveSearch = (value: string) => {
     setSearchBillNo(value);
     if (value.trim() !== "") {
@@ -252,18 +240,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      {/* 🔥 NEW: PWA METADATA LINKS INJECTED NATIVELY FOR CLIENT COMPONENTS */}
-      <link rel="manifest" href="/manifest.json" />
-      <meta name="theme-color" content="#0f172a" />
-      <link rel="apple-touch-icon" href="/icon-192x192.png" />
-      <meta name="application-name" content="ZedPoss" />
-      <meta name="apple-mobile-web-app-capable" content="yes" />
-      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-      <meta name="apple-mobile-web-app-title" content="ZedPoss" />
-      <meta name="format-detection" content="telephone=no" />
-      <meta name="mobile-web-app-capable" content="yes" />
-      {/* ======================================================================= */}
-      
       <div className="flex flex-col h-screen bg-slate-50 overflow-hidden relative font-sans">
         
         {/* 👑 WINDOW CONTROL BADGE (NAME | OUTLET ID) */}
@@ -295,14 +271,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* 👑 MAIN HEADER */}
         <header className="h-16 bg-slate-900 px-2 sm:px-4 flex items-center justify-between border-b border-slate-800 shadow-lg z-40 shrink-0">
           
-          {/* LEFT HUB */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Open Hamburger Layout */}
             <button onClick={() => setShowNavOverlay(true)} className="h-10 w-8 flex items-center justify-center text-slate-400 hover:text-white transition-all active:scale-95 shrink-0 pl-0 ml-0">
               <Menu size={24} />
             </button>
             
-            {/* 🔥 FIXED LOGO SIZE HERE */}
             <div className="flex items-center text-orange-500 shrink-0 cursor-pointer" onClick={handleNewOrder}>
               <img src="/favicon.ico" alt="Favicon" className="w-6 h-6 sm:w-7 sm:h-7 mr-1.5 object-contain drop-shadow-md" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
               <span className="font-black text-lg sm:text-xl tracking-widest drop-shadow-md">ZedPoss</span>
@@ -314,7 +287,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Plus size={15} className="mr-1.5" /> New Order
             </button>
 
-            {/* Live Synchronous Bill Search without Enter Trigger */}
             <div className="relative hidden lg:flex items-center h-10 shrink-0">
               <Search size={16} className="absolute left-3 text-slate-400" />
               <input 
@@ -326,11 +298,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
 
-          {/* COMBINED QUICK LINKS & ACTIONS */}
           <div className="flex items-center shrink-0">
             <div className="flex items-center space-x-4 md:space-x-6">
               
-              {/* Module Navigations */}
               <div className="hidden md:flex items-center space-x-6">
                 <button onClick={() => router.push(`/pos/${outletId}/dashboard/recent`)} className="flex flex-col items-center justify-center text-slate-400 hover:text-orange-400 transition-colors bg-transparent border-0 p-0 shrink-0">
                   <History size={19} />
@@ -358,9 +328,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </button>
               </div>
 
-              {/* Converted Header Actions */}
               <div className="flex items-center space-x-4 md:space-x-6">
-                {/* HOLD QUEUE ICON */}
                 <div className="relative flex flex-col items-center justify-center shrink-0">
                   <button 
                     onClick={() => setShowHoldList(!showHoldList)}
@@ -406,7 +374,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   )}
                 </div>
 
-                {/* ALERTS ROUTER TRIGGER ICON */}
                 <button 
                   onClick={() => router.push(`/pos/${outletId}/dashboard/alerts`)}
                   className="flex flex-col items-center justify-center text-slate-400 hover:text-blue-400 transition-colors bg-transparent border-0 p-0 shrink-0" 
@@ -416,7 +383,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <span className="text-[9px] font-bold uppercase mt-1 tracking-wider">Alerts</span>
                 </button>
 
-                {/* LOGOUT */}
                 <button 
                   onClick={() => setShowLogoutConfirm(true)} 
                   className="flex flex-col items-center justify-center text-slate-400 hover:text-red-400 transition-colors bg-transparent border-0 p-0 shrink-0" 
@@ -429,7 +395,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             </div>
 
-            {/* 🔥 SUPPORT PANEL & TICKET ROUTING REGISTRY */}
             <div className="hidden md:flex flex-col text-right pl-4 border-l border-slate-800 ml-4 md:ml-6">
               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">24/7 Support</span>
               <span className="text-xs font-bold text-white tracking-wider flex items-center justify-end">
@@ -509,7 +474,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-white uppercase tracking-wider">Support Ticket Control</h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 tracking-wider">Tenant: {(session?.user as any)?.tenantId || 'Core'} | Outlet: {outletId}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 tracking-wider">Session Active | Outlet: {outletId}</p>
                   </div>
                 </div>
                 <button onClick={() => setShowSupportModal(false)} className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-all"><X size={20} /></button>
