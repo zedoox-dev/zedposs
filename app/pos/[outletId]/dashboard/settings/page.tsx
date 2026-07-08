@@ -324,7 +324,7 @@ export default function SettingsPage() {
     }
   };
 
-  // --- NEW: App Installation Handler ---
+  // --- OBSOLETE: The previous PWA handler is kept for backwards compatibility but we bypass it below ---
   const handleInstallClick = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
@@ -334,7 +334,7 @@ export default function SettingsPage() {
       }
       setDeferredPrompt(null);
     } else {
-      alert("Pro-Tip: Agar install window nahi khuli, toh browser ke address bar me sabse right side par 'Install' (🖥️) icon par click karein.");
+      alert("Please use the native download buttons provided.");
     }
   };
 
@@ -773,7 +773,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 5. --- NEW: APP INSTALLATION TAB --- */}
+            {/* 5. --- NEW: DIRECT APP INSTALLATION TAB --- */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -794,29 +794,35 @@ export default function SettingsPage() {
                   ) : (
                     <div className="space-y-4">
                       <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 relative">
-                        <MonitorPlay size={40} />
-                        <span className="absolute -bottom-2 -right-2 bg-white text-orange-600 rounded-full p-1 shadow-sm border border-orange-100">
-                           <Download size={16} />
-                        </span>
+                        <Download size={40} />
                       </div>
-                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Install ZedPoss Desktop App</h2>
+                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Download Native App</h2>
                       <p className="text-sm font-bold text-slate-500 px-4">
-                        Download this app directly to your computer or billing PC. It runs smoothly offline, caches your billing data instantly, and auto-updates when you reconnect!
+                        Download the official ZedPOS application directly to your device. It runs perfectly offline as a standalone app.
                       </p>
                       
-                      <div className="pt-4 space-y-3">
-                        <button 
-                          onClick={handleInstallClick} 
-                          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
+                      <div className="pt-4 space-y-4">
+                        {/* Windows Download Button */}
+                        <a 
+                          href="/downloads/ZedPoss-desktop.zip" 
+                          download="ZedPoss-desktop.zip"
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center cursor-pointer"
                         >
-                          <Download size={18} className="mr-2" /> Download & Install Now
-                        </button>
+                          <MonitorPlay size={18} className="mr-2 text-blue-400" /> Download for Windows PC
+                        </a>
+
+                        {/* Android Download Button */}
+                        <a 
+                          href="/downloads/ZedPoss-mobile.apk" 
+                          download="ZedPoss-mobile.apk"
+                          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center cursor-pointer"
+                        >
+                          <Smartphone size={18} className="mr-2" /> Download Android APK
+                        </a>
                         
-                        {!deferredPrompt && (
-                           <p className="text-[10px] text-slate-400 font-bold px-2">
-                             If the button doesn't work, look for the install icon (🖥️ or ⬇️) in your browser's address bar at the top right!
-                           </p>
-                        )}
+                        <p className="text-[10px] text-slate-400 font-bold px-2 mt-4 bg-slate-200/50 p-2 rounded-lg">
+                          Note: For Android, you may need to allow "Install from Unknown Sources" in your phone settings to install this private company app.
+                        </p>
                       </div>
                     </div>
                   )}
