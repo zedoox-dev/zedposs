@@ -1,14 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone, Download, MonitorPlay, CheckCircle2 } from "lucide-react";
+import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone, Download, MonitorPlay, CheckCircle2, CloudDownload } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
 const defaultPrinterConfig = {
   printerSize: "80mm", 
-  headerName: "ZedPoss",
+  headerName: "RAMKESAR POS",
   headerSize: "text-lg",
-  subHeader: "Smart Billing Made Simple",
+  subHeader: "Premium Quality Snacks",
   subHeaderSize: "text-[10px]",
   gstNo: "",
   gstSize: "text-[9px]",
@@ -71,9 +71,13 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
-  // --- 🔥 PWA INSTALLATION LOGIC (FIXED) ---
+  // --- 🔥 PROPER APP INSTALLATION STATES ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
+
+  // 👇 YAHAN APNE GOOGLE DRIVE/EXTERNAL DOWNLOAD LINKS DAALIYE 👇
+  const WINDOWS_EXE_LINK = "#"; // Example: "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
+  const ANDROID_APK_LINK = "#"; // Example: "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -84,12 +88,10 @@ export default function SettingsPage() {
     setIsMounted(true); 
 
     if (typeof window !== 'undefined') {
-      // Check if already running as App
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsAppInstalled(true);
       }
 
-      // Catch the native install prompt
       const handleBeforeInstall = (e: any) => {
         e.preventDefault();
         setDeferredPrompt(e);
@@ -319,10 +321,9 @@ export default function SettingsPage() {
     }
   };
 
-  // --- 🔥 THE REAL 1-CLICK APP INSTALLER ---
-  const handleInstallApp = async () => {
+  // --- 🔥 BROWSER NATIVE AUTO-INSTALLER ---
+  const handleAutoInstall = async () => {
     if (deferredPrompt) {
-      // Browser ka asli App Install prompt open karega
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
@@ -330,7 +331,7 @@ export default function SettingsPage() {
       }
       setDeferredPrompt(null);
     } else {
-      alert("App is either already installed on this device, or your browser is blocking it. Try clicking the Install icon (🖥️) in the address bar.");
+      alert("System auto-installer is ready. Click the Install (🖥️) icon in your address bar top right!");
     }
   };
 
@@ -470,11 +471,20 @@ export default function SettingsPage() {
                          <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                        </div>
                      </div>
+
+                     {/* Custom Receipt Text & Font Size Editors */}
                      <div className="space-y-4">
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
+                       
                        <div className="flex space-x-2">
-                         <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label><input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" /></div>
-                         <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold"><option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option></select></div>
+                         <div className="flex-1">
+                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label>
+                           <input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" />
+                         </div>
+                         <div className="w-1/3">
+                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label>
+                           <select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold"><option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option></select>
+                         </div>
                        </div>
                        <div className="flex space-x-2">
                          <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Sub-Header</label><input type="text" value={printerSettings.subHeader} onChange={(e) => setPrinterSettings({...printerSettings, subHeader: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
@@ -634,7 +644,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 5. 🔥 NEW: DIRECT 1-CLICK PWA INSTALLATION TAB */}
+            {/* 5. 🔥 NEW: PROPER APP INSTALLATION TAB */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -661,17 +671,43 @@ export default function SettingsPage() {
                         </span>
                       </div>
                       <h2 className="text-2xl font-black text-slate-800 tracking-tight">Install ZedPoss App</h2>
-                      <p className="text-sm font-bold text-slate-500 px-4">
-                        Install this application directly to your computer or mobile. It runs smoothly offline without needing the browser!
+                      <p className="text-xs font-bold text-slate-500 px-4 mb-4">
+                        Option 1: Auto-install directly via Browser. Option 2: Download external setup files.
                       </p>
                       
                       <div className="pt-4 space-y-3">
+                        
+                        {/* THE NATIVE BROWSER INSTALL */}
                         <button 
-                          onClick={handleInstallApp} 
+                          onClick={handleAutoInstall} 
                           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
                         >
-                          <Download size={18} className="mr-2" /> Install Application Now
+                          <Download size={18} className="mr-2" /> Auto-Install App (Recommended)
                         </button>
+                        
+                        <div className="py-2 flex items-center justify-center">
+                          <div className="h-px bg-slate-200 flex-1"></div>
+                          <span className="px-3 text-[10px] font-black text-slate-400 uppercase">OR DOWNLOAD FILES</span>
+                          <div className="h-px bg-slate-200 flex-1"></div>
+                        </div>
+
+                        {/* EXTERNAL FILE LINKS */}
+                        <a 
+                          href={WINDOWS_EXE_LINK} 
+                          target="_blank" rel="noreferrer"
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
+                        >
+                          <CloudDownload size={18} className="mr-2 text-blue-400" /> Download Windows Setup
+                        </a>
+
+                        <a 
+                          href={ANDROID_APK_LINK} 
+                          target="_blank" rel="noreferrer"
+                          className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
+                        >
+                          <CloudDownload size={18} className="mr-2 text-emerald-400" /> Download Android APK
+                        </a>
+
                       </div>
                     </div>
                   )}
