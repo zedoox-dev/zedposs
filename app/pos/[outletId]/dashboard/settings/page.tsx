@@ -6,9 +6,9 @@ import { useSession } from "next-auth/react";
 
 const defaultPrinterConfig = {
   printerSize: "80mm", 
-  headerName: "RAMKESAR POS",
+  headerName: "ZedPoss",
   headerSize: "text-lg",
-  subHeader: "Premium Quality Snacks",
+  subHeader: "Smart Billing Made Simple",
   subHeaderSize: "text-[10px]",
   gstNo: "",
   gstSize: "text-[9px]",
@@ -59,7 +59,7 @@ export default function SettingsPage() {
   const [isSavingGeneral, setIsSavingGeneral] = useState(false);
 
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [doarList, setDoarList] = useState<string[]>([]); // Strict Array Initialization
+  const [doarList, setDoarList] = useState<string[]>([]);
   const [newDoarInput, setNewDoarInput] = useState("");
   
   const [showAddModal, setShowAddModal] = useState(false);
@@ -71,7 +71,7 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
-  // --- NEW: PWA Installation States ---
+  // --- 🔥 PWA INSTALLATION LOGIC (FIXED) ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
 
@@ -83,11 +83,13 @@ export default function SettingsPage() {
 
     setIsMounted(true); 
 
-    // --- NEW: PWA Install Detection Logic ---
     if (typeof window !== 'undefined') {
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      setIsAppInstalled(isStandalone);
+      // Check if already running as App
+      if (window.matchMedia('(display-mode: standalone)').matches) {
+        setIsAppInstalled(true);
+      }
 
+      // Catch the native install prompt
       const handleBeforeInstall = (e: any) => {
         e.preventDefault();
         setDeferredPrompt(e);
@@ -113,7 +115,6 @@ export default function SettingsPage() {
     if (!session?.user) return;
     const secureOutletId = (session.user as any).outletId || outletId;
 
-    // 🔥 FIX: 100% Crash-Proof Local Storage Reading
     const savedDoars = localStorage.getItem(`zapped_doars_${secureOutletId}`);
     if (savedDoars) {
       try {
@@ -154,11 +155,8 @@ export default function SettingsPage() {
       const data = await res.json();
       
       if (data.success) {
-        if (data.outletMaster) {
-           setOutletMasterData(data.outletMaster);
-        }
+        if (data.outletMaster) setOutletMasterData(data.outletMaster);
         
-        // Safely set Doar List from REAL database (Ensures Array)
         if (data.doarList && Array.isArray(data.doarList)) {
             setDoarList(data.doarList.length > 0 ? data.doarList : ["Admin", "Manager"]);
         }
@@ -270,10 +268,7 @@ export default function SettingsPage() {
 
   const handleSaveStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.pin.length !== 4) {
-      return alert("PIN must be exactly 4 digits.");
-    }
-
+    if (formData.pin.length !== 4) return alert("PIN must be exactly 4 digits.");
     if (!navigator.onLine) return alert("You must be online to register new staff.");
 
     setIsSavingStaff(true);
@@ -324,9 +319,10 @@ export default function SettingsPage() {
     }
   };
 
-  // --- OBSOLETE: The previous PWA handler is kept for backwards compatibility but we bypass it below ---
-  const handleInstallClick = async () => {
+  // --- 🔥 THE REAL 1-CLICK APP INSTALLER ---
+  const handleInstallApp = async () => {
     if (deferredPrompt) {
+      // Browser ka asli App Install prompt open karega
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
@@ -334,7 +330,7 @@ export default function SettingsPage() {
       }
       setDeferredPrompt(null);
     } else {
-      alert("Please use the native download buttons provided.");
+      alert("App is either already installed on this device, or your browser is blocking it. Try clicking the Install icon (🖥️) in the address bar.");
     }
   };
 
@@ -344,8 +340,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <title>ZedPoss | System Settings & Hardware Configurations</title>
-      <meta name="description" content="Configure POS Printers, Store Identity, Staff Access Roles, and Automation Rules seamlessly with ZedPoss Settings Manager." />
+      <title>ZedPoss | System Settings</title>
 
       <div className="p-6 h-full flex flex-col bg-slate-50 overflow-y-auto custom-scrollbar">
         <div className="mb-6 flex justify-between items-start">
@@ -365,7 +360,7 @@ export default function SettingsPage() {
               <button onClick={() => setActiveTab("ebill")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'ebill' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><MessageSquare size={20} /> <span>E-Bill & Comm.</span></button>
               <button onClick={() => setActiveTab("staff")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'staff' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><ShieldCheck size={20} /> <span>Staff & Security</span></button>
               
-              {/* --- NEW: Installation Tab Button --- */}
+              {/* Installation Tab Button */}
               <button onClick={() => setActiveTab("installation")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'installation' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Download size={20} /> <span>App Installation</span></button>
             </nav>
           </div>
@@ -373,7 +368,7 @@ export default function SettingsPage() {
           {/* CONTENT */}
           <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 min-h-[600px]">
             
-            {/* 1. GENERAL OPTIONS & ADVANCED POS WORKFLOW TAB */}
+            {/* 1. GENERAL TAB */}
             {activeTab === "general" && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -384,8 +379,6 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
-                  {/* Identity Module (Strictly Read Only from DB) */}
                   <div className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200">
                     <div className="flex justify-between items-center">
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs">Business Profile Master</h3>
@@ -411,12 +404,9 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/* Operational Settings Module */}
                   <div className="space-y-4 bg-orange-50/50 p-5 rounded-2xl border border-orange-100">
                     <h3 className="font-black text-orange-800 uppercase tracking-wider text-xs flex items-center"><MonitorSmartphone size={16} className="mr-2 text-orange-500"/> Advanced POS Workflow Engine</h3>
-                    
                     <div className="grid grid-cols-1 gap-4">
-                      {/* ALL CATEGORY FILTER TOGGLE */}
                       <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
                         <div>
                           <h4 className="font-bold text-sm text-slate-800">'ALL' Menu Filter</h4>
@@ -426,8 +416,6 @@ export default function SettingsPage() {
                           {generalSettings.showAllFilter ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
                         </button>
                       </div>
-
-                      {/* Auto Round Off */}
                       <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
                         <div>
                           <h4 className="font-bold text-sm text-slate-800">Auto Round-off</h4>
@@ -437,8 +425,6 @@ export default function SettingsPage() {
                           {generalSettings.autoRoundOff ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
                         </button>
                       </div>
-
-                      {/* Inventory Alerts */}
                       <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
                         <div>
                           <h4 className="font-bold text-sm text-slate-800 flex items-center"><AlertTriangle size={12} className="mr-1 text-red-500"/> Stock Alerts</h4>
@@ -450,12 +436,11 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   </div>
-
                 </div>
               </div>
             )}
 
-            {/* 2. PRINTER & KOT TAB */}
+            {/* 2. PRINTER TAB */}
             {activeTab === "printer" && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -464,16 +449,12 @@ export default function SettingsPage() {
                     {isSavingPrinter ? <Loader2 size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />} Save Layout
                   </button>
                 </div>
-
-                {/* Sub Tab Switcher */}
                 <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
                    <button onClick={() => setPrinterSubTab("LAYOUT")} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors ${printerSubTab === 'LAYOUT' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Bill Layout Editor</button>
                    <button onClick={() => setPrinterSubTab("KDS_ROUTING")} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-colors ${printerSubTab === 'KDS_ROUTING' ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Multi-Printer & KOT Routing</button>
                 </div>
-
                 {printerSubTab === "LAYOUT" && (
                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in slide-in-from-left-2 mt-4">
-                     {/* Hardware */}
                      <div className="space-y-5">
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600">1. Physical Hardware Roll Size</h3>
                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
@@ -482,7 +463,6 @@ export default function SettingsPage() {
                            <option value="58mm">2-Inch (58mm) Mini Thermal</option><option value="80mm">3-Inch (80mm) Standard POS</option><option value="100mm">4-Inch (100mm) Label Roll</option><option value="125mm">5-Inch (125mm) Wide Format</option>
                          </select>
                        </div>
-
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600 pt-2">2. Dynamic KOT Routing Engine</h3>
                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                          <div className="flex justify-between items-center"><div><h4 className="font-bold text-slate-800 text-xs">DINE IN KOT</h4><p className="text-[10px] text-slate-500">Table orders token.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDineIn: !printerSettings.kotDineIn})}>{printerSettings.kotDineIn ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
@@ -490,36 +470,20 @@ export default function SettingsPage() {
                          <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                        </div>
                      </div>
-
-                     {/* Custom Receipt Text & Font Size Editors */}
                      <div className="space-y-4">
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
-                       
-                       {/* Header Row */}
                        <div className="flex space-x-2">
-                         <div className="flex-1">
-                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label>
-                           <input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" />
-                         </div>
-                         <div className="w-1/3">
-                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label>
-                           <select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold">
-                             <option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option>
-                             <option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option>
-                           </select>
-                         </div>
+                         <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label><input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" /></div>
+                         <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold"><option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option></select></div>
                        </div>
-
                        <div className="flex space-x-2">
                          <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Sub-Header</label><input type="text" value={printerSettings.subHeader} onChange={(e) => setPrinterSettings({...printerSettings, subHeader: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
                          <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.subHeaderSize} onChange={(e) => setPrinterSettings({...printerSettings, subHeaderSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
                        </div>
-
                        <div className="flex space-x-2">
                          <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">GSTIN</label><input type="text" value={printerSettings.gstNo} onChange={(e) => setPrinterSettings({...printerSettings, gstNo: e.target.value.toUpperCase()})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold uppercase focus:border-orange-500" /></div>
                          <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.gstSize} onChange={(e) => setPrinterSettings({...printerSettings, gstSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[9px]">Small</option><option value="text-[10px]">Normal</option><option value="text-xs">Large</option></select></div>
                        </div>
-
                        <div className="flex space-x-2">
                          <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Footer Message</label><input type="text" value={printerSettings.footerMsg} onChange={(e) => setPrinterSettings({...printerSettings, footerMsg: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
                          <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.footerSize} onChange={(e) => setPrinterSettings({...printerSettings, footerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white"><option value="text-[10px]">Small</option><option value="text-xs">Normal</option><option value="text-sm">Large</option></select></div>
@@ -527,7 +491,6 @@ export default function SettingsPage() {
                      </div>
                    </div>
                 )}
-
                 {printerSubTab === "KDS_ROUTING" && (
                    <div className="mt-4 animate-in slide-in-from-right-2">
                       <div className="bg-orange-50/50 p-6 rounded-2xl border border-orange-100 flex flex-col items-center justify-center text-center space-y-3 min-h-[300px]">
@@ -553,7 +516,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 3. E-BILL MESSAGING TAB */}
+            {/* 3. E-BILL TAB */}
             {activeTab === "ebill" && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -565,12 +528,8 @@ export default function SettingsPage() {
                     {isSavingPrinter ? <Loader2 size={18} className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />} Save Setup
                   </button>
                 </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  
-                  {/* APIs Column */}
                   <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* PROFESSIONAL SMS API PANEL */}
                     <div className={`p-5 rounded-2xl border transition-all ${printerSettings.enableSms ? 'bg-blue-50/40 border-blue-200 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-80'}`}>
                       <div className="flex justify-between items-start mb-4">
                         <div>
@@ -585,8 +544,6 @@ export default function SettingsPage() {
                         <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Sender ID (6 Chars)</label><input type="text" maxLength={6} placeholder="ZAPPED" value={printerSettings.smsSenderId || ""} onChange={(e) => setPrinterSettings({...printerSettings, smsSenderId: e.target.value.toUpperCase()})} className="w-full p-2 border border-blue-200 rounded-lg outline-none font-bold text-xs text-slate-800 bg-white uppercase shadow-sm" /></div>
                       </div>
                     </div>
-
-                    {/* WHATSAPP API PANEL */}
                     <div className={`p-5 rounded-2xl border transition-all ${printerSettings.enableWhatsapp ? 'bg-green-50/40 border-green-200 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-80'}`}>
                       <div className="flex justify-between items-start mb-4">
                         <div>
@@ -601,48 +558,23 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Triggers Column */}
                   <div className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg text-white">
-                    <h3 className="font-black flex items-center uppercase text-xs tracking-wider text-orange-400 mb-4 pb-2 border-b border-slate-700">
-                      <ToggleRight className="mr-2" size={18}/> Automation Triggers
-                    </h3>
-                    
+                    <h3 className="font-black flex items-center uppercase text-xs tracking-wider text-orange-400 mb-4 pb-2 border-b border-slate-700"><ToggleRight className="mr-2" size={18}/> Automation Triggers</h3>
                     <div className={`space-y-4 ${(printerSettings.enableSms || printerSettings.enableWhatsapp) ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
-                        <div><h4 className="font-bold text-sm text-slate-200">Billing E-Receipts</h4><p className="text-[9px] text-slate-400 mt-0.5">Send links when order saves.</p></div>
-                        <button onClick={() => setPrinterSettings({...printerSettings, triggerBilling: !printerSettings.triggerBilling})}>{printerSettings.triggerBilling ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
-                      </div>
-
-                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
-                        <div><h4 className="font-bold text-sm text-slate-200">CRM VIP Welcome</h4><p className="text-[9px] text-slate-400 mt-0.5">Auto-greet new registrations.</p></div>
-                        <button onClick={() => setPrinterSettings({...printerSettings, triggerCrmWelcome: !printerSettings.triggerCrmWelcome})}>{printerSettings.triggerCrmWelcome ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
-                      </div>
-
-                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
-                        <div><h4 className="font-bold text-sm text-slate-200">Points & Coupons</h4><p className="text-[9px] text-slate-400 mt-0.5">Updates on redeem/earning.</p></div>
-                        <button onClick={() => setPrinterSettings({...printerSettings, triggerCrmPoints: !printerSettings.triggerCrmPoints})}>{printerSettings.triggerCrmPoints ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
-                      </div>
-
-                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
-                        <div><h4 className="font-bold text-sm text-slate-200">Ad Campaigns</h4><p className="text-[9px] text-slate-400 mt-0.5">Allow Bulk Marketing send.</p></div>
-                        <button onClick={() => setPrinterSettings({...printerSettings, triggerCrmMarketing: !printerSettings.triggerCrmMarketing})}>{printerSettings.triggerCrmMarketing ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button>
-                      </div>
-                      
-                      {!(printerSettings.enableSms || printerSettings.enableWhatsapp) && (
-                        <p className="text-[9px] text-center text-red-400 font-bold uppercase mt-2">Enable at least 1 provider to unlock triggers.</p>
-                      )}
+                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50"><div><h4 className="font-bold text-sm text-slate-200">Billing E-Receipts</h4><p className="text-[9px] text-slate-400 mt-0.5">Send links when order saves.</p></div><button onClick={() => setPrinterSettings({...printerSettings, triggerBilling: !printerSettings.triggerBilling})}>{printerSettings.triggerBilling ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button></div>
+                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50"><div><h4 className="font-bold text-sm text-slate-200">CRM VIP Welcome</h4><p className="text-[9px] text-slate-400 mt-0.5">Auto-greet new registrations.</p></div><button onClick={() => setPrinterSettings({...printerSettings, triggerCrmWelcome: !printerSettings.triggerCrmWelcome})}>{printerSettings.triggerCrmWelcome ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button></div>
+                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50"><div><h4 className="font-bold text-sm text-slate-200">Points & Coupons</h4><p className="text-[9px] text-slate-400 mt-0.5">Updates on redeem/earning.</p></div><button onClick={() => setPrinterSettings({...printerSettings, triggerCrmPoints: !printerSettings.triggerCrmPoints})}>{printerSettings.triggerCrmPoints ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button></div>
+                      <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50"><div><h4 className="font-bold text-sm text-slate-200">Ad Campaigns</h4><p className="text-[9px] text-slate-400 mt-0.5">Allow Bulk Marketing send.</p></div><button onClick={() => setPrinterSettings({...printerSettings, triggerCrmMarketing: !printerSettings.triggerCrmMarketing})}>{printerSettings.triggerCrmMarketing ? <ToggleRight className="text-orange-500" size={28} /> : <ToggleLeft className="text-slate-600" size={28} />}</button></div>
+                      {!(printerSettings.enableSms || printerSettings.enableWhatsapp) && (<p className="text-[9px] text-center text-red-400 font-bold uppercase mt-2">Enable at least 1 provider to unlock triggers.</p>)}
                     </div>
                   </div>
-
                 </div>
               </div>
             )}
 
-            {/* 4. STAFF & SECURITY ACCESS TAB */}
+            {/* 4. STAFF TAB */}
             {activeTab === "staff" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full">
-                 
                  <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
                    <div>
                      <h2 className="text-xl font-bold text-slate-800 flex items-center"><ShieldCheck className="mr-2 text-orange-500" /> Role-Based Access Control</h2>
@@ -657,123 +589,52 @@ export default function SettingsPage() {
                      </button>
                    </div>
                  </div>
-
                  <div className="flex-1 overflow-y-auto pr-2 mt-6 space-y-8">
-                   
-                   {/* Staff Table */}
                    <div>
                      <table className="w-full text-left border-collapse">
                        <thead className="bg-slate-50 sticky top-0">
                          <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                           <th className="p-4 rounded-tl-xl">Staff Name</th>
-                           <th className="p-4 text-center">Auth PIN</th>
-                           <th className="p-4 text-center">Role / Access</th>
-                           <th className="p-4 text-right rounded-tr-xl">Action</th>
+                           <th className="p-4 rounded-tl-xl">Staff Name</th><th className="p-4 text-center">Auth PIN</th><th className="p-4 text-center">Role / Access</th><th className="p-4 text-right rounded-tr-xl">Action</th>
                          </tr>
                        </thead>
                        <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
                          {staffList.map((staff) => (
                            <tr key={staff.id} className="hover:bg-slate-50/50">
-                             <td className="p-4">
-                               <div className="flex items-center">
-                                 <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs mr-3 uppercase">{staff.name.substring(0, 2)}</div>
-                                 <span className="uppercase text-slate-900">{staff.name}</span>
-                               </div>
-                             </td>
-                             <td className="p-4 text-center">
-                               <span className="font-mono tracking-widest bg-slate-100 px-3 py-1 rounded-lg text-slate-600">••••</span>
-                               <span className="text-[9px] text-slate-400 block mt-1">({staff.pin})</span> 
-                             </td>
-                             <td className="p-4 text-center">
-                               <span className={`text-[9px] px-3 py-1 rounded-full uppercase tracking-widest border ${staff.role === 'ADMIN' ? 'bg-amber-100 border-amber-300 text-amber-700' : staff.role === 'MANAGER' ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-slate-100 border-slate-300 text-slate-600'}`}>
-                                 {staff.role}
-                               </span>
-                             </td>
-                             <td className="p-4 text-right">
-                               <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
-                                 <Trash2 size={16}/>
-                               </button>
-                             </td>
+                             <td className="p-4"><div className="flex items-center"><div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-black text-xs mr-3 uppercase">{staff.name.substring(0, 2)}</div><span className="uppercase text-slate-900">{staff.name}</span></div></td>
+                             <td className="p-4 text-center"><span className="font-mono tracking-widest bg-slate-100 px-3 py-1 rounded-lg text-slate-600">••••</span><span className="text-[9px] text-slate-400 block mt-1">({staff.pin})</span></td>
+                             <td className="p-4 text-center"><span className={`text-[9px] px-3 py-1 rounded-full uppercase tracking-widest border ${staff.role === 'ADMIN' ? 'bg-amber-100 border-amber-300 text-amber-700' : staff.role === 'MANAGER' ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-slate-100 border-slate-300 text-slate-600'}`}>{staff.role}</span></td>
+                             <td className="p-4 text-right"><button onClick={() => handleDeleteStaff(staff.id)} className="text-red-500 hover:text-red-700 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"><Trash2 size={16}/></button></td>
                            </tr>
                          ))}
                        </tbody>
                      </table>
                    </div>
-
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* 🔥 Advanced Security Policies Engine */}
                       <div className="bg-red-50/30 p-5 rounded-2xl border border-red-100 h-fit">
                          <h3 className="font-black text-red-800 uppercase tracking-wider text-xs flex items-center mb-4"><Lock size={16} className="mr-2 text-red-500"/> Security & Authorization Policies</h3>
                          <div className="grid grid-cols-1 gap-4">
-                           
-                           <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                             <div>
-                               <h4 className="font-bold text-sm text-slate-800 flex items-center"><Trash2 size={12} className="mr-1 text-slate-400"/> Void/Cancel Checks</h4>
-                               <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN to cancel bills.</p>
-                             </div>
-                             <button onClick={() => setGeneralSettings({...generalSettings, requirePinForCancel: !generalSettings.requirePinForCancel})}>
-                               {generalSettings.requirePinForCancel ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
-                             </button>
-                           </div>
-
-                           <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                             <div>
-                               <h4 className="font-bold text-sm text-slate-800 flex items-center"><Percent size={12} className="mr-1 text-slate-400"/> Manual Discounts</h4>
-                               <p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN for discounts.</p>
-                             </div>
-                             <button onClick={() => setGeneralSettings({...generalSettings, requirePinForDiscount: !generalSettings.requirePinForDiscount})}>
-                               {generalSettings.requirePinForDiscount ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}
-                             </button>
-                           </div>
-
-                           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
-                             <div className="flex-1">
-                               <h4 className="font-bold text-sm text-slate-800 flex items-center"><Clock size={12} className="mr-1 text-slate-400"/> Session Timeout</h4>
-                               <p className="text-[9px] font-bold text-slate-400 mt-0.5">Auto-lock POS after inactivity.</p>
-                             </div>
-                             <div className="w-16">
-                               <select value={generalSettings.autoLogoutMins} onChange={(e) => setGeneralSettings({...generalSettings, autoLogoutMins: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white font-black text-slate-800 text-center">
-                                 <option value="15">15m</option><option value="30">30m</option><option value="60">1Hr</option><option value="OFF">OFF</option>
-                               </select>
-                             </div>
-                           </div>
-
+                           <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm"><div><h4 className="font-bold text-sm text-slate-800 flex items-center"><Trash2 size={12} className="mr-1 text-slate-400"/> Void/Cancel Checks</h4><p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN to cancel bills.</p></div><button onClick={() => setGeneralSettings({...generalSettings, requirePinForCancel: !generalSettings.requirePinForCancel})}>{generalSettings.requirePinForCancel ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                           <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm"><div><h4 className="font-bold text-sm text-slate-800 flex items-center"><Percent size={12} className="mr-1 text-slate-400"/> Manual Discounts</h4><p className="text-[9px] font-bold text-slate-400 mt-0.5">Require Admin PIN for discounts.</p></div><button onClick={() => setGeneralSettings({...generalSettings, requirePinForDiscount: !generalSettings.requirePinForDiscount})}>{generalSettings.requirePinForDiscount ? <ToggleRight className="text-red-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3"><div className="flex-1"><h4 className="font-bold text-sm text-slate-800 flex items-center"><Clock size={12} className="mr-1 text-slate-400"/> Session Timeout</h4><p className="text-[9px] font-bold text-slate-400 mt-0.5">Auto-lock POS after inactivity.</p></div><div className="w-16"><select value={generalSettings.autoLogoutMins} onChange={(e) => setGeneralSettings({...generalSettings, autoLogoutMins: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white font-black text-slate-800 text-center"><option value="15">15m</option><option value="30">30m</option><option value="60">1Hr</option><option value="OFF">OFF</option></select></div></div>
                          </div>
                       </div>
-
-                      {/* 🔥 Operators (DOARS) Management */}
                       <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100 h-fit">
                          <h3 className="font-black text-indigo-800 uppercase tracking-wider text-xs flex items-center mb-4"><Users size={16} className="mr-2 text-indigo-500"/> Operator (Doars) List Management</h3>
                          <p className="text-[10px] font-bold text-indigo-600/70 mb-4">Add authorized names to display in Petty Cash and Purchase (GRN) operator dropdowns.</p>
-                         
-                         <div className="flex items-center space-x-2 mb-4">
-                           <input 
-                             type="text" 
-                             placeholder="E.g. Cashier Rahul" 
-                             value={newDoarInput} 
-                             onChange={(e) => setNewDoarInput(e.target.value)} 
-                             className="flex-1 p-2.5 border border-indigo-200 rounded-xl outline-none font-bold text-xs"
-                           />
-                           <button onClick={handleAddDoar} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase px-4 py-3 rounded-xl transition-all shadow-sm">Add Doar</button>
-                         </div>
-
+                         <div className="flex items-center space-x-2 mb-4"><input type="text" placeholder="E.g. Cashier Rahul" value={newDoarInput} onChange={(e) => setNewDoarInput(e.target.value)} className="flex-1 p-2.5 border border-indigo-200 rounded-xl outline-none font-bold text-xs"/><button onClick={handleAddDoar} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase px-4 py-3 rounded-xl transition-all shadow-sm">Add Doar</button></div>
                          <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
                            {doarList.map((doar, idx) => (
-                              <div key={idx} className="flex justify-between items-center bg-white border border-slate-200 p-2.5 rounded-xl shadow-sm">
-                                 <span className="font-bold text-xs text-slate-700 capitalize">{doar}</span>
-                                 <button onClick={() => handleRemoveDoar(doar)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors"><Trash2 size={14}/></button>
-                              </div>
+                              <div key={idx} className="flex justify-between items-center bg-white border border-slate-200 p-2.5 rounded-xl shadow-sm"><span className="font-bold text-xs text-slate-700 capitalize">{doar}</span><button onClick={() => handleRemoveDoar(doar)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors"><Trash2 size={14}/></button></div>
                            ))}
                            {doarList.length === 0 && <p className="text-xs font-bold text-slate-400 text-center italic py-2">No operators configured.</p>}
                          </div>
                       </div>
                    </div>
-
                  </div>
               </div>
             )}
 
-            {/* 5. --- NEW: DIRECT APP INSTALLATION TAB --- */}
+            {/* 5. 🔥 NEW: DIRECT 1-CLICK PWA INSTALLATION TAB */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -785,7 +646,7 @@ export default function SettingsPage() {
                       </div>
                       <h2 className="text-2xl font-black text-slate-800 tracking-tight">App Installed</h2>
                       <p className="text-sm font-bold text-slate-500">
-                        ZedPoss is currently running as a standalone offline app on this device. Smooth and fast billing is active!
+                        ZedPoss is currently running as a real native app on this device. Smooth and fast offline billing is active!
                       </p>
                       <button disabled className="mt-6 w-full bg-slate-200 text-slate-500 py-3 rounded-xl font-black uppercase text-xs cursor-not-allowed">
                         Already Installed
@@ -794,35 +655,23 @@ export default function SettingsPage() {
                   ) : (
                     <div className="space-y-4">
                       <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 relative">
-                        <Download size={40} />
+                        <MonitorPlay size={40} />
+                        <span className="absolute -bottom-2 -right-2 bg-white text-orange-600 rounded-full p-1 shadow-sm border border-orange-100">
+                           <Download size={16} />
+                        </span>
                       </div>
-                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Download Native App</h2>
+                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Install ZedPoss App</h2>
                       <p className="text-sm font-bold text-slate-500 px-4">
-                        Download the official ZedPOS application directly to your device. It runs perfectly offline as a standalone app.
+                        Install this application directly to your computer or mobile. It runs smoothly offline without needing the browser!
                       </p>
                       
-                      <div className="pt-4 space-y-4">
-                        {/* Windows Download Button */}
-                        <a 
-                          href="/downloads/ZedPoss-desktop.zip" 
-                          download="ZedPoss-desktop.zip"
-                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center cursor-pointer"
+                      <div className="pt-4 space-y-3">
+                        <button 
+                          onClick={handleInstallApp} 
+                          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
                         >
-                          <MonitorPlay size={18} className="mr-2 text-blue-400" /> Download for Windows PC
-                        </a>
-
-                        {/* Android Download Button */}
-                        <a 
-                          href="/downloads/ZedPoss-mobile.apk" 
-                          download="ZedPoss-mobile.apk"
-                          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center cursor-pointer"
-                        >
-                          <Smartphone size={18} className="mr-2" /> Download Android APK
-                        </a>
-                        
-                        <p className="text-[10px] text-slate-400 font-bold px-2 mt-4 bg-slate-200/50 p-2 rounded-lg">
-                          Note: For Android, you may need to allow "Install from Unknown Sources" in your phone settings to install this private company app.
-                        </p>
+                          <Download size={18} className="mr-2" /> Install Application Now
+                        </button>
                       </div>
                     </div>
                   )}
