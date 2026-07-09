@@ -14,20 +14,16 @@ const defaultPrinterConfig = {
   gstSize: "text-[9px]",
   footerMsg: "Thank You! Visit Again.",
   footerSize: "text-[10px]",
-  
   kotDineIn: true,
   kotDelivery: true,
   kotPickUp: false,
-  
   enableWhatsapp: false,
   whatsappNumber: "",
   whatsappApiKey: "",
-  
   enableSms: false,
   smsGatewayUrl: "",
   smsApiKey: "",
   smsSenderId: "",
-
   triggerBilling: true,
   triggerCrmWelcome: true,
   triggerCrmPoints: true,
@@ -38,7 +34,6 @@ const defaultGeneralConfig = {
   autoRoundOff: true,
   lowStockAlerts: true,
   showAllFilter: true,
-  
   requirePinForCancel: true,
   requirePinForDiscount: true,
   autoLogoutMins: "30"
@@ -71,13 +66,12 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
-  // --- 🔥 PROPER APP INSTALLATION STATES ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
 
-  // 👇 YAHAN APNE GOOGLE DRIVE/EXTERNAL DOWNLOAD LINKS DAALIYE 👇
-  const WINDOWS_EXE_LINK = "#"; // Example: "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
-  const ANDROID_APK_LINK = "#"; // Example: "https://drive.google.com/uc?export=download&id=YOUR_FILE_ID"
+  // 👇 YAHAN GITHUB RELEASES KE ASLI DOWNLOAD LINKS PASTE KAREIN 👇
+  const WINDOWS_EXE_LINK = "https://github.com/YOUR_USERNAME/zedposs/releases/download/v1.0.0/ZedPoss-desktop.zip"; 
+  const ANDROID_APK_LINK = "https://github.com/YOUR_USERNAME/zedposs/releases/download/v1.0.0/ZedPoss-mobile.apk";
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -91,14 +85,11 @@ export default function SettingsPage() {
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsAppInstalled(true);
       }
-
       const handleBeforeInstall = (e: any) => {
         e.preventDefault();
         setDeferredPrompt(e);
       };
-
       window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-
       return () => {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
@@ -136,13 +127,11 @@ export default function SettingsPage() {
            const parsed = JSON.parse(savedGeneral);
            setGeneralSettings({ ...defaultGeneralConfig, ...(typeof parsed === 'object' ? parsed : {}) });
         }
-
         const savedPrinter = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
         if (savedPrinter) {
            const parsed = JSON.parse(savedPrinter);
            setPrinterSettings({ ...defaultPrinterConfig, ...(typeof parsed === 'object' ? parsed : {}) });
         }
-
         const savedStaff = localStorage.getItem(`zapped_staff_list_${secureOutletId}`);
         if (savedStaff) {
            const parsed = JSON.parse(savedStaff);
@@ -158,11 +147,9 @@ export default function SettingsPage() {
       
       if (data.success) {
         if (data.outletMaster) setOutletMasterData(data.outletMaster);
-        
         if (data.doarList && Array.isArray(data.doarList)) {
             setDoarList(data.doarList.length > 0 ? data.doarList : ["Admin", "Manager"]);
         }
-
         if (data.generalSettings) {
           const safeGeneral = typeof data.generalSettings === 'string' ? JSON.parse(data.generalSettings) : data.generalSettings;
           const mergedGeneral = { ...defaultGeneralConfig, ...(typeof safeGeneral === 'object' ? safeGeneral : {}) };
@@ -170,14 +157,12 @@ export default function SettingsPage() {
           localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(mergedGeneral));
           localStorage.setItem(`zapped_show_all_filter`, String(mergedGeneral.showAllFilter));
         }
-
         if (data.printerSettings) {
           const safePrinter = typeof data.printerSettings === 'string' ? JSON.parse(data.printerSettings) : data.printerSettings;
           const mergedPrinter = { ...defaultPrinterConfig, ...(typeof safePrinter === 'object' ? safePrinter : {}) };
           setPrinterSettings(mergedPrinter);
           localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(mergedPrinter));
         }
-
         if (data.staffList && Array.isArray(data.staffList)) {
           setStaffList(data.staffList);
           localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(data.staffList));
@@ -321,7 +306,6 @@ export default function SettingsPage() {
     }
   };
 
-  // --- 🔥 BROWSER NATIVE AUTO-INSTALLER ---
   const handleAutoInstall = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
@@ -353,7 +337,6 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* TABS */}
           <div className="w-full lg:w-64 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 h-fit shrink-0">
             <nav className="space-y-2">
               <button onClick={() => setActiveTab("general")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'general' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Settings2 size={20} /> <span>General & Options</span></button>
@@ -361,15 +344,12 @@ export default function SettingsPage() {
               <button onClick={() => setActiveTab("ebill")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'ebill' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><MessageSquare size={20} /> <span>E-Bill & Comm.</span></button>
               <button onClick={() => setActiveTab("staff")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'staff' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><ShieldCheck size={20} /> <span>Staff & Security</span></button>
               
-              {/* Installation Tab Button */}
               <button onClick={() => setActiveTab("installation")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'installation' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Download size={20} /> <span>App Installation</span></button>
             </nav>
           </div>
 
-          {/* CONTENT */}
           <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 min-h-[600px]">
             
-            {/* 1. GENERAL TAB */}
             {activeTab === "general" && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -441,7 +421,6 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 2. PRINTER TAB */}
             {activeTab === "printer" && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -471,20 +450,11 @@ export default function SettingsPage() {
                          <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                        </div>
                      </div>
-
-                     {/* Custom Receipt Text & Font Size Editors */}
                      <div className="space-y-4">
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
-                       
                        <div className="flex space-x-2">
-                         <div className="flex-1">
-                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label>
-                           <input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" />
-                         </div>
-                         <div className="w-1/3">
-                           <label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label>
-                           <select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold"><option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option></select>
-                         </div>
+                         <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Header Name (Brand)</label><input type="text" value={printerSettings.headerName} onChange={(e) => setPrinterSettings({...printerSettings, headerName: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none font-black text-sm uppercase text-slate-900 focus:border-orange-500" /></div>
+                         <div className="w-1/3"><label className="block text-[10px] font-bold text-slate-600 mb-1">Size</label><select value={printerSettings.headerSize} onChange={(e) => setPrinterSettings({...printerSettings, headerSize: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-xs bg-white focus:border-orange-500 font-bold"><option value="text-sm">Small</option><option value="text-base">Normal</option><option value="text-lg">Large</option><option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option><option value="text-7xl">7XL</option></select></div>
                        </div>
                        <div className="flex space-x-2">
                          <div className="flex-1"><label className="block text-[10px] font-bold text-slate-600 mb-1">Sub-Header</label><input type="text" value={printerSettings.subHeader} onChange={(e) => setPrinterSettings({...printerSettings, subHeader: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm font-bold focus:border-orange-500" /></div>
@@ -526,7 +496,6 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 3. E-BILL TAB */}
             {activeTab === "ebill" && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -582,7 +551,6 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 4. STAFF TAB */}
             {activeTab === "staff" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full">
                  <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
