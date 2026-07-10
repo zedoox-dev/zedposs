@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone, Download, MonitorPlay, CheckCircle2, CloudDownload } from "lucide-react";
+import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone, Download, MonitorPlay, CheckCircle2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -71,13 +71,9 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
-  // --- 🔥 PROPER APP INSTALLATION STATES ---
+  // --- 🔥 STRICT PRODUCTION APP INSTALLATION ENGINE ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
-
-  // 👇 GITHUB RELEASES ASLI DIRECT DOWNLOAD LINKS 👇
-  const WINDOWS_EXE_LINK = "https://github.com/zedoox-dev/zedposs/releases/download/v1.0.0/ZedPoss.zip"; 
-  const ANDROID_APK_LINK = "https://github.com/zedoox-dev/zedposs/releases/download/v1.0.0/ZedPoss.-.Google.Play.package.zip";
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -88,10 +84,12 @@ export default function SettingsPage() {
     setIsMounted(true); 
 
     if (typeof window !== 'undefined') {
+      // Check if the app is already installed and running in standalone mode
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsAppInstalled(true);
       }
 
+      // Capture the browser's native install prompt
       const handleBeforeInstall = (e: any) => {
         e.preventDefault();
         setDeferredPrompt(e);
@@ -321,8 +319,10 @@ export default function SettingsPage() {
     }
   };
 
-  const handleAutoInstall = async () => {
+  // --- 🔥 THE REAL NATIVE INSTALLATION TRIGGER ---
+  const handleNativeInstall = async () => {
     if (deferredPrompt) {
+      // Ye browser ka native engine call karega aur direct install karega
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
@@ -330,7 +330,7 @@ export default function SettingsPage() {
       }
       setDeferredPrompt(null);
     } else {
-      alert("System auto-installer is ready. Click the Install (🖥️) icon in your address bar top right!");
+      alert("Your system is already configured for the app. Look for the install icon (🖥️ or ⬇️) in your browser's address bar at the top right to complete installation.");
     }
   };
 
@@ -465,6 +465,7 @@ export default function SettingsPage() {
                          <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                        </div>
                      </div>
+
                      <div className="space-y-4">
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
                        <div className="flex space-x-2">
@@ -627,7 +628,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 5. 🔥 FINAL: DIRECT APP DOWNLOAD TAB */}
+            {/* 5. 🔥 PURE NATIVE BROWSER INSTALLATION TAB */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -639,10 +640,10 @@ export default function SettingsPage() {
                       </div>
                       <h2 className="text-2xl font-black text-slate-800 tracking-tight">App Installed</h2>
                       <p className="text-sm font-bold text-slate-500">
-                        ZedPoss is currently running as a real native app on this device. Smooth and fast offline billing is active!
+                        ZedPoss is successfully running natively on this device. Your offline billing system is fully active and cached!
                       </p>
                       <button disabled className="mt-6 w-full bg-slate-200 text-slate-500 py-3 rounded-xl font-black uppercase text-xs cursor-not-allowed">
-                        Already Installed
+                        App is Currently Running
                       </button>
                     </div>
                   ) : (
@@ -650,44 +651,18 @@ export default function SettingsPage() {
                       <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 relative">
                         <Download size={40} />
                       </div>
-                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Download Native App</h2>
-                      <p className="text-sm font-bold text-slate-500 px-4 mb-4">
-                        Download the official ZedPOS application directly to your device. Install it once to use the system completely offline.
+                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Install ZedPoss App</h2>
+                      <p className="text-xs font-bold text-slate-500 px-4 mb-4">
+                        Click below to instantly install ZedPoss directly to your device. No extra files or zips required. Runs smoothly offline!
                       </p>
                       
                       <div className="pt-4 space-y-4">
-                        
-                        {/* THE NATIVE BROWSER INSTALL */}
                         <button 
-                          onClick={handleAutoInstall} 
-                          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
+                          onClick={handleNativeInstall} 
+                          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black uppercase tracking-wider text-sm shadow-lg active:scale-95 transition-all flex justify-center items-center"
                         >
-                          <Download size={18} className="mr-2" /> Auto-Install Web App
+                          <Download size={20} className="mr-2" /> Install ZedPoss Now
                         </button>
-                        
-                        <div className="py-2 flex items-center justify-center">
-                          <div className="h-px bg-slate-200 flex-1"></div>
-                          <span className="px-3 text-[10px] font-black text-slate-400 uppercase">OR DOWNLOAD FILES</span>
-                          <div className="h-px bg-slate-200 flex-1"></div>
-                        </div>
-
-                        {/* EXTERNAL GITHUB FILE LINKS */}
-                        <a 
-                          href={WINDOWS_EXE_LINK} 
-                          target="_blank" rel="noreferrer"
-                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
-                        >
-                          <MonitorPlay size={18} className="mr-2 text-blue-400" /> Download Windows Setup
-                        </a>
-
-                        <a 
-                          href={ANDROID_APK_LINK} 
-                          target="_blank" rel="noreferrer"
-                          className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
-                        >
-                          <Smartphone size={18} className="mr-2 text-emerald-400" /> Download Android APK
-                        </a>
-
                       </div>
                     </div>
                   )}
