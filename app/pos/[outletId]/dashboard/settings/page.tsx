@@ -14,16 +14,20 @@ const defaultPrinterConfig = {
   gstSize: "text-[9px]",
   footerMsg: "Thank You! Visit Again.",
   footerSize: "text-[10px]",
+  
   kotDineIn: true,
   kotDelivery: true,
   kotPickUp: false,
+  
   enableWhatsapp: false,
   whatsappNumber: "",
   whatsappApiKey: "",
+  
   enableSms: false,
   smsGatewayUrl: "",
   smsApiKey: "",
   smsSenderId: "",
+
   triggerBilling: true,
   triggerCrmWelcome: true,
   triggerCrmPoints: true,
@@ -34,6 +38,7 @@ const defaultGeneralConfig = {
   autoRoundOff: true,
   lowStockAlerts: true,
   showAllFilter: true,
+  
   requirePinForCancel: true,
   requirePinForDiscount: true,
   autoLogoutMins: "30"
@@ -66,12 +71,13 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
+  // --- 🔥 PROPER APP INSTALLATION STATES ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
 
-  // 👇 YAHAN GITHUB RELEASES KE ASLI DOWNLOAD LINKS PASTE KAREIN 👇
-  const WINDOWS_EXE_LINK = "https://github.com/YOUR_USERNAME/zedposs/releases/download/v1.0.0/ZedPoss-desktop.zip"; 
-  const ANDROID_APK_LINK = "https://github.com/YOUR_USERNAME/zedposs/releases/download/v1.0.0/ZedPoss-mobile.apk";
+  // 👇 GITHUB RELEASES ASLI DIRECT DOWNLOAD LINKS 👇
+  const WINDOWS_EXE_LINK = "https://github.com/zedoox-dev/zedposs/releases/download/v1.0.0/ZedPoss.zip"; 
+  const ANDROID_APK_LINK = "https://github.com/zedoox-dev/zedposs/releases/download/v1.0.0/ZedPoss.-.Google.Play.package.zip";
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -85,11 +91,14 @@ export default function SettingsPage() {
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsAppInstalled(true);
       }
+
       const handleBeforeInstall = (e: any) => {
         e.preventDefault();
         setDeferredPrompt(e);
       };
+
       window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+
       return () => {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
@@ -127,11 +136,13 @@ export default function SettingsPage() {
            const parsed = JSON.parse(savedGeneral);
            setGeneralSettings({ ...defaultGeneralConfig, ...(typeof parsed === 'object' ? parsed : {}) });
         }
+
         const savedPrinter = localStorage.getItem(`zapped_printer_config_${secureOutletId}`);
         if (savedPrinter) {
            const parsed = JSON.parse(savedPrinter);
            setPrinterSettings({ ...defaultPrinterConfig, ...(typeof parsed === 'object' ? parsed : {}) });
         }
+
         const savedStaff = localStorage.getItem(`zapped_staff_list_${secureOutletId}`);
         if (savedStaff) {
            const parsed = JSON.parse(savedStaff);
@@ -147,9 +158,11 @@ export default function SettingsPage() {
       
       if (data.success) {
         if (data.outletMaster) setOutletMasterData(data.outletMaster);
+        
         if (data.doarList && Array.isArray(data.doarList)) {
             setDoarList(data.doarList.length > 0 ? data.doarList : ["Admin", "Manager"]);
         }
+
         if (data.generalSettings) {
           const safeGeneral = typeof data.generalSettings === 'string' ? JSON.parse(data.generalSettings) : data.generalSettings;
           const mergedGeneral = { ...defaultGeneralConfig, ...(typeof safeGeneral === 'object' ? safeGeneral : {}) };
@@ -157,12 +170,14 @@ export default function SettingsPage() {
           localStorage.setItem(`zapped_general_config_${secureOutletId}`, JSON.stringify(mergedGeneral));
           localStorage.setItem(`zapped_show_all_filter`, String(mergedGeneral.showAllFilter));
         }
+
         if (data.printerSettings) {
           const safePrinter = typeof data.printerSettings === 'string' ? JSON.parse(data.printerSettings) : data.printerSettings;
           const mergedPrinter = { ...defaultPrinterConfig, ...(typeof safePrinter === 'object' ? safePrinter : {}) };
           setPrinterSettings(mergedPrinter);
           localStorage.setItem(`zapped_printer_config_${secureOutletId}`, JSON.stringify(mergedPrinter));
         }
+
         if (data.staffList && Array.isArray(data.staffList)) {
           setStaffList(data.staffList);
           localStorage.setItem(`zapped_staff_list_${secureOutletId}`, JSON.stringify(data.staffList));
@@ -612,7 +627,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 5. 🔥 NEW: PROPER APP INSTALLATION TAB */}
+            {/* 5. 🔥 FINAL: DIRECT APP DOWNLOAD TAB */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -633,24 +648,21 @@ export default function SettingsPage() {
                   ) : (
                     <div className="space-y-4">
                       <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 relative">
-                        <MonitorPlay size={40} />
-                        <span className="absolute -bottom-2 -right-2 bg-white text-orange-600 rounded-full p-1 shadow-sm border border-orange-100">
-                           <Download size={16} />
-                        </span>
+                        <Download size={40} />
                       </div>
-                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Install ZedPoss App</h2>
-                      <p className="text-xs font-bold text-slate-500 px-4 mb-4">
-                        Option 1: Auto-install directly via Browser. Option 2: Download external setup files.
+                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">Download Native App</h2>
+                      <p className="text-sm font-bold text-slate-500 px-4 mb-4">
+                        Download the official ZedPOS application directly to your device. Install it once to use the system completely offline.
                       </p>
                       
-                      <div className="pt-4 space-y-3">
+                      <div className="pt-4 space-y-4">
                         
                         {/* THE NATIVE BROWSER INSTALL */}
                         <button 
                           onClick={handleAutoInstall} 
                           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
                         >
-                          <Download size={18} className="mr-2" /> Auto-Install App (Recommended)
+                          <Download size={18} className="mr-2" /> Auto-Install Web App
                         </button>
                         
                         <div className="py-2 flex items-center justify-center">
@@ -659,13 +671,13 @@ export default function SettingsPage() {
                           <div className="h-px bg-slate-200 flex-1"></div>
                         </div>
 
-                        {/* EXTERNAL FILE LINKS */}
+                        {/* EXTERNAL GITHUB FILE LINKS */}
                         <a 
                           href={WINDOWS_EXE_LINK} 
                           target="_blank" rel="noreferrer"
                           className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
                         >
-                          <CloudDownload size={18} className="mr-2 text-blue-400" /> Download Windows Setup
+                          <MonitorPlay size={18} className="mr-2 text-blue-400" /> Download Windows Setup
                         </a>
 
                         <a 
@@ -673,7 +685,7 @@ export default function SettingsPage() {
                           target="_blank" rel="noreferrer"
                           className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center"
                         >
-                          <CloudDownload size={18} className="mr-2 text-emerald-400" /> Download Android APK
+                          <Smartphone size={18} className="mr-2 text-emerald-400" /> Download Android APK
                         </a>
 
                       </div>
