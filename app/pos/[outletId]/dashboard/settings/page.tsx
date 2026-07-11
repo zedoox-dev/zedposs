@@ -71,7 +71,7 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
-  // --- 🔥 STRICT PRODUCTION APP INSTALLATION ENGINE ---
+  // --- 🔥 PRODUCTION NATIVE INSTALL ENGINE ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
 
@@ -84,12 +84,10 @@ export default function SettingsPage() {
     setIsMounted(true); 
 
     if (typeof window !== 'undefined') {
-      // Check if the app is already installed and running in standalone mode
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsAppInstalled(true);
       }
 
-      // Capture the browser's native install prompt
       const handleBeforeInstall = (e: any) => {
         e.preventDefault();
         setDeferredPrompt(e);
@@ -319,10 +317,9 @@ export default function SettingsPage() {
     }
   };
 
-  // --- 🔥 THE REAL NATIVE INSTALLATION TRIGGER ---
-  const handleNativeInstall = async () => {
+  // --- 🔥 DIRECT APP INSTALLATION TRIGGER FUNCTION ---
+  const handleNativeInstallClick = async () => {
     if (deferredPrompt) {
-      // Ye browser ka native engine call karega aur direct install karega
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
@@ -330,7 +327,7 @@ export default function SettingsPage() {
       }
       setDeferredPrompt(null);
     } else {
-      alert("Your system is already configured for the app. Look for the install icon (🖥️ or ⬇️) in your browser's address bar at the top right to complete installation.");
+      alert("App installation prompt is syncing. If it doesn't open instantly, look for the install icon (🖥️) on the top right side of your address bar.");
     }
   };
 
@@ -352,6 +349,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
+          {/* TABS */}
           <div className="w-full lg:w-64 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 h-fit shrink-0">
             <nav className="space-y-2">
               <button onClick={() => setActiveTab("general")} className={`w-full flex items-center space-x-3 p-3 font-semibold rounded-xl text-left ${activeTab === 'general' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><Settings2 size={20} /> <span>General & Options</span></button>
@@ -363,8 +361,10 @@ export default function SettingsPage() {
             </nav>
           </div>
 
+          {/* CONTENT */}
           <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-6 min-h-[600px]">
             
+            {/* GENERAL TAB */}
             {activeTab === "general" && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -436,6 +436,7 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* PRINTER TAB */}
             {activeTab === "printer" && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -462,10 +463,9 @@ export default function SettingsPage() {
                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                          <div className="flex justify-between items-center"><div><h4 className="font-bold text-slate-800 text-xs">DINE IN KOT</h4><p className="text-[10px] text-slate-500">Table orders token.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDineIn: !printerSettings.kotDineIn})}>{printerSettings.kotDineIn ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                          <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">DELIVERY KOT</h4><p className="text-[10px] text-slate-500">Zomato/Swiggy slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDelivery: !printerSettings.kotDelivery})}>{printerSettings.kotDelivery ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
-                         <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
+                         <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kot@outletId: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                        </div>
                      </div>
-
                      <div className="space-y-4">
                        <h3 className="font-black text-slate-800 uppercase tracking-wider text-xs flex items-center text-orange-600"><ReceiptText size={14} className="mr-1"/> 3. Custom Bill Layout Styling</h3>
                        <div className="flex space-x-2">
@@ -512,6 +512,7 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* E-BILL TAB */}
             {activeTab === "ebill" && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -548,7 +549,7 @@ export default function SettingsPage() {
                         <button onClick={() => setPrinterSettings({...printerSettings, enableWhatsapp: !printerSettings.enableWhatsapp})}>{printerSettings.enableWhatsapp ? <ToggleRight className="text-green-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button>
                       </div>
                       <div className={`space-y-3 ${printerSettings.enableWhatsapp ? 'opacity-100 pointer-events-auto' : 'opacity-40 pointer-events-none'}`}>
-                        <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Phone Number ID</label><input type="tel" placeholder="e.g. 104928274..." value={printerSettings.whatsappNumber || ""} onChange={(e) => setPrinterSettings({...printerSettings, whatsappNumber: e.target.value.replace(/\D/g, '')})} className="w-full p-2 border border-green-200 rounded-lg outline-none font-mono text-[10px] text-slate-800 bg-white shadow-sm" /></div>
+                        <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Phone Number ID</label><input type="tel" placeholder="e.g. 104928274..." value={printerSettings.whatsappNumber || ""} onChange={(e) => setPrinterSettings({...whatsappNumber, whatsappNumber: e.target.value.replace(/\D/g, '')})} className="w-full p-2 border border-green-200 rounded-lg outline-none font-mono text-[10px] text-slate-800 bg-white shadow-sm" /></div>
                         <div><label className="block text-[9px] font-bold text-slate-600 mb-0.5 uppercase tracking-wider">Bearer Token</label><input type="password" placeholder="EAABwzX0..." value={printerSettings.whatsappApiKey || ""} onChange={(e) => setPrinterSettings({...printerSettings, whatsappApiKey: e.target.value})} className="w-full p-2 border border-green-200 rounded-lg outline-none font-mono text-[10px] text-slate-800 bg-white shadow-sm" /></div>
                       </div>
                     </div>
@@ -567,6 +568,7 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* STAFF TAB */}
             {activeTab === "staff" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full">
                  <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
@@ -628,7 +630,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* 5. 🔥 PURE NATIVE BROWSER INSTALLATION TAB */}
+            {/* --- 🔥 5. NATIVE 1-CLICK INSTALLATION TAB --- */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -649,16 +651,19 @@ export default function SettingsPage() {
                   ) : (
                     <div className="space-y-4">
                       <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 relative">
-                        <Download size={40} />
+                        <MonitorPlay size={40} />
+                        <span className="absolute -bottom-2 -right-2 bg-white text-orange-600 rounded-full p-1 shadow-sm border border-orange-100">
+                           <Download size={16} />
+                        </span>
                       </div>
                       <h2 className="text-2xl font-black text-slate-800 tracking-tight">Install ZedPoss App</h2>
                       <p className="text-xs font-bold text-slate-500 px-4 mb-4">
-                        Click below to instantly install ZedPoss directly to your device. No extra files or zips required. Runs smoothly offline!
+                        Click below to instantly install ZedPoss directly to your device. It runs smoothly offline without needing the browser shell!
                       </p>
                       
                       <div className="pt-4 space-y-4">
                         <button 
-                          onClick={handleNativeInstall} 
+                          onClick={handleNativeInstallClick} 
                           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black uppercase tracking-wider text-sm shadow-lg active:scale-95 transition-all flex justify-center items-center"
                         >
                           <Download size={20} className="mr-2" /> Install ZedPoss Now
