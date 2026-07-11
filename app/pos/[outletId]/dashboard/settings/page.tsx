@@ -71,9 +71,10 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
-  // --- 🔥 PRODUCTION NATIVE INSTALL ENGINE ---
+  // --- 🔥 STRICT NATIVE APP INSTALLATION ENGINE ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
+  const [showInstallGuidance, setShowInstallGuidance] = useState(false); // NEW: Professional Guidance UI state
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -88,8 +89,14 @@ export default function SettingsPage() {
         setIsAppInstalled(true);
       }
 
+      // Restore prompt if caught globally
+      if ((window as any).deferredPwaPrompt) {
+        setDeferredPrompt((window as any).deferredPwaPrompt);
+      }
+
       const handleBeforeInstall = (e: any) => {
         e.preventDefault();
+        (window as any).deferredPwaPrompt = e; // Store globally
         setDeferredPrompt(e);
       };
 
@@ -317,17 +324,27 @@ export default function SettingsPage() {
     }
   };
 
-  // --- 🔥 DIRECT APP INSTALLATION TRIGGER FUNCTION ---
+  // --- 🔥 DIRECT APP INSTALLATION ENGINE LOGIC ---
   const handleNativeInstallClick = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setIsAppInstalled(true);
+    const promptEvent = deferredPrompt || (window as any).deferredPwaPrompt;
+    
+    if (promptEvent) {
+      try {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
+        if (outcome === 'accepted') {
+          setIsAppInstalled(true);
+          setShowInstallGuidance(false);
+        }
+        setDeferredPrompt(null);
+        (window as any).deferredPwaPrompt = null;
+      } catch (error) {
+        console.error("Install prompt failed", error);
+        setShowInstallGuidance(true);
       }
-      setDeferredPrompt(null);
     } else {
-      alert("App installation prompt is syncing. If it doesn't open instantly, look for the install icon (🖥️) on the top right side of your address bar.");
+      // Show professional guidance UI instead of alert
+      setShowInstallGuidance(true);
     }
   };
 
@@ -463,7 +480,6 @@ export default function SettingsPage() {
                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                          <div className="flex justify-between items-center"><div><h4 className="font-bold text-slate-800 text-xs">DINE IN KOT</h4><p className="text-[10px] text-slate-500">Table orders token.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDineIn: !printerSettings.kotDineIn})}>{printerSettings.kotDineIn ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                          <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">DELIVERY KOT</h4><p className="text-[10px] text-slate-500">Zomato/Swiggy slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotDelivery: !printerSettings.kotDelivery})}>{printerSettings.kotDelivery ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
-                         {/* TYPO FIXED BELOW: Changed kot@outletId to kotPickUp */}
                          <div className="flex justify-between items-center border-t border-slate-200 pt-2"><div><h4 className="font-bold text-slate-800 text-xs">PICK UP KOT</h4><p className="text-[10px] text-slate-500">Takeaway slip.</p></div><button onClick={() => setPrinterSettings({...printerSettings, kotPickUp: !printerSettings.kotPickUp})}>{printerSettings.kotPickUp ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-300" size={32} />}</button></div>
                        </div>
                      </div>
@@ -664,6 +680,16 @@ export default function SettingsPage() {
                       </p>
                       
                       <div className="pt-4 space-y-4">
+                        
+                        {/* THE PROFESSIONAL INSTALL GUIDANCE MESSAGE (Instead of Alert) */}
+                        {showInstallGuidance && (
+                          <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-xl text-xs font-bold animate-in fade-in slide-in-from-bottom-2 text-left">
+                            <p className="flex items-center mb-1"><AlertTriangle size={14} className="mr-1.5 text-orange-600"/> Browser Security Notice</p>
+                            Chrome blocks the install button if you navigated away from the home page. <br/><br/>
+                            👉 To install instantly: Click the <b>Install Icon (🖥️ or ⬇️)</b> at the top right of your browser's address bar.
+                          </div>
+                        )}
+
                         <button 
                           onClick={handleNativeInstallClick} 
                           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black uppercase tracking-wider text-sm shadow-lg active:scale-95 transition-all flex justify-center items-center"
