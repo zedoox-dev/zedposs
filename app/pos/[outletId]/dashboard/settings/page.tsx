@@ -4,6 +4,15 @@ import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, Togg
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
+// --- 🔥 GLOBAL PWA PROMPT CATCHER (Taki event kabhi miss na ho) ---
+let globalDeferredPrompt: any = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    globalDeferredPrompt = e; // Event ko background me hamesha ke liye lock kar liya
+  });
+}
+
 const defaultPrinterConfig = {
   printerSize: "80mm", 
   headerName: "RAMKESAR POS",
@@ -71,10 +80,7 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
-  // --- 🔥 STRICT NATIVE APP INSTALLATION ENGINE ---
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
-  const [showInstallGuidance, setShowInstallGuidance] = useState(false); // NEW: Professional Guidance UI state
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -88,24 +94,9 @@ export default function SettingsPage() {
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsAppInstalled(true);
       }
-
-      // Restore prompt if caught globally
-      if ((window as any).deferredPwaPrompt) {
-        setDeferredPrompt((window as any).deferredPwaPrompt);
-      }
-
-      const handleBeforeInstall = (e: any) => {
-        e.preventDefault();
-        (window as any).deferredPwaPrompt = e; // Store globally
-        setDeferredPrompt(e);
-      };
-
-      window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-
       return () => {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
-        window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       };
     }
   }, [outletId, session]);
@@ -326,25 +317,16 @@ export default function SettingsPage() {
 
   // --- 🔥 DIRECT APP INSTALLATION ENGINE LOGIC ---
   const handleNativeInstallClick = async () => {
-    const promptEvent = deferredPrompt || (window as any).deferredPwaPrompt;
-    
-    if (promptEvent) {
-      try {
-        promptEvent.prompt();
-        const { outcome } = await promptEvent.userChoice;
-        if (outcome === 'accepted') {
-          setIsAppInstalled(true);
-          setShowInstallGuidance(false);
-        }
-        setDeferredPrompt(null);
-        (window as any).deferredPwaPrompt = null;
-      } catch (error) {
-        console.error("Install prompt failed", error);
-        setShowInstallGuidance(true);
+    if (globalDeferredPrompt) {
+      // Direct asli app install popup layega
+      globalDeferredPrompt.prompt();
+      const { outcome } = await globalDeferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsAppInstalled(true);
       }
+      globalDeferredPrompt = null;
     } else {
-      // Show professional guidance UI instead of alert
-      setShowInstallGuidance(true);
+      alert("Please wait a second for the app installer to sync, then click again.");
     }
   };
 
@@ -648,7 +630,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* --- 🔥 5. NATIVE 1-CLICK INSTALLATION TAB --- */}
+            {/* --- 🔥 5. PURE NATIVE BROWSER INSTALLATION TAB --- */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -680,16 +662,6 @@ export default function SettingsPage() {
                       </p>
                       
                       <div className="pt-4 space-y-4">
-                        
-                        {/* THE PROFESSIONAL INSTALL GUIDANCE MESSAGE (Instead of Alert) */}
-                        {showInstallGuidance && (
-                          <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-xl text-xs font-bold animate-in fade-in slide-in-from-bottom-2 text-left">
-                            <p className="flex items-center mb-1"><AlertTriangle size={14} className="mr-1.5 text-orange-600"/> Browser Security Notice</p>
-                            Chrome blocks the install button if you navigated away from the home page. <br/><br/>
-                            👉 To install instantly: Click the <b>Install Icon (🖥️ or ⬇️)</b> at the top right of your browser's address bar.
-                          </div>
-                        )}
-
                         <button 
                           onClick={handleNativeInstallClick} 
                           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black uppercase tracking-wider text-sm shadow-lg active:scale-95 transition-all flex justify-center items-center"
