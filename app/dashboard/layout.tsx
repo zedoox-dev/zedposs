@@ -8,7 +8,6 @@ import {
   ChefHat, Megaphone, MapPin, Loader2, ChevronDown, Bell, LogOut, ShieldCheck, Lock, Building2
 } from "lucide-react";
 import { OutletProvider, useOutlet } from "../context/OutletContext";
-import Image from "next/image"; // Added for Logo
 
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
@@ -35,9 +34,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  // Extracting Tenant Info from Session
+  // 🟢 Extracting Tenant Info from Session securely mapped from DB
   const tenantName = (session?.user as any)?.tenantName || "Brand HQ";
-  const logoUrl = (session?.user as any)?.logoUrl; // Fetching logo from session
+  const ownerName = (session?.user as any)?.ownerName || session?.user?.name || "Business Owner";
+  const logoUrl = (session?.user as any)?.logoUrl;
 
   const menuGroups = [
     {
@@ -156,22 +156,32 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           
-          {/* Right Side: Header Top Nav */}
+          {/* Right Side: Header Top Nav (Owner Details + Logo) */}
           <div className="flex items-center space-x-4">
             
-            {/* Show Logo in header for Mobile View when sidebar is hidden */}
             {!isSidebarOpen && logoUrl && (
                <img src={logoUrl} alt={tenantName} className="w-8 h-8 rounded-lg shadow-sm object-cover bg-white lg:hidden" />
             )}
 
             <button className="text-slate-500 hover:text-slate-800"><Bell size={20} /></button>
             <div className="h-8 w-px bg-slate-200"></div>
+            
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-xs font-black text-slate-800 leading-tight uppercase">{session?.user?.name || "User"}</p>
+                <p className="text-xs font-black text-slate-800 leading-tight uppercase">{ownerName}</p>
                 <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">{userRole}</p>
               </div>
-              <button onClick={() => { signOut(); window.location.href="/dashboard"; }} className="w-9 h-9 bg-slate-100 text-slate-600 hover:text-red-500 hover:bg-red-50 rounded-full flex items-center justify-center transition-colors">
+              
+              {/* 🟢 Right Side Owner Logo */}
+              {logoUrl ? (
+                <img src={logoUrl} alt="Avatar" className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-sm" />
+              ) : (
+                <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center border border-indigo-100">
+                  <UserCircle size={20} />
+                </div>
+              )}
+
+              <button onClick={() => { signOut({ redirect: true, callbackUrl: "/dashboard" }); }} className="w-9 h-9 ml-1 bg-slate-100 text-slate-600 hover:text-red-500 hover:bg-red-50 rounded-full flex items-center justify-center transition-colors">
                 <LogOut size={16} />
               </button>
             </div>
@@ -198,7 +208,7 @@ function TenantLoginForm() {
     setLoading(true);
     setError("");
 
-    // NextAuth will check this in the User table, fetch the tenantId, and map it.
+    // 🟢 NextAuth connects to API logic securely via "TENANT" type
     const res = await signIn("credentials", { 
       redirect: false, 
       email, 

@@ -20,10 +20,18 @@ export default function SuperAdminTenantsPage() {
   // Onboard Modal Form State
   const [showAddModal, setShowAddModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // UPDATED: Added all new DB fields to state
   const [onboardForm, setOnboardForm] = useState({
     brandName: "",
+    businessType: "QSR",
+    gstin: "",
+    pan: "",
+    fssaiNo: "",
+    planId: "",
     ownerName: "",
     ownerEmail: "",
+    ownerPhone: "",
     ownerPassword: ""
   });
 
@@ -62,7 +70,11 @@ export default function SuperAdminTenantsPage() {
       
       if (res.ok && json.success) {
         setShowAddModal(false);
-        setOnboardForm({ brandName: "", ownerName: "", ownerEmail: "", ownerPassword: "" });
+        // UPDATED: Reset all fields
+        setOnboardForm({ 
+          brandName: "", businessType: "QSR", gstin: "", pan: "", fssaiNo: "", planId: "",
+          ownerName: "", ownerEmail: "", ownerPhone: "", ownerPassword: "" 
+        });
         fetchTenants();
         alert(`✅ ${json.data.tenant.businessName} created with ID: ${json.data.tenant.id} ! You can now assign outlets to this ID.`);
       } else {
@@ -363,7 +375,7 @@ export default function SuperAdminTenantsPage() {
         {/* --- ONBOARD BRAND MODAL --- */}
         {showAddModal && (
           <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-            <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] border-t-8 border-indigo-500">
+            <div className="bg-white rounded-3xl p-8 w-full max-w-3xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] border-t-8 border-indigo-500">
               
               <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4 shrink-0">
                 <div>
@@ -374,29 +386,70 @@ export default function SuperAdminTenantsPage() {
               </div>
               
               <form onSubmit={handleOnboardBrand} className="flex-1 overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-6">
+                
+                {/* 1. Company Information */}
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-4 flex items-center"><Building2 size={12} className="mr-1.5"/> 1. Company Information</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Registered Brand Name *</label>
+                      <input required type="text" placeholder="e.g. RamKesar Foods" value={onboardForm.brandName} onChange={(e) => setOnboardForm({...onboardForm, brandName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-black uppercase focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Business Type</label>
+                      <select value={onboardForm.businessType} onChange={(e) => setOnboardForm({...onboardForm, businessType: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-white">
+                        <option value="QSR">QSR</option>
+                        <option value="Restaurant">Restaurant</option>
+                        <option value="Bakery">Bakery</option>
+                        <option value="Mithai">Mithai</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">GSTIN</label>
+                      <input type="text" placeholder="Optional" value={onboardForm.gstin} onChange={(e) => setOnboardForm({...onboardForm, gstin: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-mono font-bold uppercase focus:border-indigo-500 bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">PAN Number</label>
+                      <input type="text" placeholder="Optional" value={onboardForm.pan} onChange={(e) => setOnboardForm({...onboardForm, pan: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-mono font-bold uppercase focus:border-indigo-500 bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">FSSAI Number</label>
+                      <input type="text" placeholder="Optional" value={onboardForm.fssaiNo} onChange={(e) => setOnboardForm({...onboardForm, fssaiNo: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-mono font-bold uppercase focus:border-indigo-500 bg-white" />
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Registered Brand Name</label>
-                    <input required type="text" placeholder="e.g. RamKesar Foods" value={onboardForm.brandName} onChange={(e) => setOnboardForm({...onboardForm, brandName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-sm font-black uppercase focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-white" />
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Subscription Plan ID</label>
+                    <input type="text" placeholder="Plan ID (Optional)" value={onboardForm.planId} onChange={(e) => setOnboardForm({...onboardForm, planId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-mono font-bold focus:border-indigo-500 bg-white" />
                   </div>
                 </div>
 
+                {/* 2. Super Admin Credentials */}
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-4 flex items-center"><Crown size={12} className="mr-1.5"/> 2. Super Admin Credentials (Brand Owner)</h3>
                   
-                  <div className="mb-4">
-                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Owner Name</label>
-                    <input required type="text" placeholder="e.g. Upendra Yadav" value={onboardForm.ownerName} onChange={(e) => setOnboardForm({...onboardForm, ownerName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Owner Name *</label>
+                      <input required type="text" placeholder="e.g. Upendra Yadav" value={onboardForm.ownerName} onChange={(e) => setOnboardForm({...onboardForm, ownerName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Owner Phone</label>
+                      <input type="tel" placeholder="e.g. +91 9876543210" value={onboardForm.ownerPhone} onChange={(e) => setOnboardForm({...onboardForm, ownerPhone: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-mono font-bold focus:border-indigo-500 bg-white" />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Login Email ID</label>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Login Email ID *</label>
                       <input required type="email" placeholder="admin@ramkesar.co.in" value={onboardForm.ownerEmail} onChange={(e) => setOnboardForm({...onboardForm, ownerEmail: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-mono font-bold focus:border-indigo-500 bg-white" />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Master Password</label>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Master Password *</label>
                       <input required type="text" placeholder="Pass@123" value={onboardForm.ownerPassword} onChange={(e) => setOnboardForm({...onboardForm, ownerPassword: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-mono font-bold focus:border-indigo-500 bg-white" />
                     </div>
                   </div>

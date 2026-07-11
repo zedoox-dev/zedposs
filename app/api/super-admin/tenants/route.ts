@@ -12,10 +12,10 @@ const generate5DigitId = () => {
 export async function GET() {
   try {
     const tenants = await prisma.tenant.findMany({
-      where: { isDeleted: false }, // Fixed: Sirf active non-deleted tenants layega
+      where: { isDeleted: false }, 
       include: {
         outlets: {
-          where: { isDeleted: false } // Fixed: Sirf active outlets layega
+          where: { isDeleted: false } 
         }, 
         _count: {
           select: { outlets: { where: { isDeleted: false } }, users: true }
@@ -36,11 +36,15 @@ export async function GET() {
   }
 }
 
-// ONBOARD A NEW BRAND (TENANT ONLY, NO SUBSCRIPTION YET)
+// ONBOARD A NEW BRAND (TENANT)
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { brandName, ownerName, ownerEmail, ownerPassword } = body;
+    // UPDATED: Destructure newly added fields
+    const { 
+      brandName, ownerName, ownerEmail, ownerPassword,
+      ownerPhone, gstin, pan, fssaiNo, businessType, planId
+    } = body;
 
     if (!brandName || !ownerEmail || !ownerPassword) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -57,12 +61,19 @@ export async function POST(req: Request) {
       }
 
       // 2. Create the Tenant (Brand)
+      // UPDATED: Proper mapping of all new fields. Using 'undefined' so empty strings don't trigger unique constraints.
       const newTenant = await tx.tenant.create({
         data: { 
           id: tenantId,
           businessName: brandName,
-          ownerName: ownerName, // Fixed: Added ownerName to DB
-          ownerEmail: ownerEmail
+          ownerName: ownerName, 
+          ownerEmail: ownerEmail,
+          ownerPhone: ownerPhone || undefined,
+          gstin: gstin || undefined,
+          pan: pan || undefined,
+          fssaiNo: fssaiNo || undefined,
+          businessType: businessType || undefined,
+          planId: planId || undefined,
         } 
       });
 
@@ -100,7 +111,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     console.error("Tenant Creation Error:", error);
-    return NextResponse.json({ error: "Failed to onboard new brand. Email might be in use." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to onboard new brand. Email or GSTIN might be in use." }, { status: 500 });
   }
 }
 

@@ -19,7 +19,9 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Missing credentials.");
         }
 
-        // 🟢 OUTLET LOGIN CONNECTION WITH PRISMA
+        // ==========================================
+        // 🟢 1. OUTLET LOGIN (EXISTING - UNTOUCHED)
+        // ==========================================
         if (credentials.loginType === "OUTLET") {
           const outlet = await prisma.outlet.findFirst({
             where: { 
@@ -33,13 +35,10 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Terminal/Outlet not found.");
           }
 
-          // Note: Abhi plain text match kar rahe hain. 
-          // Future mein yahan bcrypt.compare() use karna best practice hai.
           if (outlet.password !== credentials.password) {
             throw new Error("Invalid Terminal Password.");
           }
 
-          // JWT Token mein ye data save hoga
           return {
             id: outlet.id,
             name: outlet.name,
@@ -49,31 +48,88 @@ export const authOptions: NextAuthOptions = {
             role: "OUTLET_TERMINAL"
           };
         }
+
+        // ==========================================
+        // 🏢 2. TENANT / BRAND OWNER LOGIN (NEW)
+        // ==========================================
+        if (credentials.loginType === "TENANT") {
+          // STRICT DB CONNECTION: Finding User & including their Tenant details
+          const user = await prisma.user.findFirst({
+            where: { 
+              email: credentials.email,
+              isActive: true,
+              isDeleted: false
+            },
+            include: {
+              tenant: true,
+              role: true
+            }
+          });
+
+          if (!user) {
+            throw new Error("Account not found or has been disabled.");
+          }
+
+          if (user.password !== credentials.password) {
+            throw new Error("Invalid Email or Password.");
+          }
+
+          // Check if the overall Brand/Business is active
+          if (user.tenant && !user.tenant.isActive) {
+            throw new Error("Business account is suspended. Contact Support.");
+          }
+
+          // JWT Token mein ye pura owner data save hoga jo layout ko chahiye
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            tenantId: user.tenantId,
+            tenantName: user.tenant?.businessName || "Brand HQ",
+            ownerName: user.tenant?.ownerName || user.name,
+            logoUrl: user.tenant?.logoUrl || user.avatar || "",
+            role: user.role?.name || "Brand Owner",
+            outletId: user.outletId || "ALL" 
+          };
+        }
+
         return null;
       }
     })
   ],
   callbacks: {
-    // 🔒 JWT Token aur Session mein Custom Variables add karna
+    // 🔒 JWT Token aur Session mein Custom Variables merge karna
     async jwt({ token, user }) {
       if (user) {
-        token.outletId = (user as any).outletId;
-        token.tenantId = (user as any).tenantId;
+        token.id = user.id;
         token.role = (user as any).role;
+        token.tenantId = (user as any).tenantId;
+        token.outletId = (user as any).outletId;
+        
+        // Only added if it's a Tenant login
+        if ((user as any).tenantName) token.tenantName = (user as any).tenantName;
+        if ((user as any).ownerName) token.ownerName = (user as any).ownerName;
+        if ((user as any).logoUrl) token.logoUrl = (user as any).logoUrl;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).outletId = token.outletId;
-        (session.user as any).tenantId = token.tenantId;
+        (session.user as any).id = token.id;
         (session.user as any).role = token.role;
+        (session.user as any).tenantId = token.tenantId;
+        (session.user as any).outletId = token.outletId;
+        
+        // Injecting Tenant data into frontend session
+        (session.user as any).tenantName = token.tenantName;
+        (session.user as any).ownerName = token.ownerName;
+        (session.user as any).logoUrl = token.logoUrl;
       }
       return session;
     }
   },
   pages: {
-    signIn: "/login", // Unauthorized users yahan aayenge
+    signIn: "/login", 
   }
 };
 
