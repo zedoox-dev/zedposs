@@ -27,7 +27,9 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { businessName, ownerName, ownerEmail, password, phone } = body;
+    
+    // Naye fields destructure kiye hain yahan 👇
+    const { businessName, ownerName, ownerEmail, password, phone, gstin, pan, fssaiNo, businessType } = body;
 
     if (!businessName || !ownerEmail || !password) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -46,10 +48,17 @@ export async function POST(req: Request) {
     const result = await prisma.$transaction(async (tx) => {
       
       // Step A: Create Tenant (Brand)
+      // 👇 Yahan saara data ek-ek karke map ho raha hai jaisa Prisma schema mein hai
       const tenant = await tx.tenant.create({
         data: {
           businessName: businessName,
+          ownerName: ownerName || null,
           ownerEmail: ownerEmail,
+          ownerPhone: phone || null, // phone from form mapped to ownerPhone
+          gstin: gstin || null,
+          pan: pan || null,
+          fssaiNo: fssaiNo || null,
+          businessType: businessType || null,
           isActive: true,
         }
       });

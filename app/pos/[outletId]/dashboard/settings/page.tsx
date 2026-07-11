@@ -1,17 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone, Download, MonitorPlay, CheckCircle2 } from "lucide-react";
+import { Store, Printer, Users, ShieldCheck, Save, Loader2, X, UserCircle2, ToggleLeft, ToggleRight, ReceiptText, MessageSquare, Smartphone, Trash2, KeyRound, MonitorSmartphone, Lock, AlertTriangle, Percent, Clock, Settings2, WifiOff, MapPin, AlignLeft, Hash, Phone, Download, MonitorPlay, CheckCircle2, RefreshCw } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-
-// --- 🔥 GLOBAL PWA PROMPT CATCHER (Taki event kabhi miss na ho) ---
-let globalDeferredPrompt: any = null;
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    globalDeferredPrompt = e; // Event ko background me hamesha ke liye lock kar liya
-  });
-}
 
 const defaultPrinterConfig = {
   printerSize: "80mm", 
@@ -80,7 +71,11 @@ export default function SettingsPage() {
 
   const [kdsConfigs, setKdsConfigs] = useState([{ name: "Main Kitchen", ipAddress: "192.168.1.100", type: "USB" }]);
 
+  // --- 🔥 STRICT NATIVE APP INSTALLATION ENGINE ---
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
+  const [showInstallGuidance, setShowInstallGuidance] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false); // NEW: Update state
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -94,9 +89,23 @@ export default function SettingsPage() {
       if (window.matchMedia('(display-mode: standalone)').matches) {
         setIsAppInstalled(true);
       }
+
+      if ((window as any).deferredPwaPrompt) {
+        setDeferredPrompt((window as any).deferredPwaPrompt);
+      }
+
+      const handleBeforeInstall = (e: any) => {
+        e.preventDefault();
+        (window as any).deferredPwaPrompt = e; 
+        setDeferredPrompt(e);
+      };
+
+      window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+
       return () => {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       };
     }
   }, [outletId, session]);
@@ -315,18 +324,56 @@ export default function SettingsPage() {
     }
   };
 
-  // --- 🔥 DIRECT APP INSTALLATION ENGINE LOGIC ---
   const handleNativeInstallClick = async () => {
-    if (globalDeferredPrompt) {
-      // Direct asli app install popup layega
-      globalDeferredPrompt.prompt();
-      const { outcome } = await globalDeferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setIsAppInstalled(true);
+    const promptEvent = deferredPrompt || (window as any).deferredPwaPrompt;
+    
+    if (promptEvent) {
+      try {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
+        if (outcome === 'accepted') {
+          setIsAppInstalled(true);
+          setShowInstallGuidance(false);
+        }
+        setDeferredPrompt(null);
+        (window as any).deferredPwaPrompt = null;
+      } catch (error) {
+        console.error("Install prompt failed", error);
+        setShowInstallGuidance(true);
       }
-      globalDeferredPrompt = null;
     } else {
-      alert("Please wait a second for the app installer to sync, then click again.");
+      setShowInstallGuidance(true);
+    }
+  };
+
+  // --- 🔥 NEW: APP UPDATE ENGINE ---
+  const handleForceUpdate = async () => {
+    if (!navigator.onLine) {
+      alert("Please connect to the internet to download the latest updates.");
+      return;
+    }
+    
+    setIsUpdating(true);
+    try {
+      // 1. Clear Browser Caches
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+      
+      // 2. Unregister Service Workers
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      
+      // 3. Hard Reload to fetch fresh code from Vercel
+      window.location.reload();
+    } catch (error) {
+      console.error("Update failed", error);
+      window.location.reload(); // Fallback reload
     }
   };
 
@@ -630,7 +677,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* --- 🔥 5. PURE NATIVE BROWSER INSTALLATION TAB --- */}
+            {/* --- 🔥 5. NATIVE APP INSTALLATION & UPDATE ENGINE --- */}
             {activeTab === "installation" && (
               <div className="animate-in fade-in duration-200 flex flex-col h-full items-center justify-center">
                 <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-3xl p-8 shadow-sm text-center">
@@ -640,13 +687,24 @@ export default function SettingsPage() {
                       <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
                         <CheckCircle2 size={40} />
                       </div>
-                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">App Installed</h2>
+                      <h2 className="text-2xl font-black text-slate-800 tracking-tight">App is Active</h2>
                       <p className="text-sm font-bold text-slate-500">
-                        ZedPoss is successfully running natively on this device. Your offline billing system is fully active and cached!
+                        ZedPoss is running as a native application. Your offline billing engine is active.
                       </p>
-                      <button disabled className="mt-6 w-full bg-slate-200 text-slate-500 py-3 rounded-xl font-black uppercase text-xs cursor-not-allowed">
-                        App is Currently Running
-                      </button>
+                      
+                      <div className="pt-4 border-t border-slate-200 mt-6">
+                        <p className="text-xs font-bold text-slate-500 mb-3 px-2">
+                          If new features were added to the server, click below to sync and update the app.
+                        </p>
+                        <button 
+                          onClick={handleForceUpdate} 
+                          disabled={isUpdating}
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg active:scale-95 transition-all flex justify-center items-center disabled:opacity-50"
+                        >
+                          {isUpdating ? <Loader2 size={16} className="animate-spin mr-2" /> : <RefreshCw size={16} className="mr-2" />}
+                          {isUpdating ? "Syncing..." : "Sync Latest Updates"}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -662,6 +720,14 @@ export default function SettingsPage() {
                       </p>
                       
                       <div className="pt-4 space-y-4">
+                        {showInstallGuidance && (
+                          <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-xl text-xs font-bold animate-in fade-in slide-in-from-bottom-2 text-left">
+                            <p className="flex items-center mb-1"><AlertTriangle size={14} className="mr-1.5 text-orange-600"/> Browser Security Notice</p>
+                            Chrome blocks the install button if you navigated away from the home page. <br/><br/>
+                            👉 To install instantly: Click the <b>Install Icon (🖥️ or ⬇️)</b> at the top right of your browser's address bar.
+                          </div>
+                        )}
+
                         <button 
                           onClick={handleNativeInstallClick} 
                           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-xl font-black uppercase tracking-wider text-sm shadow-lg active:scale-95 transition-all flex justify-center items-center"

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Building2, Search, Plus, Loader2, MoreVertical, ShieldCheck, Mail, Phone, Store, Lock, Power, X, UserCircle } from "lucide-react"; // <-- UserCircle added here
+import { Building2, Search, Plus, Loader2, MoreVertical, ShieldCheck, Mail, Phone, Store, Lock, Power, X, UserCircle } from "lucide-react";
 
 export default function BusinessManagementPage() {
   const [businesses, setBusinesses] = useState<any[]>([]);
@@ -15,7 +15,12 @@ export default function BusinessManagementPage() {
     ownerName: "",
     ownerEmail: "",
     phone: "",
-    password: ""
+    password: "",
+    // Naye Fields Add Kiye Gaye Hain 👇
+    gstin: "",
+    pan: "",
+    fssaiNo: "",
+    businessType: "QSR" // Default type
   });
 
   useEffect(() => {
@@ -52,7 +57,8 @@ export default function BusinessManagementPage() {
       if (res.ok && data.success) {
         alert(`✅ Business "${formData.businessName}" successfully registered! The owner can now login.`);
         setShowAddModal(false);
-        setFormData({ businessName: "", ownerName: "", ownerEmail: "", phone: "", password: "" });
+        // Form Reset with new fields
+        setFormData({ businessName: "", ownerName: "", ownerEmail: "", phone: "", password: "", gstin: "", pan: "", fssaiNo: "", businessType: "QSR" });
         fetchBusinesses();
       } else {
         alert(`⚠️ Error: ${data.error}`);
@@ -198,7 +204,7 @@ export default function BusinessManagementPage() {
       {/* --- ADD BUSINESS MODAL --- */}
       {showAddModal && (
         <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border-t-8 border-blue-600 relative overflow-hidden">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl border-t-8 border-blue-600 relative overflow-hidden h-fit max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
               <div>
                 <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center"><Building2 size={20} className="mr-2 text-blue-600"/> Onboard New Client</h2>
@@ -224,14 +230,43 @@ export default function BusinessManagementPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Admin Login Email (Unique)</label>
-                <input required type="email" placeholder="admin@brand.com" value={formData.ownerEmail} onChange={(e) => setFormData({...formData, ownerEmail: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-mono font-bold focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Admin Login Email (Unique)</label>
+                  <input required type="email" placeholder="admin@brand.com" value={formData.ownerEmail} onChange={(e) => setFormData({...formData, ownerEmail: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-mono font-bold focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Master Password</label>
+                  <input required type="text" placeholder="Secure Password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-sm font-mono font-black tracking-widest focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors" />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Master Password</label>
-                <input required type="text" placeholder="Secure Password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-sm font-mono font-black tracking-widest focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors" />
+              {/* NAYE FIELDS KE LIYE INPUTS 👇 */}
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">Business Type</label>
+                  <select value={formData.businessType} onChange={(e) => setFormData({...formData, businessType: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-bold focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors cursor-pointer">
+                    <option value="QSR">QSR</option>
+                    <option value="Restaurant">Restaurant</option>
+                    <option value="Bakery">Bakery</option>
+                    <option value="Mithai">Mithai</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">FSSAI No. (Optional)</label>
+                  <input type="text" placeholder="FSSAI License" value={formData.fssaiNo} onChange={(e) => setFormData({...formData, fssaiNo: e.target.value})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-mono font-bold focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">GSTIN (Optional)</label>
+                  <input type="text" placeholder="GST Number" value={formData.gstin} onChange={(e) => setFormData({...formData, gstin: e.target.value.toUpperCase()})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-mono font-bold focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-widest">PAN (Optional)</label>
+                  <input type="text" placeholder="PAN Number" value={formData.pan} onChange={(e) => setFormData({...formData, pan: e.target.value.toUpperCase()})} className="w-full p-3 border-2 border-slate-100 rounded-xl outline-none text-xs font-mono font-bold focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors" />
+                </div>
               </div>
 
               <div className="pt-4 border-t border-slate-100">
