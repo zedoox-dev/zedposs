@@ -1,24 +1,39 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useOutlet } from "../context/OutletContext"; 
+import { useRouter } from "next/navigation";
 import { 
   IndianRupee, ShoppingCart, Users, AlertTriangle, 
-  TrendingUp, ArrowRight, Package, Clock, Loader2 
+  TrendingUp, ArrowRight, Package, Clock, Loader2, CalendarDays
 } from "lucide-react";
 
 export default function BrandDashboardPage() {
   const { selectedOutlet, outlets } = useOutlet();
+  const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // 🟢 Page Level Date Filter States
+  const [dateFilter, setDateFilter] = useState("today");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+
   useEffect(() => {
     if(selectedOutlet) fetchDashboardData();
-  }, [selectedOutlet]); 
+  }, [selectedOutlet, dateFilter, customStart, customEnd]); 
 
   const fetchDashboardData = async () => {
+    // Prevent fetching if custom date is half-filled
+    if (dateFilter === "custom" && (!customStart || !customEnd)) return;
+
     setLoading(true);
     try {
-      const res = await fetch(`/api/brand/dashboard?outletId=${selectedOutlet}`);
+      let queryUrl = `/api/brand/dashboard?outletId=${selectedOutlet}&date=${dateFilter}`;
+      if (dateFilter === "custom") {
+        queryUrl += `&startDate=${customStart}&endDate=${customEnd}`;
+      }
+
+      const res = await fetch(queryUrl);
       const json = await res.json();
       if (json.success) {
         setData(json);
@@ -30,7 +45,7 @@ export default function BrandDashboardPage() {
     }
   };
 
-  if (loading || !data) {
+  if (loading && !data) {
     return (
       <div className="h-full flex flex-col items-center justify-center">
         <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
@@ -39,7 +54,7 @@ export default function BrandDashboardPage() {
     );
   }
 
-  const { metrics, recentOrders, lowStockItems } = data;
+  const { metrics, recentOrders, lowStockItems } = data || { metrics: {}, recentOrders: [], lowStockItems: [] };
 
   const currentOutletName = selectedOutlet === "ALL" 
     ? "All Outlets HQ" 
@@ -50,16 +65,42 @@ export default function BrandDashboardPage() {
       {/* 🔥 MASSIVE SEO & PREMIUM META TAG INJECTION 🔥 */}
       <title>ZedPoss HQ | Multi-Outlet Brand Dashboard</title>
       <meta name="description" content="Manage all your restaurant branches, sales analytics, staff, and inventory from a single HQ dashboard by ZedPoss." />
-      <meta name="keywords" content="Restaurant Dashboard, Multi-Outlet POS, ZedPoss HQ, Business Overview, Franchise Management Software, Retail Brand Dashboard, POS Analytics, Live Sales Tracker, Restaurant KPIs, POS Staff Management, Inventory Alerts HQ, ZedooX Technologies, Secure Cloud POS, Restaurant Operations Control" />
-
+      
       <div className="max-w-[1400px] mx-auto animate-in fade-in duration-300">
         
-        {/* Dynamic Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Business Overview</h1>
-          <p className="text-xs font-bold text-slate-500 mt-1 flex items-center">
-            Currently viewing data for: <span className="ml-2 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded uppercase tracking-wider font-black">{currentOutletName}</span>
-          </p>
+        {/* 🟢 Dynamic Header with Integrated Date Filter on the Right */}
+        <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Business Overview</h1>
+            <p className="text-xs font-bold text-slate-500 mt-1 flex items-center">
+              Currently viewing data for: <span className="ml-2 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded uppercase tracking-wider font-black">{currentOutletName}</span>
+            </p>
+          </div>
+
+          {/* Page Level Date Filter */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
+              <CalendarDays size={16} className="text-indigo-600 mr-2" />
+              <select 
+                value={dateFilter} 
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="bg-transparent text-xs font-black text-slate-700 uppercase tracking-tight outline-none cursor-pointer"
+              >
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="all">All Time</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+
+            {dateFilter === "custom" && (
+              <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-sm">
+                <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="p-1 border-none bg-transparent outline-none text-xs font-bold text-slate-700" />
+                <span className="text-slate-300 text-xs font-black">-</span>
+                <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="p-1 border-none bg-transparent outline-none text-xs font-bold text-slate-700" />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* KPI Cards Grid */}
@@ -67,19 +108,23 @@ export default function BrandDashboardPage() {
           
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group hover:border-indigo-300 transition-all">
             <div className="flex justify-between items-start mb-4">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total TPV</span>
-              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><IndianRupee size={16}/></div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total TPV ({dateFilter})</span>
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                {loading ? <Loader2 size={16} className="animate-spin"/> : <IndianRupee size={16}/>}
+              </div>
             </div>
-            <p className="text-3xl font-mono font-black text-slate-900">₹{metrics.totalRevenue.toLocaleString()}</p>
-            <p className="text-xs font-bold text-emerald-500 mt-2 flex items-center"><TrendingUp size={14} className="mr-1"/> Today: ₹{metrics.todaysRevenue}</p>
+            <p className="text-3xl font-mono font-black text-slate-900">₹{metrics.totalRevenue?.toLocaleString() || 0}</p>
+            <p className="text-xs font-bold text-emerald-500 mt-2 flex items-center"><TrendingUp size={14} className="mr-1"/> Today's Pulse: ₹{metrics.todaysRevenue?.toLocaleString() || 0}</p>
           </div>
 
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden group hover:border-blue-300 transition-all">
             <div className="flex justify-between items-start mb-4">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Completed Orders</span>
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><ShoppingCart size={16}/></div>
+              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                {loading ? <Loader2 size={16} className="animate-spin"/> : <ShoppingCart size={16}/>}
+              </div>
             </div>
-            <p className="text-3xl font-mono font-black text-slate-900">{metrics.totalOrders}</p>
+            <p className="text-3xl font-mono font-black text-slate-900">{metrics.totalOrders || 0}</p>
             <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Across {selectedOutlet === "ALL" ? "All Branches" : "This Branch"}</p>
           </div>
 
@@ -88,7 +133,7 @@ export default function BrandDashboardPage() {
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Staff / Team</span>
               <div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><Users size={16}/></div>
             </div>
-            <p className="text-3xl font-mono font-black text-slate-900">{metrics.staffCount}</p>
+            <p className="text-3xl font-mono font-black text-slate-900">{metrics.staffCount || 0}</p>
             <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Active Employees</p>
           </div>
 
@@ -97,7 +142,7 @@ export default function BrandDashboardPage() {
               <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Low Stock Alerts</span>
               <div className="p-2 bg-red-100 text-red-600 rounded-lg"><AlertTriangle size={16}/></div>
             </div>
-            <p className="text-3xl font-mono font-black text-red-600">{lowStockItems.length}</p>
+            <p className="text-3xl font-mono font-black text-red-600">{lowStockItems?.length || 0}</p>
             <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-widest">Requires Attention</p>
           </div>
 
@@ -111,11 +156,13 @@ export default function BrandDashboardPage() {
               <h2 className="text-xs font-black uppercase tracking-widest text-slate-800 flex items-center">
                 <Clock size={16} className="mr-2 text-indigo-500"/> Live Orders
               </h2>
-              <button className="text-[10px] font-black text-indigo-600 uppercase flex items-center hover:text-indigo-800">
+              {/* 🟢 Corrected View Sales Book Button Routing */}
+              <button onClick={() => router.push('/dashboard/sales')} className="text-[10px] font-black text-indigo-600 uppercase flex items-center hover:text-indigo-800 transition-colors">
                 View Sales Book <ArrowRight size={14} className="ml-1"/>
               </button>
             </div>
-            <div className="p-0 overflow-x-auto">
+            <div className="p-0 overflow-x-auto relative">
+              {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10"><Loader2 className="animate-spin text-indigo-600" /></div>}
               <table className="w-full text-left">
                 <thead className="bg-white border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400">
                   <tr>
@@ -127,8 +174,8 @@ export default function BrandDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 text-sm font-bold text-slate-700">
-                  {recentOrders.length === 0 ? (
-                    <tr><td colSpan={5} className="p-8 text-center text-slate-400 text-xs">No orders generated yet.</td></tr>
+                  {!recentOrders || recentOrders.length === 0 ? (
+                    <tr><td colSpan={5} className="p-8 text-center text-slate-400 text-xs uppercase font-black tracking-widest">No orders generated yet.</td></tr>
                   ) : (
                     recentOrders.map((order: any) => (
                       <tr key={order.id} className="hover:bg-slate-50">
@@ -158,8 +205,9 @@ export default function BrandDashboardPage() {
                 <Package size={16} className="mr-2 text-red-500"/> Critical Stock
               </h2>
             </div>
-            <div className="p-4 space-y-3">
-              {lowStockItems.length === 0 ? (
+            <div className="p-4 space-y-3 relative">
+              {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] flex items-center justify-center z-10"><Loader2 className="animate-spin text-red-600" /></div>}
+              {!lowStockItems || lowStockItems.length === 0 ? (
                 <div className="text-center p-6">
                   <AlertTriangle size={30} className="mx-auto text-slate-200 mb-2" />
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">All Stock Optimal</p>

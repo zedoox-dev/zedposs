@@ -9,6 +9,11 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const outletId = searchParams.get("outletId") || "ALL";
+    
+    // 🟢 Read Date Filters from URL
+    const dateFilter = searchParams.get("date") || "today";
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
 
     // 1. Authenticate User (Get Session)
     const session = await getServerSession(authOptions);
@@ -24,31 +29,57 @@ export async function GET(req: Request) {
     // 2. Dynamic Filter Logic based on Outlet Switcher
     let outletFilter = {};
     if (outletId !== "ALL") {
-      // Fetch only for the selected outlet, STRICTLY verifying it belongs to this tenant
       outletFilter = { outletId: outletId, outlet: { tenantId: secureTenantId } };
     } else {
-      // Fetch for ALL outlets under this specific brand
       outletFilter = { outlet: { tenantId: secureTenantId } };
     }
 
-    // 3. Fetch Aggregate Metrics
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); 
+    // 🟢 3. Build Date Query for Filtering Data
+    let dateQuery: any = {};
+    const now = new Date();
 
-    // Total Orders & Revenue
+    if (dateFilter === "today") {
+      const start = new Date(now.setHours(0, 0, 0, 0));
+      const end = new Date(now.setHours(23, 59, 59, 999));
+      dateQuery = { gte: start, lte: end };
+    } else if (dateFilter === "yesterday") {
+      const start = new Date(now);
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+      dateQuery = { gte: start, lte: end };
+    } else if (dateFilter === "custom" && startDate && endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      dateQuery = { gte: new Date(startDate), lte: end };
+    }
+
+    // Final Where Clause for Orders
+    const orderWhereClause = {
+      ...outletFilter,
+      isDeleted: false,
+      ...(Object.keys(dateQuery).length > 0 ? { createdAt: dateQuery } : {})
+    };
+
+    // 4. Fetch Aggregate Metrics
+
+    // Total Orders & Revenue (Filtered by selected date & outlet)
     const orders = await prisma.order.aggregate({
       _sum: { totalAmount: true },
       _count: { id: true },
-      where: { ...outletFilter, isDeleted: false } 
+      where: orderWhereClause 
     });
 
-    // Today's Orders
+    // Today's Pulse Orders (This will strictly remain "Today" so owner can always see what's happening today)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); 
     const todaysOrders = await prisma.order.aggregate({
       _sum: { totalAmount: true },
       where: { ...outletFilter, isDeleted: false, createdAt: { gte: today } }
     });
 
-    // Low Stock Alerts (Where stockLevel is less than or equal to minStock)
+    // Low Stock Alerts (Where stockLevel is less than or equal to minStock) - NOT dependent on date
     const lowStockItems = await prisma.inventory.findMany({
       where: { 
         ...outletFilter, 
@@ -59,15 +90,15 @@ export async function GET(req: Request) {
       take: 5
     });
 
-    // Recent 5 Transactions
+    // Recent 5 Transactions (Filtered by selected date)
     const recentOrders = await prisma.order.findMany({
-      where: { ...outletFilter, isDeleted: false },
+      where: orderWhereClause,
       orderBy: { createdAt: 'desc' },
       take: 5,
       include: { outlet: { select: { name: true } } }
     });
 
-    // Staff Count
+    // Staff Count (Active staff) - NOT dependent on date
     const staffCount = await prisma.user.count({
       where: outletId !== "ALL" ? { outletId: outletId, isDeleted: false } : { tenantId: secureTenantId, isDeleted: false }
     });
