@@ -69,7 +69,7 @@ export async function GET(req: Request) {
       include: {
         outlet: { select: { name: true } },
         customer: { select: { phone: true, name: true } },
-        items: { include: { menuItem: true } } // 🟢 Included order items for details view
+        items: { include: { menuItem: true } } 
       }
     });
 
@@ -95,7 +95,7 @@ export async function GET(req: Request) {
         paymentBreakdown["OTHER"] = (paymentBreakdown["OTHER"] || 0) + order.totalAmount;
       }
 
-      // Platform Breakdown (Swiggy, Zomato, etc.)
+      // Platform Breakdown 
       const platform = order.platform?.toUpperCase() || "POS";
       if (platformBreakdown[platform] !== undefined) {
         platformBreakdown[platform] += order.totalAmount;
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 🟢 NEW: SECURE ACTION ENDPOINT (Cancel / Settle Bill)
+// 🟢 SECURE ACTION ENDPOINT (Cancel / Settle Bill)
 export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
