@@ -5,7 +5,7 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import { 
   Store, LayoutDashboard, Users, ReceiptIndianRupee, 
   Package, ShoppingCart, UserCircle, Settings, ClipboardList, 
-  ChefHat, Megaphone, MapPin, Loader2, ChevronDown, Bell, LogOut, ShieldCheck, Lock, Building2
+  ChefHat, Megaphone, MapPin, Loader2, ChevronDown, Bell, LogOut, ShieldCheck, Lock, Building2, CalendarDays
 } from "lucide-react";
 import { OutletProvider, useOutlet } from "../context/OutletContext";
 
@@ -19,6 +19,11 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<string>("STAFF");
   const [permissions, setPermissions] = useState<any>({});
 
+  // 🟢 Global Date Filter States
+  const [dateFilter, setDateFilter] = useState("today");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+
   useEffect(() => {
     if (session?.user) {
       setUserRole((session.user as any).role || "STAFF");
@@ -26,15 +31,47 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
+  // 🟢 Read initial date from URL (so if user refreshes, filter stays)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("date")) setDateFilter(params.get("date") as string);
+      if (params.get("startDate")) setCustomStart(params.get("startDate") as string);
+      if (params.get("endDate")) setCustomEnd(params.get("endDate") as string);
+    }
+  }, [pathname]);
+
   const hasAccess = (moduleName: string) => {
-    // Basic Role check - Brand Owner has all access
     if (userRole === "Brand Owner" || userRole === "Admin") return true;
     if (permissions[moduleName] && permissions[moduleName].view) return true;
-    if (moduleName === "Dashboard") return true; // Default accessible
+    if (moduleName === "Dashboard") return true; 
     return false;
   };
 
-  // 🟢 Extracting Tenant Info from Session securely mapped from DB
+  // 🟢 Update URL Params when Date changes (So child pages can fetch data accordingly)
+  const applyDateFilter = (type: string, start?: string, end?: string) => {
+    setDateFilter(type);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      params.set("date", type);
+      
+      if (type === "custom" && start && end) {
+        params.set("startDate", start);
+        params.set("endDate", end);
+      } else if (type !== "custom") {
+        params.delete("startDate");
+        params.delete("endDate");
+        setCustomStart("");
+        setCustomEnd("");
+      }
+      
+      // Only push to router if it's not a half-filled custom date
+      if (type !== "custom" || (type === "custom" && start && end)) {
+        router.push(`${pathname}?${params.toString()}`);
+      }
+    }
+  };
+
   const tenantName = (session?.user as any)?.tenantName || "Brand HQ";
   const ownerName = (session?.user as any)?.ownerName || session?.user?.name || "Business Owner";
   const logoUrl = (session?.user as any)?.logoUrl;
@@ -80,7 +117,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       {/* SIDEBAR */}
       <div className={`bg-slate-900 text-slate-300 w-64 flex flex-col transition-all duration-300 z-20 shrink-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full fixed h-full'}`}>
         
-        {/* Brand Header with Dynamic Logo */}
         <div className="h-16 flex items-center px-6 bg-slate-950 border-b border-slate-800 shrink-0">
           {logoUrl ? (
             <img src={logoUrl} alt={tenantName} className="w-8 h-8 rounded-lg mr-3 shadow-lg object-cover bg-white" />
@@ -123,15 +159,14 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* MAIN AREA */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-10 shadow-sm">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-10 shadow-sm overflow-x-auto">
           
           {/* Left Side: Mobile Toggle & Outlet Selector */}
-          <div className="flex items-center">
+          <div className="flex items-center min-w-max">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="mr-4 lg:hidden text-slate-500">
               <LayoutDashboard size={20} />
             </button>
             
-            {/* Outline Selector mapped directly to Tenant's Stores */}
             <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 cursor-pointer hover:bg-slate-200 transition-colors">
               <MapPin size={16} className="text-indigo-600 mr-2" />
               {outletLoading ? (
@@ -142,11 +177,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   onChange={(e) => setSelectedOutlet(e.target.value)}
                   className="bg-transparent text-sm font-black text-slate-800 uppercase tracking-tight outline-none appearance-none pr-4 cursor-pointer"
                 >
-                  {/* Option to view all data for this Tenant */}
                   {(userRole === "Brand Owner" || userRole === "Admin" || outlets.length > 1) && (
-                    <option value="ALL">🏢 All Outlets (HQ View)</option>
+                    <option value="ALL">🏢 All Outlets</option>
                   )}
-                  {/* Dynamic Outlets fetched via User's TenantId */}
                   {outlets.map(o => (
                     <option key={o.id} value={o.id}>📍 {o.name}</option>
                   ))}
@@ -156,15 +189,43 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           
-          {/* Right Side: Header Top Nav (Owner Details + Logo) */}
-          <div className="flex items-center space-x-4">
+          {/* Right Side: Date Filter + Owner Details */}
+          <div className="flex items-center space-x-4 min-w-max ml-4">
             
-            {!isSidebarOpen && logoUrl && (
-               <img src={logoUrl} alt={tenantName} className="w-8 h-8 rounded-lg shadow-sm object-cover bg-white lg:hidden" />
-            )}
+            {/* 🟢 GLOBAL DATE FILTER UI */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
+                <CalendarDays size={15} className="text-indigo-600 mr-2" />
+                <select 
+                  value={dateFilter} 
+                  onChange={(e) => applyDateFilter(e.target.value, customStart, customEnd)}
+                  className="bg-transparent text-xs font-black text-slate-700 uppercase tracking-tight outline-none cursor-pointer"
+                >
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="all">All Time</option>
+                  <option value="custom">Custom Range</option>
+                </select>
+              </div>
 
-            <button className="text-slate-500 hover:text-slate-800"><Bell size={20} /></button>
-            <div className="h-8 w-px bg-slate-200"></div>
+              {/* Show Inputs only if 'custom' is selected */}
+              {dateFilter === "custom" && (
+                <div className="flex items-center gap-1 animate-in fade-in slide-in-from-right-4">
+                  <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="p-1.5 border border-slate-200 rounded-lg text-xs font-bold" />
+                  <span className="text-slate-400 text-xs">-</span>
+                  <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="p-1.5 border border-slate-200 rounded-lg text-xs font-bold" />
+                  <button 
+                    onClick={() => applyDateFilter("custom", customStart, customEnd)}
+                    disabled={!customStart || !customEnd}
+                    className="ml-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-black uppercase disabled:opacity-50"
+                  >
+                    GO
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden lg:block h-8 w-px bg-slate-200"></div>
             
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
@@ -172,7 +233,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest">{userRole}</p>
               </div>
               
-              {/* 🟢 Right Side Owner Logo */}
               {logoUrl ? (
                 <img src={logoUrl} alt="Avatar" className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-sm" />
               ) : (
@@ -208,7 +268,6 @@ function TenantLoginForm() {
     setLoading(true);
     setError("");
 
-    // 🟢 NextAuth connects to API logic securely via "TENANT" type
     const res = await signIn("credentials", { 
       redirect: false, 
       email, 
@@ -283,7 +342,6 @@ export default function BrandDashboardLayout({ children }: { children: React.Rea
     );
   }
 
-  // Pure strict check: NO LOGIN = NO DASHBOARD
   if (status === "unauthenticated") {
     return <TenantLoginForm />;
   }
