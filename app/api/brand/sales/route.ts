@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]/route"; 
+import { authOptions } from "../../auth/[...nextauth]/route";
 
 export const dynamic = "force-dynamic";
 
-// =================================================================
-// 🟢 1. GET: FETCH SALES DATA WITH DATE & OUTLET FILTERS
-// =================================================================
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -16,6 +13,7 @@ export async function GET(req: Request) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
+    // 1. Authenticate User
     const session = await getServerSession(authOptions);
     const userEmail = session?.user?.email;
 
@@ -28,18 +26,10 @@ export async function GET(req: Request) {
 
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    // Multi-Outlet Filter Logic
-    let outletFilter = {};
-    if (outletId !== "ALL") {
-      outletFilter = { outletId: outletId, outlet: { tenantId: user.tenantId } };
-    } else {
-      outletFilter = { outlet: { tenantId: user.tenantId } };
-    }
-
-    // Date Filter Logic
+    // 2. Date Filtering Logic
     let dateQuery: any = {};
     const now = new Date();
-
+    
     if (dateFilter === "today") {
       const start = new Date(now.setHours(0, 0, 0, 0));
       const end = new Date(now.setHours(23, 59, 59, 999));
@@ -57,49 +47,61 @@ export async function GET(req: Request) {
       dateQuery = { gte: new Date(startDate), lte: end };
     }
 
-    const orderWhereClause = {
-      ...outletFilter,
+    // 3. Multi-Outlet Filter Logic
+    let outletFilter = {};
+    if (outletId !== "ALL") {
+      outletFilter = { outletId: outletId, outlet: { tenantId: user.tenantId } };
+    } else {
+      outletFilter = { outlet: { tenantId: user.tenantId } };
+    }
+
+    const finalWhereClause = { 
+      ...outletFilter, 
       isDeleted: false,
-      ...(Object.keys(dateQuery).length > 0 ? { createdAt: dateQuery } : {})
+      ...(Object.keys(dateQuery).length > 0 ? { createdAt: dateQuery } : {}) 
     };
 
-    // Fetch Orders with Full Details for Expanded View
+    // 4. Fetch Orders with Full Details (Limit 200 for fast Live View)
     const orders = await prisma.order.findMany({
-      where: orderWhereClause,
+      where: finalWhereClause,
       orderBy: { createdAt: 'desc' },
-      take: 200, // Increased for ledger view
+      take: 200,
       include: {
         outlet: { select: { name: true } },
         customer: { select: { phone: true, name: true } },
-        items: {
-          include: { menuItem: { select: { name: true, price: true } } }
-        }
+        items: { include: { menuItem: true } } // 🟢 Included order items for details view
       }
     });
 
-    // Aggregate Stats by Payment Mode (Dynamic breakdown)
-    const paymentStatsRaw = await prisma.order.groupBy({
-      by: ['paymentMode'],
-      where: { ...orderWhereClause, status: "COMPLETED" },
-      _sum: { totalAmount: true },
-      _count: { id: true }
-    });
-
+    // 5. Calculate Aggregate Stats by Payment Mode & Platform
+    const completedOrders = orders.filter(o => o.status === "COMPLETED");
+    
     let totalRevenue = 0;
-    let totalOrders = 0;
-    const paymentBreakdown: Record<string, number> = { CASH: 0, CARD: 0, UPI: 0, ZOMATO: 0, SWIGGY: 0, RAMKESAR_DELIVERY: 0 };
+    let totalOrders = completedOrders.length;
+    
+    const paymentBreakdown: Record<string, number> = { CASH: 0, UPI: 0, CARD: 0, PART_PAYMENT: 0 };
+    const platformBreakdown: Record<string, number> = { POS: 0, ZOMATO: 0, SWIGGY: 0, RAMKESAR_APP: 0 };
 
-    paymentStatsRaw.forEach(stat => {
-      const mode = stat.paymentMode.toUpperCase();
-      const sum = stat._sum.totalAmount || 0;
+    completedOrders.forEach(order => {
+      totalRevenue += order.totalAmount;
       
-      if (paymentBreakdown[mode] !== undefined) {
-        paymentBreakdown[mode] += sum;
+      // Payment Breakdown
+      const mode = order.paymentMode?.toUpperCase() || "CASH";
+      if (mode === "PART") {
+        paymentBreakdown["PART_PAYMENT"] = (paymentBreakdown["PART_PAYMENT"] || 0) + order.totalAmount;
+      } else if (paymentBreakdown[mode] !== undefined) {
+        paymentBreakdown[mode] += order.totalAmount;
       } else {
-        paymentBreakdown[mode] = sum; // Adds any dynamic platform
+        paymentBreakdown["OTHER"] = (paymentBreakdown["OTHER"] || 0) + order.totalAmount;
       }
-      totalRevenue += sum;
-      totalOrders += stat._count.id;
+
+      // Platform Breakdown (Swiggy, Zomato, etc.)
+      const platform = order.platform?.toUpperCase() || "POS";
+      if (platformBreakdown[platform] !== undefined) {
+        platformBreakdown[platform] += order.totalAmount;
+      } else {
+        platformBreakdown[platform] = (platformBreakdown[platform] || 0) + order.totalAmount;
+      }
     });
 
     const averageOrderValue = totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(2) : 0;
@@ -111,7 +113,8 @@ export async function GET(req: Request) {
         totalRevenue,
         totalOrders,
         averageOrderValue,
-        paymentBreakdown
+        paymentBreakdown,
+        platformBreakdown
       }
     });
 
@@ -121,51 +124,54 @@ export async function GET(req: Request) {
   }
 }
 
-// =================================================================
-// 🔴 2. POST: SECURE ORDER ACTIONS (CANCEL / SETTLE)
-// =================================================================
-export async function POST(req: Request) {
+// 🟢 NEW: SECURE ACTION ENDPOINT (Cancel / Settle Bill)
+export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    const userEmail = session?.user?.email;
-
-    if (!userEmail) return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
 
     const body = await req.json();
-    const { action, orderId, password, updateData } = body;
+    const { orderId, action, password, paymentMode, partCash, partCard } = body;
 
-    // 1. Verify User Password
-    const user = await prisma.user.findUnique({ where: { email: userEmail } });
-    if (!user || user.password !== password) {
-      return NextResponse.json({ success: false, error: "Authentication Failed: Incorrect Password" }, { status: 403 });
+    if (!orderId || !action || !password) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // 2. Perform Action
+    // 1. Verify User Password strictly
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email! }
+    });
+
+    if (!user || user.password !== password) {
+      return NextResponse.json({ error: "Authentication Failed: Incorrect Password!" }, { status: 403 });
+    }
+
+    // 2. Perform Update based on action
     if (action === "CANCEL") {
-      await prisma.order.update({
+      const updatedOrder = await prisma.order.update({
         where: { id: orderId },
         data: { status: "CANCELLED" }
       });
-      return NextResponse.json({ success: true, message: "Order Cancelled Successfully." });
+      return NextResponse.json({ success: true, message: "Bill Cancelled Successfully", order: updatedOrder });
     } 
     
-    if (action === "SETTLE") {
-      await prisma.order.update({
+    else if (action === "SETTLE") {
+      const updatedOrder = await prisma.order.update({
         where: { id: orderId },
         data: { 
-          paymentMode: updateData.paymentMode,
-          partCash: parseFloat(updateData.partCash || 0),
-          partCard: parseFloat(updateData.partCard || 0),
+          paymentMode: paymentMode,
+          partCash: parseFloat(partCash) || 0,
+          partCard: parseFloat(partCard) || 0,
           status: "COMPLETED"
         }
       });
-      return NextResponse.json({ success: true, message: "Bill Settled Successfully." });
+      return NextResponse.json({ success: true, message: "Payment Settled Successfully", order: updatedOrder });
     }
 
     return NextResponse.json({ error: "Invalid Action" }, { status: 400 });
 
   } catch (error: any) {
-    console.error("Action Error:", error);
-    return NextResponse.json({ error: "Transaction Failed" }, { status: 500 });
+    console.error("Update Order Error:", error);
+    return NextResponse.json({ error: "Database transaction failed." }, { status: 500 });
   }
 }
