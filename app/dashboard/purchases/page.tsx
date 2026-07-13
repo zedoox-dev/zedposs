@@ -6,7 +6,7 @@ import {
   ShoppingCart, Truck, FileText, Plus, Search, 
   Loader2, X, IndianRupee, Store, CheckCircle2, 
   Trash2, Building2, CreditCard, Landmark, Star, 
-  History, Wallet, AlertCircle, CalendarDays, Printer, ChevronDown, ChevronUp
+  History, Wallet, AlertCircle, CalendarDays, Printer, ChevronDown, ChevronUp, Users, FileSpreadsheet
 } from "lucide-react";
 
 const MAJOR_BANKS = [
@@ -27,13 +27,13 @@ export default function ProcurementsAndVendorsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeView, setActiveView] = useState<"PURCHASES" | "VENDORS">("PURCHASES");
 
-  // 🟢 Filters
+  // Filters
   const [dateFilter, setDateFilter] = useState("today");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [expandedPO, setExpandedPO] = useState<string | null>(null);
 
-  // 🟢 Modals & Forms
+  // Modals & Forms
   const [showAddPOModal, setShowAddPOModal] = useState(false);
   const [showAddVendorModal, setShowAddVendorModal] = useState(false);
   const [showPayDueModal, setShowPayDueModal] = useState(false);
@@ -124,6 +124,7 @@ export default function ProcurementsAndVendorsPage() {
       });
       const json = await res.json();
       if (res.ok && json.success) {
+        alert("✅ GRN Generated & Inventory Updated Successfully!");
         setShowAddPOModal(false);
         setPoForm({ vendorId: "", outletId: selectedOutlet !== "ALL" ? selectedOutlet : "", invoiceNumber: "", paymentMode: "CASH", notes: "" });
         setPoItems([{ inventoryId: "", quantity: "", costPrice: "", taxPercent: "0" }]);
@@ -143,6 +144,7 @@ export default function ProcurementsAndVendorsPage() {
         body: JSON.stringify({ action: "ADD_VENDOR", ...newVendor })
       });
       if (res.ok) {
+        alert("✅ Vendor Profile Created Successfully!");
         setShowAddVendorModal(false);
         setNewVendor({ name: "", contactPerson: "", phone: "", email: "", address: "", gstin: "", pan: "", bankName: "", accountNo: "", ifsc: "", outstandingAmt: "0", creditDays: "0" });
         fetchData();
@@ -157,14 +159,14 @@ export default function ProcurementsAndVendorsPage() {
     try {
       const res = await fetch("/api/brand/purchases", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "SETTLE_VENDOR", vendorId: selectedVendor.id, amount: payDueData.amount, paymentMode: payDueData.mode })
+        body: JSON.stringify({ action: "SETTLE_VENDOR", vendorId: selectedVendor.id, amount: payDueData.amount, paymentMode: payDueData.mode, bankName: payDueData.mode === "BANK" ? payDueData.bankName : undefined })
       });
       if (res.ok) {
         if (payDueData.mode === "BANK") {
           window.open(`https://www.npci.org.in/upi?amount=${payDueData.amount}`, "_blank");
         }
         setTimeout(() => {
-          alert(`✅ Payment of ₹${payDueData.amount} processed!`);
+          alert(`✅ Payment of ₹${payDueData.amount} processed and Ledger updated!`);
           setShowPayDueModal(false);
           setPayDueData({ amount: "", mode: "BANK", bankName: "SBI" });
           fetchData();
@@ -172,6 +174,43 @@ export default function ProcurementsAndVendorsPage() {
         }, 1000);
       }
     } catch (e) { alert("Network Error"); setIsProcessing(false); }
+  };
+
+  // 🟢 Generate Complete Ledger Entries Chronologically
+  const generateVendorLedger = (vendor: any) => {
+    let ledger: any[] = [];
+    
+    // Add Purchases (Debits - Money we owe them)
+    vendor.purchases?.forEach((po: any) => {
+      // Don't show dummy settlement POs as separate purchases in ledger details if total is 0
+      if (po.totalAmount > 0) {
+        ledger.push({
+          id: po.id,
+          date: new Date(po.date),
+          type: "PURCHASE",
+          ref: po.invoiceNumber || "GRN Invoice",
+          debit: po.totalAmount, // Increases Outstanding
+          credit: 0,
+          details: po.items?.map((i:any) => `${i.quantity}${i.inventory?.unit} ${i.inventory?.itemName}`).join(', ')
+        });
+      }
+      
+      // Add Payments (Credits - Money we paid them)
+      po.payments?.forEach((pay: any) => {
+        ledger.push({
+          id: pay.id,
+          date: new Date(pay.date),
+          type: "PAYMENT",
+          ref: pay.referenceNo ? `${pay.paymentMode} (${pay.referenceNo})` : pay.paymentMode,
+          debit: 0,
+          credit: pay.amount, // Reduces Outstanding
+          details: `Payment Settlement`
+        });
+      });
+    });
+
+    // Sort by date ascending
+    return ledger.sort((a, b) => a.date.getTime() - b.date.getTime());
   };
 
   const triggerPrint = () => window.print();
@@ -227,13 +266,11 @@ export default function ProcurementsAndVendorsPage() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          {/* View Switcher */}
           <div className="bg-white border border-slate-200 rounded-xl p-1 shadow-sm flex items-center">
             <button onClick={()=>setActiveView("PURCHASES")} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${activeView === 'PURCHASES' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-900'}`}>Purchases (GRN)</button>
-            <button onClick={()=>setActiveView("VENDORS")} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${activeView === 'VENDORS' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:text-slate-900'}`}>Vendors</button>
+            <button onClick={()=>setActiveView("VENDORS")} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${activeView === 'VENDORS' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:text-slate-900'}`}>Vendors Ledger</button>
           </div>
 
-          {/* Date Filter */}
           <div className="flex items-center gap-2">
             <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
               <CalendarDays size={15} className="text-slate-500 mr-2" />
@@ -257,7 +294,7 @@ export default function ProcurementsAndVendorsPage() {
           
           {activeView === "PURCHASES" ? (
             <button onClick={() => setShowAddPOModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-md active:scale-95 transition-all">
-              <Plus size={14} className="mr-1.5" /> Enter GRN
+              <Plus size={14} className="mr-1.5" /> Entry GRN
             </button>
           ) : (
             <button onClick={() => setShowAddVendorModal(true)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-md active:scale-95 transition-all">
@@ -331,9 +368,9 @@ export default function ProcurementsAndVendorsPage() {
                         </td>
                         {selectedOutlet === "ALL" && <td className="p-4 text-[10px] text-slate-600 uppercase tracking-widest font-black print:py-2">{po.outlet?.name}</td>}
                         <td className="p-4 font-black text-slate-800 uppercase text-xs print:py-2">{po.vendor?.name}</td>
-                        <td className="p-4 text-center print:py-2"><span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded text-[10px] font-black print:bg-transparent print:p-0">{po.items?.length || 0}</span></td>
+                        <td className="p-4 text-center print:py-2"><span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded text-[10px] font-black print:bg-transparent print:p-0">{po._count?.items || 0} Items</span></td>
                         <td className="p-4 text-right print:py-2">
-                           <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-black print:bg-transparent print:p-0 ${po.paymentStatus === 'PAID' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                           <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-black print:bg-transparent print:p-0 ${po.paymentStatus === 'PAID' ? 'bg-emerald-50 text-emerald-600' : po.paymentStatus === 'PARTIAL' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
                              {po.paymentStatus}
                            </span>
                         </td>
@@ -355,7 +392,7 @@ export default function ProcurementsAndVendorsPage() {
                                       <td className="p-3 text-center font-mono">{item.quantity} <span className="text-[9px] text-slate-400">{item.inventory?.unit}</span></td>
                                       <td className="p-3 text-right font-mono">₹{item.costPrice.toFixed(2)}</td>
                                       <td className="p-3 text-right font-mono text-slate-400">{item.taxPercent}%</td>
-                                      <td className="p-3 text-right font-mono text-slate-900">₹{item.totalAmount.toFixed(2)}</td>
+                                      <td className="p-3 text-right font-mono text-slate-900">₹{((item.quantity * item.costPrice) * (1 + item.taxPercent/100)).toFixed(2)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -399,13 +436,13 @@ export default function ProcurementsAndVendorsPage() {
                         <div className="text-[10px] font-black uppercase text-slate-600 mb-1 flex items-center"><Landmark size={12} className="mr-1 text-purple-500"/> {v.bankName || "N/A"} (AC: {v.accountNo || "N/A"})</div>
                         <div className="text-[9px] font-mono text-slate-400 uppercase">GSTIN: {v.gstin || "N/A"} | PAN: {v.pan || "N/A"}</div>
                       </td>
-                      <td className="p-4 text-center print:py-2 font-mono">{v.purchases?.length || 0}</td>
+                      <td className="p-4 text-center print:py-2 font-mono">{v._count?.purchases || 0}</td>
                       <td className={`p-4 text-center font-mono font-black text-base border-x print:py-2 print:border-none ${v.outstandingAmt > 0 ? 'text-red-600 bg-red-50/30' : 'text-emerald-600'}`}>
                         ₹{Number(v.outstandingAmt || 0).toLocaleString()}
                       </td>
                       <td className="p-4 text-center space-y-2 print:hidden">
                         {v.outstandingAmt > 0 && <button onClick={()=>{setSelectedVendor(v); setPayDueData({amount: v.outstandingAmt.toString(), mode: "BANK", bankName: "SBI"}); setShowPayDueModal(true);}} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase px-2 py-2 rounded flex items-center justify-center shadow-sm active:scale-95 transition-all"><CreditCard size={12} className="mr-1.5"/> Settle Dues</button>}
-                        <button onClick={() => {setSelectedVendor(v); setShowVendorHistoryModal(true);}} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-black uppercase px-2 py-2 rounded flex items-center justify-center shadow-sm active:scale-95 transition-all"><History size={12} className="mr-1.5"/> Ledger</button>
+                        <button onClick={() => {setSelectedVendor(v); setShowVendorHistoryModal(true);}} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-black uppercase px-2 py-2 rounded flex items-center justify-center shadow-sm active:scale-95 transition-all"><History size={12} className="mr-1.5"/> Accounts Ledger</button>
                       </td>
                     </tr>
                   ))
@@ -447,8 +484,8 @@ export default function ProcurementsAndVendorsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Invoice / Ref No</label>
-                  <input type="text" placeholder="INV-001" value={poForm.invoiceNumber} onChange={(e) => setPoForm({...poForm, invoiceNumber: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50" />
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Invoice No (Optional)</label>
+                  <input type="text" placeholder="e.g. INV-2026" value={poForm.invoiceNumber} onChange={(e) => setPoForm({...poForm, invoiceNumber: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold focus:border-indigo-500 bg-slate-50" />
                 </div>
               </div>
 
@@ -469,11 +506,11 @@ export default function ProcurementsAndVendorsPage() {
                       </div>
                       <div className="w-24">
                         <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Qty <span className="text-red-500">*</span></label>
-                        <input required type="number" min="0.1" step="any" placeholder="0" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-mono font-black focus:border-indigo-500 text-center" />
+                        <input required type="number" min="0.1" step="any" placeholder="0" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-mono font-bold focus:border-indigo-500 text-center" />
                       </div>
                       <div className="w-32">
                         <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Rate (₹) <span className="text-red-500">*</span></label>
-                        <input required type="number" min="0" step="any" placeholder="0.00" value={item.costPrice} onChange={(e) => handleItemChange(index, "costPrice", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-mono font-black text-emerald-600 focus:border-indigo-500 text-center" />
+                        <input required type="number" min="0" step="any" placeholder="0.00" value={item.costPrice} onChange={(e) => handleItemChange(index, "costPrice", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-mono font-bold text-emerald-600 focus:border-indigo-500 text-center" />
                       </div>
                       <div className="w-24">
                         <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">GST %</label>
@@ -495,6 +532,7 @@ export default function ProcurementsAndVendorsPage() {
                     <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Payment Settlement Mode</label>
                     <select value={poForm.paymentMode} onChange={(e) => setPoForm({...poForm, paymentMode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white shadow-sm">
                       <option value="CASH">Cash Paid Instantly</option>
+                      <option value="BANK">Bank Transfer (IMPS/RTGS)</option>
                       <option value="UPI">UPI / Online Transfer</option>
                       <option value="CHEQUE">Bank Cheque</option>
                       <option value="CREDIT">Add to Vendor Credit (Udhaar)</option>
@@ -559,9 +597,14 @@ export default function ProcurementsAndVendorsPage() {
                     <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Bank Name</label><input type="text" placeholder="HDFC, SBI, etc." value={newVendor.bankName} onChange={(e)=>setNewVendor({...newVendor, bankName:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-xs uppercase focus:border-purple-500 outline-none bg-slate-50" /></div>
                     <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Account Number</label><input type="text" placeholder="XXXX XXXX XXXX" value={newVendor.accountNo} onChange={(e)=>setNewVendor({...newVendor, accountNo:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-mono font-black tracking-widest text-xs focus:border-purple-500 outline-none bg-slate-50" /></div>
                     <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">IFSC Code</label><input type="text" placeholder="HDFC0001234" value={newVendor.ifsc} onChange={(e)=>setNewVendor({...newVendor, ifsc:e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">PAN NUMBER <span className="text-red-500">*</span></label><input required type="text" placeholder="ABCDE1234F" value={newVendor.pan} onChange={(e)=>setNewVendor({...newVendor, pan:e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none bg-slate-50" /></div>
                     <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">GSTIN Reg.</label><input type="text" placeholder="22AAAAA0000A1Z5" value={newVendor.gstin} onChange={(e)=>setNewVendor({...newVendor, gstin:e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none bg-slate-50" /></div>
                     <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Credit Days Allowed</label><input type="number" min="0" value={newVendor.creditDays} onChange={(e)=>setNewVendor({...newVendor, creditDays:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-mono font-black text-xs focus:border-purple-500 outline-none bg-slate-50" /></div>
-                    <div className="bg-red-50 p-3 rounded-xl border border-red-200"><label className="block text-[10px] font-black uppercase text-red-600 mb-1.5">Opening Balance Debt (₹)</label><input type="number" step="any" min="0" value={newVendor.outstandingAmt} onChange={(e)=>setNewVendor({...newVendor, outstandingAmt:e.target.value})} className="w-full p-2 border-b-2 border-red-300 bg-transparent text-red-700 font-mono font-black text-xl outline-none focus:border-red-500" /></div>
+                    <div className="col-span-1 md:col-span-3 bg-red-50 p-4 rounded-xl border border-red-200">
+                      <label className="block text-[10px] font-black uppercase text-red-600 mb-1.5">Opening Balance Debt (₹)</label>
+                      <input type="number" step="any" min="0" value={newVendor.outstandingAmt} onChange={(e)=>setNewVendor({...newVendor, outstandingAmt:e.target.value})} className="w-full p-3 border-b-2 border-red-300 bg-transparent text-red-700 font-mono font-black text-2xl outline-none focus:border-red-500" />
+                      <p className="text-[9px] text-red-500 font-bold uppercase mt-1 tracking-widest">Initial amount you owe to this vendor.</p>
+                    </div>
                   </div>
                 </div>
               </form>
@@ -598,12 +641,15 @@ export default function ProcurementsAndVendorsPage() {
 
               <div>
                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Select Transfer Mechanism</label>
-                 <div className="grid grid-cols-2 gap-3">
-                   <button onClick={() => setPayDueData({...payDueData, mode: 'CASH'})} className={`py-4 px-4 rounded-xl text-xs font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'CASH' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
-                      <IndianRupee size={24} className="mb-2"/> Physical Cash
+                 <div className="grid grid-cols-3 gap-2">
+                   <button onClick={() => setPayDueData({...payDueData, mode: 'CASH'})} className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'CASH' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
+                      <IndianRupee size={16} className="mb-1.5"/> Cash
                    </button>
-                   <button onClick={() => setPayDueData({...payDueData, mode: 'BANK'})} className={`py-4 px-4 rounded-xl text-xs font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'BANK' ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
-                      <Landmark size={24} className="mb-2"/> Bank Transfer
+                   <button onClick={() => setPayDueData({...payDueData, mode: 'BANK'})} className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'BANK' ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
+                      <Landmark size={16} className="mb-1.5"/> Bank
+                   </button>
+                   <button onClick={() => setPayDueData({...payDueData, mode: 'UPI'})} className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'UPI' ? 'border-purple-500 bg-purple-50 text-purple-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
+                      <Smartphone size={16} className="mb-1.5"/> UPI
                    </button>
                  </div>
               </div>
@@ -614,7 +660,7 @@ export default function ProcurementsAndVendorsPage() {
                   <div className="grid grid-cols-4 gap-2">
                      {MAJOR_BANKS.map(bank => (
                        <button key={bank.id} onClick={() => setPayDueData({...payDueData, bankName: bank.id})} className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${payDueData.bankName === bank.id ? `${bank.color} ${bank.border} shadow-lg scale-105 z-10` : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}>
-                         <Landmark size={18} className="mb-1.5 opacity-80"/>
+                         <Landmark size={16} className="mb-1.5 opacity-80"/>
                          <span className="text-[8px] font-black uppercase tracking-wider text-center">{bank.id}</span>
                        </button>
                      ))}
@@ -635,64 +681,88 @@ export default function ProcurementsAndVendorsPage() {
         </div>
       )}
 
-      {/* 4. VENDOR LEDGER HISTORY MODAL */}
-      {showVendorHistoryModal && selectedVendor && (
-        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[200] p-4 print:hidden animate-in fade-in zoom-in duration-150">
-          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[85vh] border-t-8 border-slate-900 overflow-hidden">
-            <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-              <div>
-                <h2 className="text-xl font-black text-slate-800 uppercase flex items-center tracking-tight"><History size={20} className="mr-2 text-slate-600"/> Payment Ledger History</h2>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{selectedVendor.name} • GST: {selectedVendor.gstin || "N/A"}</p>
+      {/* 4. VENDOR LEDGER HISTORY MODAL (CA / ACCOUNTANT GRADE) */}
+      {showVendorHistoryModal && selectedVendor && (() => {
+        // Calculate unified chronological ledger
+        let ledger: any[] = [];
+        
+        selectedVendor.purchases?.forEach((po: any) => {
+          if (po.totalAmount > 0) {
+            ledger.push({
+              id: `PO-${po.id}`, date: new Date(po.createdAt), type: "DEBIT",
+              particulars: `Purchase GRN #${po.invoiceNumber || 'N/A'}\n${po.items?.map((i:any)=>`${i.quantity}${i.inventory?.unit} ${i.inventory?.itemName}`).join(', ')}`,
+              amount: po.totalAmount
+            });
+          }
+          po.payments?.forEach((pay: any) => {
+            ledger.push({
+              id: `PAY-${pay.id}`, date: new Date(pay.date), type: "CREDIT",
+              particulars: `Payment Made via ${pay.paymentMode} ${pay.referenceNo ? `(${pay.referenceNo})` : ''}`,
+              amount: pay.amount
+            });
+          });
+        });
+        ledger.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+        return (
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[200] p-4 print:hidden animate-in fade-in zoom-in duration-150">
+            <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[90vh] border-t-8 border-slate-900 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                <div>
+                  <h2 className="text-xl font-black text-slate-800 uppercase flex items-center tracking-tight"><History size={20} className="mr-2 text-slate-600"/> Complete Accounts Ledger</h2>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Vendor: {selectedVendor.name} • PAN: {selectedVendor.pan || "N/A"} • GST: {selectedVendor.gstin || "N/A"}</p>
+                </div>
+                <button onClick={() => setShowVendorHistoryModal(false)} className="text-slate-400 p-2 bg-white border border-slate-200 hover:bg-slate-100 rounded-full transition-colors"><X size={16}/></button>
               </div>
-              <button onClick={() => setShowVendorHistoryModal(false)} className="text-slate-400 p-2 bg-white border border-slate-200 hover:bg-slate-100 rounded-full transition-colors"><X size={16}/></button>
-            </div>
-            
-            <div className="overflow-y-auto p-0 flex-1 custom-scrollbar bg-white">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 bg-slate-100/95 backdrop-blur z-10 border-b border-slate-200">
-                  <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                    <th className="p-4">Transaction Date</th>
-                    <th className="p-4">Transfer Mode</th>
-                    <th className="p-4">GRN Linked</th>
-                    <th className="p-4 text-right bg-emerald-50 text-emerald-800">Amount Cleared</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
-                  {selectedVendor.purchaseLogs?.length > 0 ? (
-                    selectedVendor.purchaseLogs.map((pay: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-4">
-                          <span className="text-xs font-black text-slate-800 block uppercase">{new Date(pay.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                        </td>
-                        <td className="p-4">
-                          <span className={`inline-flex items-center text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded border ${pay.paymentMode === 'CASH' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                            {pay.paymentMode}
-                          </span>
-                        </td>
-                        <td className="p-4 font-mono text-[10px] text-slate-500 uppercase">
-                          {pay.purchaseOrder?.invoiceNumber || "N/A"}
-                        </td>
-                        <td className="p-4 text-right font-mono font-black text-emerald-600 text-sm">₹{Number(pay.amount).toLocaleString()}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4} className="p-10 text-center text-slate-400">
-                        <History size={40} className="mx-auto mb-3 opacity-20"/>
-                        <p className="font-black text-sm uppercase tracking-widest">No Payments Logged</p>
-                      </td>
+              
+              <div className="overflow-y-auto p-0 flex-1 custom-scrollbar bg-white">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-slate-100/95 backdrop-blur z-10 border-b border-slate-200">
+                    <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      <th className="p-4">Transaction Date</th>
+                      <th className="p-4">Particulars / Description</th>
+                      <th className="p-4 text-right bg-red-50 text-red-800 border-l border-slate-200">Debit (We Owe)</th>
+                      <th className="p-4 text-right bg-emerald-50 text-emerald-800 border-x border-slate-200">Credit (We Paid)</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="p-6 bg-slate-900 border-t border-slate-800 flex justify-between items-center shrink-0">
-               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Liability Cleared</span>
-               <span className="font-mono font-black text-emerald-400 text-2xl">₹{selectedVendor.purchaseLogs?.reduce((sum:number, p:any) => sum + p.amount, 0).toLocaleString() || "0"}</span>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
+                    {ledger.length > 0 ? (
+                      ledger.map((log: any) => (
+                        <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4">
+                            <span className="text-xs font-black text-slate-800 block uppercase">{log.date.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</span>
+                            <span className="text-[9px] font-bold text-slate-400">{log.date.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })}</span>
+                          </td>
+                          <td className="p-4">
+                            <span className="text-xs text-slate-700 block whitespace-pre-line">{log.particulars}</span>
+                          </td>
+                          <td className="p-4 text-right font-mono font-black text-red-600 text-sm border-l border-slate-100 bg-red-50/10">
+                            {log.type === "DEBIT" ? `₹${log.amount.toLocaleString()}` : "-"}
+                          </td>
+                          <td className="p-4 text-right font-mono font-black text-emerald-600 text-sm border-x border-slate-100 bg-emerald-50/10">
+                            {log.type === "CREDIT" ? `₹${log.amount.toLocaleString()}` : "-"}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="p-10 text-center text-slate-400">
+                          <History size={40} className="mx-auto mb-3 opacity-20"/>
+                          <p className="font-black text-sm uppercase tracking-widest">No Transactions Logged</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="p-6 bg-slate-900 border-t border-slate-800 flex justify-between items-center shrink-0">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Current Outstanding Balance</span>
+                 <span className="font-mono font-black text-red-400 text-2xl">₹{Number(selectedVendor.outstandingAmt || 0).toLocaleString()}</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
     </div>
   );

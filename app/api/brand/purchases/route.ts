@@ -41,7 +41,6 @@ export async function GET(req: Request) {
       dateQuery = { gte: new Date(startDate), lte: end };
     }
 
-    // Outlet Filter Logic
     let outletFilter = {};
     if (outletId !== "ALL") {
       outletFilter = { outletId: outletId, outlet: { tenantId: user.tenantId } };
@@ -67,32 +66,27 @@ export async function GET(req: Request) {
       orderBy: { createdAt: 'desc' }
     });
 
-    // 2. Fetch Vendors with their active purchases and payment logs
+    // 2. 🟢 Fetch Vendors with FULL LEDGER (Purchases & Payments)
     const vendors = await prisma.vendor.findMany({
       where: { tenantId: user.tenantId, isDeleted: false },
       include: {
-        purchases: { where: { isDeleted: false }, select: { id: true } },
+        purchases: { 
+          where: { isDeleted: false }, 
+          include: {
+            items: { include: { inventory: { select: { itemName: true, unit: true } } } },
+            payments: true
+          },
+          orderBy: { date: 'asc' }
+        },
         _count: { select: { purchases: true } }
       }
     });
 
-    // Fetch vendor payment history (requires mapping from PurchasePayment)
-    for (let i = 0; i < vendors.length; i++) {
-      const v = vendors[i];
-      const purchaseIds = v.purchases.map(p => p.id);
-      const paymentLogs = await prisma.purchasePayment.findMany({
-        where: { purchaseOrderId: { in: purchaseIds } },
-        include: { purchaseOrder: { select: { invoiceNumber: true } } },
-        orderBy: { date: 'desc' }
-      });
-      (v as any).purchaseLogs = paymentLogs;
-    }
-
-    // 3. Fetch Inventory 
+    // 3. 🟢 Fetch Inventory (Exclude Finished Goods to show all raw materials/packing in dropdown)
     const inventory = await prisma.inventory.findMany({
       where: outletId !== "ALL" 
-        ? { outletId, isDeleted: false } 
-        : { outlet: { tenantId: user.tenantId }, isDeleted: false },
+        ? { outletId, isDeleted: false, type: { not: 'FINISHED_GOOD' } } 
+        : { outlet: { tenantId: user.tenantId }, isDeleted: false, type: { not: 'FINISHED_GOOD' } },
       include: { outlet: { select: { name: true } } },
       orderBy: { itemName: 'asc' }
     });
@@ -126,7 +120,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
 
-      // Calculate Subtotal & Tax
+      // Calculate Subtotal & Tax correctly
       let totalAmount = 0;
       let taxAmount = 0;
       const parsedItems = items.map((item: any) => {
@@ -148,10 +142,7 @@ export async function POST(req: Request) {
         };
       });
 
-      // Transaction
       const result = await prisma.$transaction(async (tx) => {
-        
-        // Setup payment status depending on CREDIT or not
         const isCredit = paymentMode === "CREDIT";
         const poStatus = "RECEIVED";
         const poPaymentStatus = isCredit ? "UNPAID" : "PAID";
@@ -167,7 +158,7 @@ export async function POST(req: Request) {
             amountPaid,
             taxAmount,
             discountAmount: 0,
-            netAmount: totalAmount,
+            netAmount: totalAmount - taxAmount,
             totalAmount,
             createdById: user.id
           }
@@ -186,7 +177,7 @@ export async function POST(req: Request) {
           });
         }
 
-        // 4. Handle Payments & Vendor Debts
+        // 4. Handle Payments & Vendor Debt Updates
         if (isCredit) {
           await tx.vendor.update({
             where: { id: vendorId },
@@ -217,7 +208,8 @@ export async function POST(req: Request) {
       const newVendor = await prisma.vendor.create({
         data: {
           tenantId: user.tenantId, name: name.toUpperCase(), contactPerson, phone, email, address, 
-          gstin, pan, bankName, accountNo, ifsc,
+          gstin: gstin?.toUpperCase() || null, pan: pan?.toUpperCase() || null, 
+          bankName: bankName?.toUpperCase() || null, accountNo, ifsc: ifsc?.toUpperCase() || null,
           outstandingAmt: parseFloat(outstandingAmt) || 0,
           creditDays: parseInt(creditDays) || 0
         }
@@ -229,7 +221,7 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("POST Error:", error);
-    return NextResponse.json({ error: "Transaction Failed" }, { status: 500 });
+    return NextResponse.json({ error: "Transaction Failed. Check fields and try again." }, { status: 500 });
   }
 }
 
@@ -238,14 +230,17 @@ export async function PUT(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const user = await prisma.user.findUnique({ where: { email: session.user.email! } });
+    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
     const body = await req.json();
     const { action } = body;
 
     // ==========================================
-    // ACTION: SETTLE VENDOR DUES
+    // ACTION: SETTLE VENDOR DUES (WITH 100% ACCURATE LEDGER)
     // ==========================================
     if (action === "SETTLE_VENDOR") {
-      const { vendorId, amount, paymentMode } = body;
+      const { vendorId, amount, paymentMode, bankName } = body;
       const payAmount = parseFloat(amount);
 
       if (!vendorId || !payAmount || payAmount <= 0) {
@@ -259,44 +254,67 @@ export async function PUT(req: Request) {
           data: { outstandingAmt: { decrement: payAmount } }
         });
 
-        // 2. Find oldest UNPAID Purchase Orders to map payment
+        // 2. Find oldest UNPAID POs to map payment
         const unpaidPOs = await tx.purchaseOrder.findMany({
-          where: { vendorId, paymentStatus: { in: ['UNPAID', 'PARTIAL'] } },
+          where: { vendorId, paymentStatus: { in: ['UNPAID', 'PARTIAL'] }, isDeleted: false },
           orderBy: { date: 'asc' }
         });
 
-        let remainingPayment = payAmount;
+        let remaining = payAmount;
 
+        // Distribute amount to unpaid POs
         for (const po of unpaidPOs) {
-          if (remainingPayment <= 0) break;
-          
-          const poBalance = po.totalAmount - po.amountPaid;
-          const applyAmt = Math.min(remainingPayment, poBalance);
+          if (remaining <= 0) break;
+          const balance = po.totalAmount - po.amountPaid;
+          const apply = Math.min(remaining, balance);
           
           await tx.purchasePayment.create({
             data: {
               purchaseOrderId: po.id,
-              amount: applyAmt,
-              paymentMode: paymentMode === "BANK" ? "UPI" : paymentMode
+              amount: apply,
+              paymentMode: paymentMode,
+              referenceNo: bankName || null
             }
           });
 
           await tx.purchaseOrder.update({
             where: { id: po.id },
             data: {
-              amountPaid: { increment: applyAmt },
-              paymentStatus: (po.amountPaid + applyAmt) >= po.totalAmount ? "PAID" : "PARTIAL"
+              amountPaid: { increment: apply },
+              paymentStatus: (po.amountPaid + apply) >= po.totalAmount ? "PAID" : "PARTIAL"
+            }
+          });
+          remaining -= apply;
+        }
+
+        // 3. 🟢 THE ULTIMATE FIX: If remaining > 0 (Advance/Overpay), create a Dummy Settlement PO
+        if (remaining > 0) {
+          const fallbackOutlet = unpaidPOs.length > 0 ? unpaidPOs[0].outletId : (await tx.outlet.findFirst({where: {tenantId: user.tenantId}}))!.id;
+          
+          const dummyPO = await tx.purchaseOrder.create({
+            data: {
+              vendorId, 
+              outletId: fallbackOutlet, 
+              invoiceNumber: `SETTLE-${Date.now()}`,
+              status: "RECEIVED", 
+              paymentStatus: "PAID", 
+              amountPaid: remaining,
+              totalAmount: 0, 
+              netAmount: 0, 
+              taxAmount: 0, 
+              discountAmount: 0,
+              notes: "Advance Balance Settlement / Due Clearance"
             }
           });
 
-          remainingPayment -= applyAmt;
-        }
-
-        // If no unpaid POs existed but payment was made (e.g. paying opening balance)
-        if (remainingPayment > 0 && unpaidPOs.length === 0) {
-           // Fallback logic could be creating a Dummy PO, but Vendor Outstanding is already updated.
-           // However, to keep ledger intact without PO mapping errors, we skip creating PurchasePayment 
-           // and rely purely on Vendor balance, but ideally there should always be POs.
+          await tx.purchasePayment.create({ 
+            data: { 
+              purchaseOrderId: dummyPO.id, 
+              amount: remaining, 
+              paymentMode: paymentMode,
+              referenceNo: bankName || null
+            }
+          });
         }
       });
 
