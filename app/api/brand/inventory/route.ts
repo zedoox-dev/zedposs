@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]/route";
 
 export const dynamic = "force-dynamic";
 
-// GET INVENTORY LIST
+// GET INVENTORY LIST WITH LEDGER LOGS
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const outletId = searchParams.get("outletId") || "ALL";
+    const dateFilter = searchParams.get("date") || "today";
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
 
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     const userEmail = session?.user?.email;
     if (!userEmail) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -24,14 +28,66 @@ export async function GET(req: Request) {
       outletFilter = { outlet: { tenantId: user.tenantId } };
     }
 
+    // Date Logic for Ledger
+    let dateQuery: any = {};
+    const now = new Date();
+    
+    if (dateFilter === "today") {
+      const start = new Date(now.setHours(0, 0, 0, 0));
+      const end = new Date(now.setHours(23, 59, 59, 999));
+      dateQuery = { gte: start, lte: end };
+    } else if (dateFilter === "yesterday") {
+      const start = new Date(now);
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+      dateQuery = { gte: start, lte: end };
+    } else if (dateFilter === "custom" && startDate && endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      dateQuery = { gte: new Date(startDate), lte: end };
+    }
+
+    // 1. Fetch Items
     const inventory = await prisma.inventory.findMany({
-      where: { ...outletFilter, isDeleted: false },
+      where: { 
+        ...outletFilter, 
+        isDeleted: false,
+        type: { in: ['RAW_MATERIAL', 'PACKAGING'] } // Only show Raw/Packing items
+      },
       include: { outlet: { select: { name: true } } },
       orderBy: { itemName: 'asc' }
     });
 
-    return NextResponse.json({ success: true, inventory });
+    // 2. Fetch Inward Logs (Purchases) based on Date
+    const inwardLogs = await prisma.purchaseItem.findMany({
+      where: {
+        inventoryId: { in: inventory.map(i => i.id) },
+        purchaseOrder: {
+          isDeleted: false,
+          status: { notIn: ['CANCELLED', 'DRAFT'] },
+          ...(Object.keys(dateQuery).length > 0 ? { date: dateQuery } : {})
+        }
+      },
+      select: { inventoryId: true, quantity: true }
+    });
+
+    // 3. Fetch Consume Logs (Production) based on Date
+    const consumeLogs = await prisma.productionRawLog.findMany({
+      where: {
+        inventoryId: { in: inventory.map(i => i.id) },
+        batch: {
+          isDeleted: false,
+          ...(Object.keys(dateQuery).length > 0 ? { date: dateQuery } : {})
+        }
+      },
+      select: { inventoryId: true, quantityDeducted: true }
+    });
+
+    return NextResponse.json({ success: true, inventory, inwardLogs, consumeLogs });
   } catch (error: any) {
+    console.error("Inventory Fetch Error:", error);
     return NextResponse.json({ error: "Failed to load inventory" }, { status: 500 });
   }
 }
@@ -40,53 +96,62 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { itemName, type, unit, minStock, outletId } = body;
+    const { itemName, classification, unit, stockLevel, minStock, outletId } = body;
 
-    if (!itemName || !type || !unit || !outletId) {
+    if (!itemName || !classification || !unit || !outletId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    // 🟢 Map Custom Classifications to DB Schema Type
+    let dbType = "RAW_MATERIAL";
+    if (classification === "PACKING") dbType = "PACKAGING";
+
+    // 🟢 Append Classification to name for UI distinction later
+    let finalItemName = itemName.toUpperCase();
+    if (["VEGETABLES", "SPICES", "DAIRY"].includes(classification)) {
+      finalItemName = `[${classification}] ${finalItemName}`;
     }
 
     const newItem = await prisma.inventory.create({
       data: {
-        itemName,
-        type,
-        unit,
+        itemName: finalItemName,
+        type: dbType as any,
+        unit: unit.toUpperCase(),
+        stockLevel: Number(stockLevel) || 0,
         minStock: Number(minStock) || 0,
-        stockLevel: 0, // Initial stock is always 0
         outletId
       }
     });
 
     return NextResponse.json({ success: true, item: newItem });
   } catch (error: any) {
+    console.error("Inventory Create Error:", error);
     return NextResponse.json({ error: "Failed to create item" }, { status: 500 });
   }
 }
 
-// UPDATE STOCK LEVEL (STOCK IN / OUT)
-export async function PUT(req: Request) {
+// 🟢 DELETE SKU ITEM SECURELY
+export async function DELETE(req: Request) {
   try {
     const body = await req.json();
-    const { id, quantity, action } = body; // action: "ADD" or "SUBTRACT"
+    const { id, password } = body;
 
-    const item = await prisma.inventory.findUnique({ where: { id } });
-    if (!item) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    let newStockLevel = item.stockLevel;
-    if (action === "ADD") {
-      newStockLevel += Number(quantity);
-    } else if (action === "SUBTRACT") {
-      newStockLevel -= Number(quantity);
-      if (newStockLevel < 0) newStockLevel = 0; // Prevent negative stock
+    const user = await prisma.user.findUnique({ where: { email: session.user.email! } });
+    if (!user || user.password !== password) {
+      return NextResponse.json({ error: "Authentication Failed: Incorrect Password!" }, { status: 403 });
     }
 
-    const updatedItem = await prisma.inventory.update({
+    await prisma.inventory.update({
       where: { id },
-      data: { stockLevel: newStockLevel }
+      data: { isDeleted: true }
     });
 
-    return NextResponse.json({ success: true, item: updatedItem });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
-    return NextResponse.json({ error: "Failed to update stock" }, { status: 500 });
+    console.error("Inventory Delete Error:", error);
+    return NextResponse.json({ error: "Failed to delete item" }, { status: 500 });
   }
 }

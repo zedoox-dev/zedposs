@@ -1,41 +1,97 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useOutlet } from "../../context/OutletContext"; // Fixed Absolute Path
+import React, { useState, useEffect } from "react";
+import { useOutlet } from "../../context/OutletContext"; 
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { 
   ShoppingCart, Truck, FileText, Plus, Search, 
-  Loader2, X, IndianRupee, Store, CheckCircle2, Trash2
+  Loader2, X, IndianRupee, Store, CheckCircle2, 
+  Trash2, Building2, CreditCard, Landmark, Star, 
+  History, Wallet, AlertCircle, CalendarDays, Printer, ChevronDown, ChevronUp
 } from "lucide-react";
 
-export default function PurchasesPage() {
+const MAJOR_BANKS = [
+  { id: "SBI", name: "State Bank of India", color: "bg-blue-600 text-white", border: "border-blue-700" },
+  { id: "HDFC", name: "HDFC Bank", color: "bg-blue-900 text-white", border: "border-blue-950" },
+  { id: "ICICI", name: "ICICI Bank", color: "bg-orange-600 text-white", border: "border-orange-700" },
+  { id: "AXIS", name: "Axis Bank", color: "bg-rose-700 text-white", border: "border-rose-800" },
+];
+
+export default function ProcurementsAndVendorsPage() {
   const { selectedOutlet, outlets } = useOutlet();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [data, setData] = useState<{ purchases: any[], vendors: any[], inventory: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeView, setActiveView] = useState<"PURCHASES" | "VENDORS">("PURCHASES");
 
-  // Modal & Form State
-  const [showAddModal, setShowAddModal] = useState(false);
+  // 🟢 Filters
+  const [dateFilter, setDateFilter] = useState("today");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [expandedPO, setExpandedPO] = useState<string | null>(null);
+
+  // 🟢 Modals & Forms
+  const [showAddPOModal, setShowAddPOModal] = useState(false);
+  const [showAddVendorModal, setShowAddVendorModal] = useState(false);
+  const [showPayDueModal, setShowPayDueModal] = useState(false);
+  const [showVendorHistoryModal, setShowVendorHistoryModal] = useState(false);
+  
   const [isProcessing, setIsProcessing] = useState(false);
   
+  // PO Form
   const [poForm, setPoForm] = useState({
-    vendorId: "",
-    outletId: "",
-    invoiceNumber: "",
-    status: "RECEIVED",
+    vendorId: "", outletId: "", invoiceNumber: "", paymentMode: "CASH", notes: ""
   });
-  
-  // Dynamic Items Array
-  const [poItems, setPoItems] = useState([{ inventoryId: "", quantity: "", costPrice: "" }]);
+  const [poItems, setPoItems] = useState([{ inventoryId: "", quantity: "", costPrice: "", taxPercent: "0" }]);
+
+  // Vendor Form
+  const [newVendor, setNewVendor] = useState({
+    name: "", contactPerson: "", phone: "", email: "", address: "", 
+    gstin: "", pan: "", bankName: "", accountNo: "", ifsc: "", outstandingAmt: "0", creditDays: "0"
+  });
+
+  // Pay Dues Form
+  const [selectedVendor, setSelectedVendor] = useState<any>(null);
+  const [payDueData, setPayDueData] = useState({ amount: "", mode: "BANK", bankName: "SBI" });
 
   useEffect(() => {
-    fetchPurchases();
-    // Default outlet assignment for the form
-    if (selectedOutlet !== "ALL") setPoForm(prev => ({ ...prev, outletId: selectedOutlet }));
-  }, [selectedOutlet]);
+    if (searchParams) {
+      if (searchParams.get("date")) setDateFilter(searchParams.get("date") as string);
+      if (searchParams.get("startDate")) setCustomStart(searchParams.get("startDate") as string);
+      if (searchParams.get("endDate")) setCustomEnd(searchParams.get("endDate") as string);
+    }
+  }, [searchParams]);
 
-  const fetchPurchases = async () => {
+  useEffect(() => {
+    fetchData();
+    if (selectedOutlet !== "ALL") setPoForm(prev => ({ ...prev, outletId: selectedOutlet }));
+  }, [selectedOutlet, dateFilter, customStart, customEnd]);
+
+  const applyDateFilter = (type: string, start?: string, end?: string) => {
+    setDateFilter(type);
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.set("date", type);
+    if (type === "custom" && start && end) {
+      params.set("startDate", start); params.set("endDate", end);
+    } else if (type !== "custom") {
+      params.delete("startDate"); params.delete("endDate");
+      setCustomStart(""); setCustomEnd("");
+    }
+    if (type !== "custom" || (type === "custom" && start && end)) {
+      router.push(`${pathname}?${params.toString()}`);
+    }
+  };
+
+  const fetchData = async () => {
+    if (dateFilter === "custom" && (!customStart || !customEnd)) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/brand/purchases?outletId=${selectedOutlet}`);
+      let url = `/api/brand/purchases?outletId=${selectedOutlet}&date=${dateFilter}`;
+      if (dateFilter === "custom") url += `&startDate=${customStart}&endDate=${customEnd}`;
+      const res = await fetch(url);
       const json = await res.json();
       if (json.success) setData(json);
     } catch (e) {
@@ -45,256 +101,595 @@ export default function PurchasesPage() {
     }
   };
 
-  // Add Row in PO Form
-  const handleAddItemRow = () => setPoItems([...poItems, { inventoryId: "", quantity: "", costPrice: "" }]);
-  
-  // Remove Row
+  // --- PO Operations ---
+  const handleAddItemRow = () => setPoItems([...poItems, { inventoryId: "", quantity: "", costPrice: "", taxPercent: "0" }]);
   const handleRemoveItemRow = (index: number) => setPoItems(poItems.filter((_, i) => i !== index));
-
-  // Handle Input Change for Rows
   const handleItemChange = (index: number, field: string, value: string) => {
     const newItems = [...poItems];
     newItems[index] = { ...newItems[index], [field]: value };
     setPoItems(newItems);
   };
 
+  const calculateSubtotal = () => poItems.reduce((sum, item) => sum + (parseFloat(item.quantity||"0") * parseFloat(item.costPrice||"0")), 0);
+  const calculateTotalTax = () => poItems.reduce((sum, item) => sum + ((parseFloat(item.quantity||"0") * parseFloat(item.costPrice||"0")) * (parseFloat(item.taxPercent||"0")/100)), 0);
+
   const handleCreatePO = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!poForm.vendorId || !poForm.outletId || !poItems[0].inventoryId) return alert("Fill all required fields");
+    setIsProcessing(true);
+    try {
+      const res = await fetch("/api/brand/purchases", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ADD_PO", ...poForm, items: poItems })
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setShowAddPOModal(false);
+        setPoForm({ vendorId: "", outletId: selectedOutlet !== "ALL" ? selectedOutlet : "", invoiceNumber: "", paymentMode: "CASH", notes: "" });
+        setPoItems([{ inventoryId: "", quantity: "", costPrice: "", taxPercent: "0" }]);
+        fetchData();
+      } else alert(json.error || "Failed to create GRN");
+    } catch (e) { alert("Network Error"); } 
+    finally { setIsProcessing(false); }
+  };
+
+  // --- Vendor Operations ---
+  const handleAddVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
     try {
       const res = await fetch("/api/brand/purchases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...poForm, items: poItems })
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ADD_VENDOR", ...newVendor })
       });
       if (res.ok) {
-        setShowAddModal(false);
-        setPoForm({ vendorId: "", outletId: selectedOutlet !== "ALL" ? selectedOutlet : "", invoiceNumber: "", status: "RECEIVED" });
-        setPoItems([{ inventoryId: "", quantity: "", costPrice: "" }]);
-        fetchPurchases();
+        setShowAddVendorModal(false);
+        setNewVendor({ name: "", contactPerson: "", phone: "", email: "", address: "", gstin: "", pan: "", bankName: "", accountNo: "", ifsc: "", outstandingAmt: "0", creditDays: "0" });
+        fetchData();
       }
-    } catch (e) {
-      alert("Failed to create Purchase Order");
-    } finally {
-      setIsProcessing(false);
-    }
+    } catch (e) { alert("Network Error"); } 
+    finally { setIsProcessing(false); }
   };
 
-  if (loading || !data) {
+  const handleSettleDues = async () => {
+    if (!payDueData.amount || parseFloat(payDueData.amount) <= 0) return alert("Enter valid amount");
+    setIsProcessing(true);
+    try {
+      const res = await fetch("/api/brand/purchases", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "SETTLE_VENDOR", vendorId: selectedVendor.id, amount: payDueData.amount, paymentMode: payDueData.mode })
+      });
+      if (res.ok) {
+        if (payDueData.mode === "BANK") {
+          window.open(`https://www.npci.org.in/upi?amount=${payDueData.amount}`, "_blank");
+        }
+        setTimeout(() => {
+          alert(`✅ Payment of ₹${payDueData.amount} processed!`);
+          setShowPayDueModal(false);
+          setPayDueData({ amount: "", mode: "BANK", bankName: "SBI" });
+          fetchData();
+          setIsProcessing(false);
+        }, 1000);
+      }
+    } catch (e) { alert("Network Error"); setIsProcessing(false); }
+  };
+
+  const triggerPrint = () => window.print();
+
+  if (loading && !data) {
     return (
       <div className="h-full flex flex-col items-center justify-center">
         <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
-        <p className="text-xs font-black uppercase tracking-widest text-slate-500">Retrieving Supply Chain Data...</p>
+        <p className="text-xs font-black uppercase tracking-widest text-slate-500">Retrieving Supply Chain & Ledger...</p>
       </div>
     );
   }
 
-  const filteredPurchases = data.purchases.filter((p: any) => 
+  const { purchases, vendors, inventory } = data || { purchases: [], vendors: [], inventory: [] };
+
+  const filteredPurchases = purchases.filter((p: any) => 
     p.invoiceNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.vendor?.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalSpend = data.purchases.reduce((sum, p) => sum + p.totalAmount, 0);
+  const filteredVendors = vendors.filter((v: any) => 
+    v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    v.phone?.includes(searchQuery)
+  );
+
+  const totalSpend = purchases.reduce((sum, p) => sum + p.totalAmount, 0);
+  const totalAccruedTax = purchases.reduce((sum, p) => sum + p.taxAmount, 0);
+  const totalOutstanding = vendors.reduce((sum, v) => sum + v.outstandingAmt, 0);
 
   return (
     <div className="max-w-[1400px] mx-auto animate-in fade-in duration-300 h-full flex flex-col pb-8">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 shrink-0">
+      {/* 🖨️ PRINT HEADER */}
+      <div className="hidden print:block mb-8 text-center border-b-2 border-black pb-4">
+        <h1 className="text-3xl font-black uppercase tracking-tight">RamKesar Foods - Supply Ledger</h1>
+        <div className="flex justify-between items-center mt-4">
+          <p className="text-sm font-bold uppercase">Outlet: <span className="font-black">{selectedOutlet === "ALL" ? "ALL BRANCHES" : outlets.find((o:any)=>o.id===selectedOutlet)?.name}</span></p>
+          <p className="text-sm font-bold uppercase">Date Period: <span className="font-black">{dateFilter}</span></p>
+          <p className="text-sm font-bold uppercase">View: <span className="font-black">{activeView}</span></p>
+        </div>
+      </div>
+
+      {/* 💻 Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 shrink-0 print:hidden">
         <div>
           <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center">
-            <Truck className="mr-2 text-indigo-600" /> Procurements & POs
+            {activeView === "PURCHASES" ? <Truck className="mr-2 text-indigo-600" /> : <Building2 className="mr-2 text-purple-600" />}
+            {activeView === "PURCHASES" ? "Procurements & POs" : "Vendor Accounts Ledger"}
           </h1>
           <p className="text-xs font-bold text-slate-500 mt-1 uppercase tracking-widest">
             {selectedOutlet === "ALL" ? "Global Brand Supply Chain" : "Local Branch Purchases"}
           </p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-sm shadow-indigo-500/30 transition-all active:scale-95">
-          <Plus className="mr-1.5" size={16} /> Create PO (GRN)
-        </button>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* View Switcher */}
+          <div className="bg-white border border-slate-200 rounded-xl p-1 shadow-sm flex items-center">
+            <button onClick={()=>setActiveView("PURCHASES")} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${activeView === 'PURCHASES' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-900'}`}>Purchases (GRN)</button>
+            <button onClick={()=>setActiveView("VENDORS")} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${activeView === 'VENDORS' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:text-slate-900'}`}>Vendors</button>
+          </div>
+
+          {/* Date Filter */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm">
+              <CalendarDays size={15} className="text-slate-500 mr-2" />
+              <select value={dateFilter} onChange={(e) => applyDateFilter(e.target.value, customStart, customEnd)} className="bg-transparent text-[10px] font-black text-slate-700 uppercase tracking-widest outline-none cursor-pointer">
+                <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="all">All Time</option><option value="custom">Custom Range</option>
+              </select>
+            </div>
+            {dateFilter === "custom" && (
+              <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2 py-1.5 shadow-sm">
+                <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="text-[10px] p-1 font-bold outline-none bg-transparent"/>
+                <span className="mx-1 text-slate-300">-</span>
+                <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="text-[10px] p-1 font-bold outline-none bg-transparent"/>
+                <button onClick={() => applyDateFilter("custom", customStart, customEnd)} disabled={!customStart || !customEnd} className="ml-2 px-2 py-1 bg-indigo-600 text-white rounded text-[9px] font-black uppercase disabled:opacity-50">GO</button>
+              </div>
+            )}
+          </div>
+
+          <button onClick={triggerPrint} className="bg-slate-900 hover:bg-black text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center transition-all shadow-md">
+            <Printer size={14} className="mr-2" /> Print
+          </button>
+          
+          {activeView === "PURCHASES" ? (
+            <button onClick={() => setShowAddPOModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-md active:scale-95 transition-all">
+              <Plus size={14} className="mr-1.5" /> Enter GRN
+            </button>
+          ) : (
+            <button onClick={() => setShowAddVendorModal(true)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-md active:scale-95 transition-all">
+              <Plus size={14} className="mr-1.5" /> Add Vendor
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 shrink-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 shrink-0 print:hidden">
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl flex flex-col justify-center text-white relative overflow-hidden">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Expenditure</span>
-            <IndianRupee size={16} className="text-emerald-400"/>
-          </div>
+          <div className="flex justify-between items-start mb-2"><span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Gross Expenditure</span><IndianRupee size={16} className="text-emerald-400"/></div>
           <p className="text-2xl font-mono font-black text-white">₹{totalSpend.toLocaleString()}</p>
         </div>
-        
         <div className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-center shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Invoices</span>
-            <FileText size={16} className="text-indigo-400"/>
-          </div>
-          <p className="text-2xl font-mono font-black text-slate-800">{data.purchases.length}</p>
+          <div className="flex justify-between items-start mb-2"><span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Invoices (GRN)</span><FileText size={16} className="text-indigo-400"/></div>
+          <p className="text-2xl font-mono font-black text-slate-800">{purchases.length}</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-center shadow-sm">
+          <div className="flex justify-between items-start mb-2"><span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Accrued Tax (ITC)</span><Landmark size={16} className="text-blue-400"/></div>
+          <p className="text-2xl font-mono font-black text-blue-600">₹{totalAccruedTax.toLocaleString()}</p>
+        </div>
+        <div className="bg-red-50 p-5 rounded-2xl border border-red-100 flex flex-col justify-center shadow-sm">
+          <div className="flex justify-between items-start mb-2"><span className="text-[9px] font-black uppercase tracking-widest text-red-500">Total Vendor Debt</span><CreditCard size={16} className="text-red-400"/></div>
+          <p className="text-2xl font-mono font-black text-red-600">₹{totalOutstanding.toLocaleString()}</p>
         </div>
       </div>
 
-      {/* PO Table */}
-      <div className="flex-1 bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+      {/* Main Content Area */}
+      <div className="flex-1 bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden print:border-0 print:shadow-none">
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0 print:hidden">
           <div className="relative w-72">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={14} />
             <input 
-              type="text" placeholder="Search Vendor or Invoice..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              type="text" placeholder={activeView === "PURCHASES" ? "Search Invoice or Vendor..." : "Search Vendor Name..."} 
+              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-indigo-500 bg-white" 
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-          <table className="w-full text-left">
-            <thead className="bg-white sticky top-0 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400 z-10 shadow-sm">
-              <tr>
-                <th className="p-4">Date / Invoice No</th>
-                {selectedOutlet === "ALL" && <th className="p-4">Receiving Branch</th>}
-                <th className="p-4">Vendor Details</th>
-                <th className="p-4 text-center">Items Count</th>
-                <th className="p-4 text-right">Total Amount</th>
-                <th className="p-4 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50 text-sm font-bold text-slate-700">
-              {filteredPurchases.length === 0 ? (
+        <div className="flex-1 overflow-y-auto custom-scrollbar print:overflow-visible">
+          
+          {/* ================= VIEW 1: PURCHASES (GRN) ================= */}
+          {activeView === "PURCHASES" && (
+            <table className="w-full text-left print:border-collapse print:text-xs">
+              <thead className="bg-white sticky top-0 border-b border-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-400 z-10 shadow-sm print:shadow-none print:border-black print:border-b-2">
                 <tr>
-                  <td colSpan={6} className="p-10 text-center">
-                    <ShoppingCart size={40} className="mx-auto text-slate-200 mb-3" />
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-400">No Purchase Orders Found</p>
-                  </td>
+                  <th className="p-4 print:py-2">Date / Invoice No</th>
+                  {selectedOutlet === "ALL" && <th className="p-4 print:py-2">Receiving Branch</th>}
+                  <th className="p-4 print:py-2">Vendor Details</th>
+                  <th className="p-4 text-center print:py-2">Items</th>
+                  <th className="p-4 text-right print:py-2">Payment</th>
+                  <th className="p-4 text-right print:py-2">Net Value</th>
+                  <th className="p-4 w-10 print:hidden"></th>
                 </tr>
-              ) : (
-                filteredPurchases.map((po: any) => (
-                  <tr key={po.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-4">
-                      <div className="font-mono text-xs text-indigo-600 font-black">{po.invoiceNumber || "N/A"}</div>
-                      <div className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-black">
-                        {new Date(po.createdAt).toLocaleDateString('en-GB')}
-                      </div>
-                    </td>
-                    
-                    {selectedOutlet === "ALL" && (
-                      <td className="p-4 text-[10px] text-slate-600 uppercase tracking-widest font-black">
-                        <span className="flex items-center"><Store size={10} className="mr-1 text-slate-400"/>{po.outlet?.name}</span>
-                      </td>
-                    )}
-                    
-                    <td className="p-4 font-black text-slate-800 uppercase text-xs">
-                      {po.vendor?.name}
-                    </td>
-
-                    <td className="p-4 text-center">
-                      <span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg text-[10px] font-black">
-                        {po._count.items} Items
-                      </span>
-                    </td>
-
-                    <td className="p-4 text-right font-mono font-black text-slate-900">
-                      ₹{po.totalAmount.toLocaleString()}
-                    </td>
-
-                    <td className="p-4 text-right">
-                      {po.status === "RECEIVED" ? (
-                        <span className="inline-flex items-center text-[9px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded">
-                          <CheckCircle2 size={10} className="mr-1"/> Received
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center text-[9px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
-                          <Loader2 size={10} className="mr-1 animate-spin"/> Pending
-                        </span>
+              </thead>
+              <tbody className="divide-y divide-slate-50 text-sm font-bold text-slate-700 print:divide-slate-300">
+                {filteredPurchases.length === 0 ? (
+                  <tr><td colSpan={7} className="p-10 text-center"><ShoppingCart size={40} className="mx-auto text-slate-200 mb-3" /><p className="text-xs font-black uppercase tracking-widest text-slate-400">No Purchase Orders Found</p></td></tr>
+                ) : (
+                  filteredPurchases.map((po: any) => (
+                    <React.Fragment key={po.id}>
+                      <tr className={`hover:bg-slate-50 transition-colors cursor-pointer ${expandedPO === po.id ? 'bg-indigo-50/20' : ''}`} onClick={() => setExpandedPO(expandedPO === po.id ? null : po.id)}>
+                        <td className="p-4 print:py-2">
+                          <div className="font-mono text-xs text-indigo-600 font-black print:text-black">{po.invoiceNumber || "N/A"}</div>
+                          <div className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-black">
+                            {new Date(po.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                          </div>
+                        </td>
+                        {selectedOutlet === "ALL" && <td className="p-4 text-[10px] text-slate-600 uppercase tracking-widest font-black print:py-2">{po.outlet?.name}</td>}
+                        <td className="p-4 font-black text-slate-800 uppercase text-xs print:py-2">{po.vendor?.name}</td>
+                        <td className="p-4 text-center print:py-2"><span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded text-[10px] font-black print:bg-transparent print:p-0">{po.items?.length || 0}</span></td>
+                        <td className="p-4 text-right print:py-2">
+                           <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-black print:bg-transparent print:p-0 ${po.paymentStatus === 'PAID' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                             {po.paymentStatus}
+                           </span>
+                        </td>
+                        <td className="p-4 text-right font-mono font-black text-slate-900 print:py-2">₹{po.totalAmount.toLocaleString()}</td>
+                        <td className="p-4 text-center print:hidden text-indigo-600">{expandedPO === po.id ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}</td>
+                      </tr>
+                      {expandedPO === po.id && (
+                        <tr className="bg-slate-50 border-y border-indigo-100 print:hidden animate-in fade-in slide-in-from-top-2">
+                          <td colSpan={7} className="p-5">
+                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                              <table className="w-full text-left">
+                                <thead className="bg-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-200">
+                                  <tr><th className="p-3">SKU Item</th><th className="p-3 text-center">Qty</th><th className="p-3 text-right">Rate</th><th className="p-3 text-right">Tax (%)</th><th className="p-3 text-right">Total</th></tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50 text-xs font-bold text-slate-700">
+                                  {po.items?.map((item: any) => (
+                                    <tr key={item.id} className="hover:bg-slate-50">
+                                      <td className="p-3 uppercase">{item.inventory?.itemName}</td>
+                                      <td className="p-3 text-center font-mono">{item.quantity} <span className="text-[9px] text-slate-400">{item.inventory?.unit}</span></td>
+                                      <td className="p-3 text-right font-mono">₹{item.costPrice.toFixed(2)}</td>
+                                      <td className="p-3 text-right font-mono text-slate-400">{item.taxPercent}%</td>
+                                      <td className="p-3 text-right font-mono text-slate-900">₹{item.totalAmount.toFixed(2)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                                <span className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Notes: {po.notes || "N/A"}</span>
+                                <div className="text-right">
+                                  <div className="text-[10px] font-black uppercase text-slate-500 mb-1">Tax Accrued: ₹{po.taxAmount.toFixed(2)}</div>
+                                  <div className="text-sm font-black uppercase text-indigo-700">Grand Total: <span className="font-mono text-lg">₹{po.totalAmount.toFixed(2)}</span></div>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                    </React.Fragment>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {/* ================= VIEW 2: VENDORS LEDGER ================= */}
+          {activeView === "VENDORS" && (
+            <table className="w-full text-left print:border-collapse print:text-xs">
+              <thead className="bg-slate-100/90 sticky top-0 border-b border-slate-200 text-[9px] font-black uppercase tracking-widest text-slate-500 z-10 shadow-sm print:shadow-none print:border-black print:border-b-2">
+                <tr><th className="p-4 print:py-2">Vendor Details</th><th className="p-4 print:py-2">Bank / Tax Info</th><th className="p-4 text-center print:py-2">GRNs</th><th className="p-4 text-center print:py-2 bg-red-50 text-red-900 border-x">Outstanding Balance</th><th className="p-4 text-center w-48 print:hidden">Operations</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700 print:divide-slate-300">
+                {filteredVendors.length === 0 ? (
+                  <tr><td colSpan={5} className="p-10 text-center"><Building2 size={40} className="mx-auto text-slate-200 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400">No Vendors Found</p></td></tr>
+                ) : (
+                  filteredVendors.map((v: any) => (
+                    <tr key={v.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 print:py-2">
+                        <div className="font-black text-slate-900 uppercase text-sm mb-1">{v.name}</div>
+                        <div className="text-[10px] font-mono text-indigo-600 mb-0.5">Ph: {v.phone}</div>
+                        <div className="text-[9px] text-slate-400 truncate max-w-[200px] uppercase">{v.address || "No Address"}</div>
+                      </td>
+                      <td className="p-4 print:py-2">
+                        <div className="text-[10px] font-black uppercase text-slate-600 mb-1 flex items-center"><Landmark size={12} className="mr-1 text-purple-500"/> {v.bankName || "N/A"} (AC: {v.accountNo || "N/A"})</div>
+                        <div className="text-[9px] font-mono text-slate-400 uppercase">GSTIN: {v.gstin || "N/A"} | PAN: {v.pan || "N/A"}</div>
+                      </td>
+                      <td className="p-4 text-center print:py-2 font-mono">{v.purchases?.length || 0}</td>
+                      <td className={`p-4 text-center font-mono font-black text-base border-x print:py-2 print:border-none ${v.outstandingAmt > 0 ? 'text-red-600 bg-red-50/30' : 'text-emerald-600'}`}>
+                        ₹{Number(v.outstandingAmt || 0).toLocaleString()}
+                      </td>
+                      <td className="p-4 text-center space-y-2 print:hidden">
+                        {v.outstandingAmt > 0 && <button onClick={()=>{setSelectedVendor(v); setPayDueData({amount: v.outstandingAmt.toString(), mode: "BANK", bankName: "SBI"}); setShowPayDueModal(true);}} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase px-2 py-2 rounded flex items-center justify-center shadow-sm active:scale-95 transition-all"><CreditCard size={12} className="mr-1.5"/> Settle Dues</button>}
+                        <button onClick={() => {setSelectedVendor(v); setShowVendorHistoryModal(true);}} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-black uppercase px-2 py-2 rounded flex items-center justify-center shadow-sm active:scale-95 transition-all"><History size={12} className="mr-1.5"/> Ledger</button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
-      {/* --- CREATE PO MODAL --- */}
-      {showAddModal && (
-        <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-3xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
-            
-            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4 shrink-0">
+      {/* ================= MODALS ================= */}
+      
+      {/* 1. ADD GRN (PO) MODAL */}
+      {showAddPOModal && (
+        <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[100] p-4 print:hidden animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-4xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] border-t-8 border-indigo-600">
+            <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-4 shrink-0">
               <div>
-                <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center"><Truck size={18} className="mr-2 text-indigo-600"/> Create Purchase Order</h2>
-                <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Mark as "Received" to automatically update inventory.</p>
+                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center"><Truck size={20} className="mr-2 text-indigo-600"/> Goods Received Note (GRN)</h2>
+                <p className="text-[10px] font-bold text-slate-500 uppercase mt-1 tracking-widest">Master Procurement Entry</p>
               </div>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-full"><X size={18}/></button>
+              <button onClick={() => setShowAddPOModal(false)} className="text-slate-400 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"><X size={18}/></button>
             </div>
             
             <form onSubmit={handleCreatePO} className="flex-1 overflow-y-auto custom-scrollbar pr-2 flex flex-col">
-              
-              {/* Primary Details */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Vendor</label>
-                  <select required value={poForm.vendorId} onChange={(e) => setPoForm({...poForm, vendorId: e.target.value})} className="w-full p-2.5 border-2 border-slate-100 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Select Vendor <span className="text-red-500">*</span></label>
+                  <select required value={poForm.vendorId} onChange={(e) => setPoForm({...poForm, vendorId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50">
                     <option value="" disabled>Choose Supplier...</option>
-                    {data.vendors.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    {data?.vendors.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Receiving Branch</label>
-                  <select required value={poForm.outletId} onChange={(e) => setPoForm({...poForm, outletId: e.target.value})} className="w-full p-2.5 border-2 border-slate-100 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Receiving Branch <span className="text-red-500">*</span></label>
+                  <select required disabled={selectedOutlet !== "ALL"} value={poForm.outletId} onChange={(e) => setPoForm({...poForm, outletId: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50 disabled:opacity-70">
                     <option value="" disabled>Select Branch...</option>
                     {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Invoice No (Optional)</label>
-                  <input type="text" placeholder="e.g. INV-2026" value={poForm.invoiceNumber} onChange={(e) => setPoForm({...poForm, invoiceNumber: e.target.value})} className="w-full p-2.5 border-2 border-slate-100 rounded-xl outline-none text-xs font-bold focus:border-indigo-500 bg-slate-50" />
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Invoice / Ref No</label>
+                  <input type="text" placeholder="INV-001" value={poForm.invoiceNumber} onChange={(e) => setPoForm({...poForm, invoiceNumber: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50" />
                 </div>
               </div>
 
-              {/* Items Dynamic List */}
-              <div className="mb-4">
-                <h3 className="text-[10px] font-black uppercase text-indigo-600 tracking-widest border-b border-indigo-100 pb-2 mb-3 flex justify-between items-center">
-                  Order Items (GRN)
-                  <button type="button" onClick={handleAddItemRow} className="text-white bg-indigo-500 hover:bg-indigo-600 px-2 py-1 rounded text-[8px] flex items-center">
-                    <Plus size={10} className="mr-1"/> Add Row
-                  </button>
-                </h3>
-                
-                <div className="space-y-3">
+              <div className="mb-6 border border-indigo-100 rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-indigo-50/50 p-3 border-b border-indigo-100 flex justify-between items-center">
+                  <h3 className="text-[10px] font-black uppercase text-indigo-800 tracking-widest">Inward SKUs</h3>
+                  <button type="button" onClick={handleAddItemRow} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center transition-colors"><Plus size={12} className="mr-1"/> Add Item</button>
+                </div>
+                <div className="p-3 space-y-3 bg-white">
                   {poItems.map((item, index) => (
-                    <div key={index} className="flex gap-2 items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
-                      <select required value={item.inventoryId} onChange={(e) => handleItemChange(index, "inventoryId", e.target.value)} className="flex-1 p-2 border border-slate-200 rounded-lg outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white">
-                        <option value="" disabled>Select Raw Material...</option>
-                        {data.inventory
-                          .filter((i: any) => poForm.outletId ? i.outletId === poForm.outletId : true)
-                          .map((i: any) => <option key={i.id} value={i.id}>{i.itemName} ({i.unit})</option>)
-                        }
-                      </select>
-                      <input required type="number" min="0.1" step="0.1" placeholder="Qty" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="w-20 p-2 border border-slate-200 rounded-lg outline-none text-xs font-mono font-bold focus:border-indigo-500 text-center" />
-                      <input required type="number" min="0" step="0.1" placeholder="Cost/Unit" value={item.costPrice} onChange={(e) => handleItemChange(index, "costPrice", e.target.value)} className="w-28 p-2 border border-slate-200 rounded-lg outline-none text-xs font-mono font-bold focus:border-indigo-500 text-center" />
+                    <div key={index} className="flex flex-wrap md:flex-nowrap gap-3 items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                      <div className="w-full md:flex-1">
+                        <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">SKU Item <span className="text-red-500">*</span></label>
+                        <select required value={item.inventoryId} onChange={(e) => handleItemChange(index, "inventoryId", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white">
+                          <option value="" disabled>Select Raw Material...</option>
+                          {data?.inventory.filter((i: any) => poForm.outletId ? i.outletId === poForm.outletId : true).map((i: any) => <option key={i.id} value={i.id}>{i.itemName} ({i.unit})</option>)}
+                        </select>
+                      </div>
+                      <div className="w-24">
+                        <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Qty <span className="text-red-500">*</span></label>
+                        <input required type="number" min="0.1" step="any" placeholder="0" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-mono font-black focus:border-indigo-500 text-center" />
+                      </div>
+                      <div className="w-32">
+                        <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Rate (₹) <span className="text-red-500">*</span></label>
+                        <input required type="number" min="0" step="any" placeholder="0.00" value={item.costPrice} onChange={(e) => handleItemChange(index, "costPrice", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-mono font-black text-emerald-600 focus:border-indigo-500 text-center" />
+                      </div>
+                      <div className="w-24">
+                        <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">GST %</label>
+                        <select value={item.taxPercent} onChange={(e) => handleItemChange(index, "taxPercent", e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-lg outline-none text-xs font-bold focus:border-indigo-500 bg-white"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option></select>
+                      </div>
                       {poItems.length > 1 && (
-                        <button type="button" onClick={() => handleRemoveItemRow(index)} className="p-2 text-red-400 hover:bg-red-100 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={14}/></button>
+                        <div className="w-auto mt-4 md:mt-0 pt-1">
+                          <button type="button" onClick={() => handleRemoveItemRow(index)} className="p-2.5 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors"><Trash2 size={16}/></button>
+                        </div>
                       )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Action Button */}
-              <div className="pt-4 shrink-0 mt-auto border-t border-slate-100">
-                <div className="flex items-center gap-4 mb-4">
-                  <label className="text-[10px] font-black uppercase text-slate-500">PO Status:</label>
-                  <select value={poForm.status} onChange={(e) => setPoForm({...poForm, status: e.target.value})} className="p-2 border-2 border-slate-100 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-slate-50">
-                    <option value="RECEIVED">Mark as Received (Adds Stock)</option>
-                    <option value="PENDING">Pending (Draft Mode)</option>
-                  </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Payment Settlement Mode</label>
+                    <select value={poForm.paymentMode} onChange={(e) => setPoForm({...poForm, paymentMode: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold uppercase focus:border-indigo-500 bg-white shadow-sm">
+                      <option value="CASH">Cash Paid Instantly</option>
+                      <option value="UPI">UPI / Online Transfer</option>
+                      <option value="CHEQUE">Bank Cheque</option>
+                      <option value="CREDIT">Add to Vendor Credit (Udhaar)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Remarks / Notes</label>
+                    <textarea rows={2} placeholder="Any specific instructions..." value={poForm.notes} onChange={(e) => setPoForm({...poForm, notes: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs font-bold focus:border-indigo-500 bg-slate-50 resize-none" />
+                  </div>
                 </div>
 
-                <button disabled={isProcessing || !poForm.vendorId || !poForm.outletId || !poItems[0].inventoryId} type="submit" className="w-full bg-slate-900 text-white font-black uppercase tracking-widest py-3.5 rounded-xl text-xs flex justify-center items-center shadow-xl active:scale-95 transition-all disabled:opacity-50">
-                  {isProcessing ? <Loader2 className="animate-spin" size={16}/> : "Generate PO & Update Ledger"}
+                {/* Live Bill Calculator */}
+                <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-xl flex flex-col justify-center">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-700 pb-2 mb-3">Live Bill Valuation</h4>
+                  <div className="space-y-2 text-xs font-bold font-mono">
+                    <div className="flex justify-between text-slate-300"><span>Subtotal:</span><span>₹{calculateSubtotal().toFixed(2)}</span></div>
+                    <div className="flex justify-between text-slate-300"><span>Accrued Tax (GST):</span><span>₹{calculateTotalTax().toFixed(2)}</span></div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-slate-700 flex justify-between items-center">
+                    <span className="text-sm font-black uppercase text-emerald-400">Grand Total</span>
+                    <span className="text-3xl font-mono font-black text-emerald-400">₹{(calculateSubtotal() + calculateTotalTax()).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 shrink-0 mt-auto border-t border-slate-100">
+                <button disabled={isProcessing} type="submit" className="w-full bg-indigo-600 text-white font-black uppercase tracking-widest py-4 rounded-xl text-sm flex justify-center items-center shadow-xl active:scale-95 transition-all disabled:opacity-50">
+                  {isProcessing ? <Loader2 className="animate-spin" size={18}/> : "Commit GRN & Inject into Ledger"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2. ADD VENDOR MODAL */}
+      {showAddVendorModal && (
+        <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[100] p-4 print:hidden animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh] border-t-8 border-purple-600 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+              <div>
+                <h2 className="text-xl font-black text-slate-800 uppercase flex items-center tracking-tight"><Building2 size={20} className="mr-2 text-purple-600"/> Vendor Registration Matrix</h2>
+                <p className="text-[10px] font-bold text-slate-500 uppercase mt-1 tracking-widest">Onboard new supplier to HQ</p>
+              </div>
+              <button onClick={() => setShowAddVendorModal(false)} className="text-slate-400 p-2 bg-white hover:bg-slate-200 rounded-full transition-colors shadow-sm"><X size={18}/></button>
+            </div>
+            <div className="overflow-y-auto p-6 flex-1 custom-scrollbar">
+              <form id="vendor-form" onSubmit={handleAddVendor} className="space-y-6">
+                <div>
+                  <h3 className="text-[10px] font-black uppercase text-purple-600 border-b border-purple-100 pb-2 mb-4 tracking-widest">1. Corporate Identity</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Company Name <span className="text-red-500">*</span></label><input required type="text" placeholder="e.g. BALAJI MILLS" value={newVendor.name} onChange={(e)=>setNewVendor({...newVendor, name:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold uppercase text-xs outline-none focus:border-purple-500 bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Contact Phone <span className="text-red-500">*</span></label><input required type="text" placeholder="Mobile / Landline" value={newVendor.phone} onChange={(e)=>setNewVendor({...newVendor, phone:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-mono text-xs focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Contact Person</label><input type="text" placeholder="Sales Manager Name" value={newVendor.contactPerson} onChange={(e)=>setNewVendor({...newVendor, contactPerson:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-xs focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Email Address</label><input type="email" placeholder="vendor@domain.com" value={newVendor.email} onChange={(e)=>setNewVendor({...newVendor, email:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-mono text-xs focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div className="col-span-1 md:col-span-2"><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Corporate Address</label><textarea rows={2} placeholder="Complete physical address..." value={newVendor.address} onChange={(e)=>setNewVendor({...newVendor, address:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-xs resize-none focus:border-purple-500 outline-none bg-slate-50" /></div>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-[10px] font-black uppercase text-purple-600 border-b border-purple-100 pb-2 mb-4 tracking-widest">2. Financial & Tax Logic</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Bank Name</label><input type="text" placeholder="HDFC, SBI, etc." value={newVendor.bankName} onChange={(e)=>setNewVendor({...newVendor, bankName:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-xs uppercase focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Account Number</label><input type="text" placeholder="XXXX XXXX XXXX" value={newVendor.accountNo} onChange={(e)=>setNewVendor({...newVendor, accountNo:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-mono font-black tracking-widest text-xs focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">IFSC Code</label><input type="text" placeholder="HDFC0001234" value={newVendor.ifsc} onChange={(e)=>setNewVendor({...newVendor, ifsc:e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">GSTIN Reg.</label><input type="text" placeholder="22AAAAA0000A1Z5" value={newVendor.gstin} onChange={(e)=>setNewVendor({...newVendor, gstin:e.target.value.toUpperCase()})} className="w-full p-3 border border-slate-200 rounded-xl font-mono text-xs uppercase focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Credit Days Allowed</label><input type="number" min="0" value={newVendor.creditDays} onChange={(e)=>setNewVendor({...newVendor, creditDays:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-mono font-black text-xs focus:border-purple-500 outline-none bg-slate-50" /></div>
+                    <div className="bg-red-50 p-3 rounded-xl border border-red-200"><label className="block text-[10px] font-black uppercase text-red-600 mb-1.5">Opening Balance Debt (₹)</label><input type="number" step="any" min="0" value={newVendor.outstandingAmt} onChange={(e)=>setNewVendor({...newVendor, outstandingAmt:e.target.value})} className="w-full p-2 border-b-2 border-red-300 bg-transparent text-red-700 font-mono font-black text-xl outline-none focus:border-red-500" /></div>
+                  </div>
+                </div>
+              </form>
+            </div>
+            <div className="p-5 border-t border-slate-100 bg-slate-50 shrink-0">
+              <button disabled={isProcessing} type="submit" form="vendor-form" className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-black uppercase tracking-widest py-4 rounded-xl text-xs shadow-xl transition-all active:scale-95 flex items-center justify-center">
+                {isProcessing ? <Loader2 className="animate-spin" size={16}/> : "Verify & Launch Vendor Profile"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. SETTLE DUES MODAL */}
+      {showPayDueModal && selectedVendor && (
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[200] p-4 print:hidden animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border-t-8 border-emerald-600 flex flex-col">
+            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight flex items-center"><Wallet size={20} className="mr-2 text-emerald-600"/> Settle Account Ledger</h3>
+                <p className="text-[11px] font-bold text-slate-500 mt-1 uppercase tracking-wider">{selectedVendor.name}</p>
+              </div>
+              <button onClick={() => setShowPayDueModal(false)} className="text-slate-400 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"><X size={18}/></button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="bg-slate-900 p-5 rounded-2xl flex items-center justify-between shadow-xl">
+                <div>
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1">Total Due Liability</span>
+                  <span className="font-mono font-black text-3xl text-emerald-400">₹{Number(selectedVendor.outstandingAmt || 0).toLocaleString()}</span>
+                </div>
+                <AlertCircle size={40} className="text-slate-700 opacity-50" />
+              </div>
+
+              <div>
+                 <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Select Transfer Mechanism</label>
+                 <div className="grid grid-cols-2 gap-3">
+                   <button onClick={() => setPayDueData({...payDueData, mode: 'CASH'})} className={`py-4 px-4 rounded-xl text-xs font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'CASH' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
+                      <IndianRupee size={24} className="mb-2"/> Physical Cash
+                   </button>
+                   <button onClick={() => setPayDueData({...payDueData, mode: 'BANK'})} className={`py-4 px-4 rounded-xl text-xs font-black uppercase flex flex-col items-center justify-center border-2 transition-all ${payDueData.mode === 'BANK' ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>
+                      <Landmark size={24} className="mb-2"/> Bank Transfer
+                   </button>
+                 </div>
+              </div>
+
+              {payDueData.mode === "BANK" && (
+                <div className="animate-in slide-in-from-bottom-2 fade-in">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Select Debit Bank Gateway</label>
+                  <div className="grid grid-cols-4 gap-2">
+                     {MAJOR_BANKS.map(bank => (
+                       <button key={bank.id} onClick={() => setPayDueData({...payDueData, bankName: bank.id})} className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${payDueData.bankName === bank.id ? `${bank.color} ${bank.border} shadow-lg scale-105 z-10` : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}>
+                         <Landmark size={18} className="mb-1.5 opacity-80"/>
+                         <span className="text-[8px] font-black uppercase tracking-wider text-center">{bank.id}</span>
+                       </button>
+                     ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Debit Amount Request (₹)</label>
+                <input type="number" step="any" min="1" max={selectedVendor.outstandingAmt} placeholder="0.00" value={payDueData.amount} onChange={(e)=>setPayDueData({...payDueData, amount: e.target.value})} className="w-full p-4 border-2 border-slate-200 rounded-xl font-mono font-black text-slate-900 text-2xl text-center outline-none focus:border-emerald-500 bg-slate-50" />
+              </div>
+              
+              <button disabled={isProcessing} onClick={handleSettleDues} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest py-4 rounded-xl text-sm shadow-xl flex items-center justify-center active:scale-95 transition-transform disabled:opacity-70">
+                {isProcessing ? <><Loader2 className="animate-spin mr-2" size={18}/> Routing via API...</> : <>Secure Transfer ₹{payDueData.amount || "0"}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. VENDOR LEDGER HISTORY MODAL */}
+      {showVendorHistoryModal && selectedVendor && (
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-[200] p-4 print:hidden animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[85vh] border-t-8 border-slate-900 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+              <div>
+                <h2 className="text-xl font-black text-slate-800 uppercase flex items-center tracking-tight"><History size={20} className="mr-2 text-slate-600"/> Payment Ledger History</h2>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{selectedVendor.name} • GST: {selectedVendor.gstin || "N/A"}</p>
+              </div>
+              <button onClick={() => setShowVendorHistoryModal(false)} className="text-slate-400 p-2 bg-white border border-slate-200 hover:bg-slate-100 rounded-full transition-colors"><X size={16}/></button>
+            </div>
+            
+            <div className="overflow-y-auto p-0 flex-1 custom-scrollbar bg-white">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-slate-100/95 backdrop-blur z-10 border-b border-slate-200">
+                  <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="p-4">Transaction Date</th>
+                    <th className="p-4">Transfer Mode</th>
+                    <th className="p-4">GRN Linked</th>
+                    <th className="p-4 text-right bg-emerald-50 text-emerald-800">Amount Cleared</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm font-bold text-slate-700">
+                  {selectedVendor.purchaseLogs?.length > 0 ? (
+                    selectedVendor.purchaseLogs.map((pay: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-4">
+                          <span className="text-xs font-black text-slate-800 block uppercase">{new Date(pay.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                        </td>
+                        <td className="p-4">
+                          <span className={`inline-flex items-center text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded border ${pay.paymentMode === 'CASH' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                            {pay.paymentMode}
+                          </span>
+                        </td>
+                        <td className="p-4 font-mono text-[10px] text-slate-500 uppercase">
+                          {pay.purchaseOrder?.invoiceNumber || "N/A"}
+                        </td>
+                        <td className="p-4 text-right font-mono font-black text-emerald-600 text-sm">₹{Number(pay.amount).toLocaleString()}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="p-10 text-center text-slate-400">
+                        <History size={40} className="mx-auto mb-3 opacity-20"/>
+                        <p className="font-black text-sm uppercase tracking-widest">No Payments Logged</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="p-6 bg-slate-900 border-t border-slate-800 flex justify-between items-center shrink-0">
+               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Liability Cleared</span>
+               <span className="font-mono font-black text-emerald-400 text-2xl">₹{selectedVendor.purchaseLogs?.reduce((sum:number, p:any) => sum + p.amount, 0).toLocaleString() || "0"}</span>
+            </div>
           </div>
         </div>
       )}
