@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]/route";
+import { PaymentMode } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,6 @@ export async function GET(req: Request) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
-    // 1. Authenticate User
     const session = await getServerSession(authOptions);
     const userEmail = session?.user?.email;
 
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    // 2. Date Filtering Logic
+    // Date Filtering Logic
     let dateQuery: any = {};
     const now = new Date();
     
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
       dateQuery = { gte: new Date(startDate), lte: end };
     }
 
-    // 3. Multi-Outlet Filter Logic
+    // Multi-Outlet Filter Logic
     let outletFilter = {};
     if (outletId !== "ALL") {
       outletFilter = { outletId: outletId, outlet: { tenantId: user.tenantId } };
@@ -61,7 +61,7 @@ export async function GET(req: Request) {
       ...(Object.keys(dateQuery).length > 0 ? { createdAt: dateQuery } : {}) 
     };
 
-    // 4. Fetch Orders with Full Details (Limit 200 for fast Live View)
+    // Fetch Orders with Full Details
     const orders = await prisma.order.findMany({
       where: finalWhereClause,
       orderBy: { createdAt: 'desc' },
@@ -73,30 +73,27 @@ export async function GET(req: Request) {
       }
     });
 
-    // 5. Calculate Aggregate Stats by Payment Mode & Platform
     const completedOrders = orders.filter(o => o.status === "COMPLETED");
     
     let totalRevenue = 0;
     let totalOrders = completedOrders.length;
     
-    const paymentBreakdown: Record<string, number> = { CASH: 0, UPI: 0, CARD: 0, PART_PAYMENT: 0 };
-    const platformBreakdown: Record<string, number> = { POS: 0, ZOMATO: 0, SWIGGY: 0, RAMKESAR_APP: 0 };
+    const paymentBreakdown: Record<string, number> = { CASH: 0, UPI: 0, CARD: 0, MIXED: 0 };
+    const platformBreakdown: Record<string, number> = { POS: 0, ONLINE_ZOMATO: 0, ONLINE_SWIGGY: 0, OWN_APP: 0 };
 
     completedOrders.forEach(order => {
       totalRevenue += order.totalAmount;
       
-      // Payment Breakdown
-      const mode = order.paymentMode?.toUpperCase() || "CASH";
-      if (mode === "PART") {
-        paymentBreakdown["PART_PAYMENT"] = (paymentBreakdown["PART_PAYMENT"] || 0) + order.totalAmount;
-      } else if (paymentBreakdown[mode] !== undefined) {
+      // Payment Breakdown (Schema mapping)
+      const mode = order.paymentMode || "CASH";
+      if (paymentBreakdown[mode] !== undefined) {
         paymentBreakdown[mode] += order.totalAmount;
       } else {
         paymentBreakdown["OTHER"] = (paymentBreakdown["OTHER"] || 0) + order.totalAmount;
       }
 
       // Platform Breakdown 
-      const platform = order.platform?.toUpperCase() || "POS";
+      const platform = order.platform || "POS";
       if (platformBreakdown[platform] !== undefined) {
         platformBreakdown[platform] += order.totalAmount;
       } else {
@@ -137,7 +134,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // 1. Verify User Password strictly
+    // Verify User Password strictly
     const user = await prisma.user.findUnique({
       where: { email: session.user.email! }
     });
@@ -146,7 +143,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Authentication Failed: Incorrect Password!" }, { status: 403 });
     }
 
-    // 2. Perform Update based on action
+    // Update based on action
     if (action === "CANCEL") {
       const updatedOrder = await prisma.order.update({
         where: { id: orderId },
@@ -159,7 +156,7 @@ export async function PUT(req: Request) {
       const updatedOrder = await prisma.order.update({
         where: { id: orderId },
         data: { 
-          paymentMode: paymentMode,
+          paymentMode: paymentMode as PaymentMode, // 🟢 Ensured Strict DB Mapping
           partCash: parseFloat(partCash) || 0,
           partCard: parseFloat(partCard) || 0,
           status: "COMPLETED"

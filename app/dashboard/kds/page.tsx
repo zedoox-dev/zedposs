@@ -18,7 +18,7 @@ export default function KitchenDisplaySystemPage() {
   // 🟢 Filter State
   const [statusFilter, setStatusFilter] = useState("ALL");
   
-  // 🟢 TV Mode States
+  // 🟢 TV Mode States (Secure Kitchen Display)
   const [isTvMode, setIsTvMode] = useState(false);
   const [tvToken, setTvToken] = useState("");
   const [tvOutlet, setTvOutlet] = useState("");
@@ -123,19 +123,18 @@ export default function KitchenDisplaySystemPage() {
     }
   };
 
-  // Filter Logic
   const filteredOrders = liveOrders.filter(o => statusFilter === "ALL" ? true : o.status === statusFilter);
 
   // ==========================================
-  // 📺 FULL SCREEN TV MODE (OVERRIDES DASHBOARD)
+  // 📺 FULL SCREEN TV MODE (FOR KITCHEN ONLY)
   // ==========================================
   if (isTvMode) {
     return (
       <div className="fixed inset-0 z-[99999] bg-slate-950 text-slate-100 flex flex-col p-4 overflow-hidden">
-        {/* TV Header */}
-        <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4">
+        {/* TV Header (Isolated) */}
+        <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-4 shrink-0">
           <h1 className="text-2xl md:text-4xl font-black uppercase text-amber-500 tracking-tight flex items-center">
-            <Flame className="mr-3 animate-pulse" size={32}/> LIVE KITCHEN DISPLAY
+            <Flame className="mr-3 animate-pulse" size={32}/> KITCHEN DISPLAY
           </h1>
           
           <div className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
@@ -211,7 +210,7 @@ export default function KitchenDisplaySystemPage() {
   }
 
   // ==========================================
-  // 💻 STANDARD DASHBOARD KDS VIEW
+  // 💻 STANDARD DASHBOARD KDS VIEW (For Owner HQ)
   // ==========================================
   if (loading && liveOrders.length === 0) {
     return (
@@ -249,6 +248,7 @@ export default function KitchenDisplaySystemPage() {
             ))}
           </div>
 
+          {/* 🟢 KITCHEN DISPLAY LINK BUTTON */}
           <button onClick={() => setShowTvModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-md transition-all active:scale-95">
             <MonitorPlay className="mr-1.5" size={14} /> Connect Display
           </button>

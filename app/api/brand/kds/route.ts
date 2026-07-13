@@ -5,7 +5,7 @@ import { authOptions } from "../../auth/[...nextauth]/route";
 
 export const dynamic = "force-dynamic";
 
-// 🔐 Secret Key for TV Display Authentication
+// 🔐 Secret Key for TV Display Authentication (Iske bina kitchen TV pe KDS nahi khulega)
 const KDS_SECRET = "ZAPPED_KDS_SECURE_2026";
 
 // Helper to validate TV Token
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
     let secureTenantId = null;
 
-    // 1. Authenticate (Check Token for TV, else check Session for Dashboard)
+    // 1. Authenticate (Check Token for TV Display, else check Session for Owner Dashboard)
     if (token && outletId !== "ALL") {
       if (!validateToken(outletId, token)) {
         return NextResponse.json({ error: "Invalid TV Display Token" }, { status: 401 });
@@ -83,7 +83,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // Auth Check for Updating
+    // Auth Check for Updating Status from Kitchen TV
     if (token && outletId) {
       if (!validateToken(outletId, token)) {
         return NextResponse.json({ error: "Invalid TV Token" }, { status: 401 });
