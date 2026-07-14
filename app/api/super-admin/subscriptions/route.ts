@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 
+// Middleware/Helper for admin password verification
+// Note: In production, compare this securely (e.g., bcrypt compare with admin DB or env variables)
+const verifyAdminAuth = (password: string) => {
+  const ADMIN_SECRET = process.env.SUPER_ADMIN_PASSWORD || "admin123"; 
+  return password === ADMIN_SECRET;
+};
+
 // GET ALL SUBSCRIPTION PLANS
 export async function GET() {
   try {
@@ -8,10 +15,10 @@ export async function GET() {
       where: { isDeleted: false },
       include: {
         _count: {
-          select: { tenants: true } // Counts how many restaurants are on this plan
+          select: { tenants: true }
         }
       },
-      orderBy: { price: 'asc' }
+      orderBy: { sortOrder: 'asc' } // Sorted by Sort Order now
     });
     
     return NextResponse.json({ success: true, plans });
@@ -24,7 +31,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, price, billingCycle, maxOutlets, maxUsers, features } = body;
+    const { name, price, billingCycle, maxOutlets, maxUsers, maxMenuItems, maxStorageGb, trialDays, sortOrder, features } = body;
 
     if (!name || price === undefined) {
       return NextResponse.json({ success: false, error: "Plan Name and Price are required" }, { status: 400 });
@@ -37,7 +44,11 @@ export async function POST(req: Request) {
         billingCycle,
         maxOutlets: Number(maxOutlets),
         maxUsers: Number(maxUsers),
-        features: JSON.parse(features) // Save strictly as JSON array
+        maxMenuItems: Number(maxMenuItems),
+        maxStorageGb: Number(maxStorageGb),
+        trialDays: Number(trialDays),
+        sortOrder: Number(sortOrder),
+        features: JSON.parse(features)
       }
     });
 
@@ -47,23 +58,60 @@ export async function POST(req: Request) {
   }
 }
 
-// TOGGLE PLAN STATUS (ACTIVE/INACTIVE)
+// UPDATE PLAN (Edit Details or Toggle Status)
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { id, isActive } = body;
+    const { id, adminPassword, updateType, ...updateData } = body;
 
-    if (!id) {
-        return NextResponse.json({ success: false, error: "Plan ID is required" }, { status: 400 });
+    if (!id) return NextResponse.json({ success: false, error: "Plan ID is required" }, { status: 400 });
+
+    // If it's a full edit, verify password
+    if (updateType === 'FULL_EDIT') {
+      if (!verifyAdminAuth(adminPassword)) {
+        return NextResponse.json({ success: false, error: "Invalid Admin Password. Unauthorized." }, { status: 401 });
+      }
+
+      if (updateData.features && typeof updateData.features === 'string') {
+        updateData.features = JSON.parse(updateData.features);
+      }
+      
+      // Convert numeric fields properly
+      const numericFields = ['price', 'maxOutlets', 'maxUsers', 'maxMenuItems', 'maxStorageGb', 'trialDays', 'sortOrder'];
+      numericFields.forEach(field => {
+          if (updateData[field] !== undefined) updateData[field] = Number(updateData[field]);
+      });
     }
 
     const updatedPlan = await prisma.subscriptionPlan.update({
-      where: { id: id },
-      data: { isActive: isActive }
+      where: { id },
+      data: updateData
     });
 
     return NextResponse.json({ success: true, plan: updatedPlan });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: "Failed to update plan status" }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Failed to update plan" }, { status: 500 });
+  }
+}
+
+// SOFT DELETE PLAN
+export async function DELETE(req: Request) {
+  try {
+    const { id, adminPassword } = await req.json();
+
+    if (!id) return NextResponse.json({ success: false, error: "Plan ID is required" }, { status: 400 });
+    
+    if (!verifyAdminAuth(adminPassword)) {
+      return NextResponse.json({ success: false, error: "Invalid Admin Password. Unauthorized." }, { status: 401 });
+    }
+
+    await prisma.subscriptionPlan.update({
+      where: { id },
+      data: { isDeleted: true }
+    });
+
+    return NextResponse.json({ success: true, message: "Plan deleted successfully" });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: "Failed to delete plan" }, { status: 500 });
   }
 }

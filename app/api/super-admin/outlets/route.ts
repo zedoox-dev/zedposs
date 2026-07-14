@@ -10,23 +10,16 @@ const generate7DigitId = () => {
 
 export async function GET() {
   try {
-    // 1. Fetch All Outlets with complete Tenant and Plan relations
     const outlets = await prisma.outlet.findMany({
       where: { isDeleted: false },
       include: {
         tenant: {
-          select: {
-            id: true,
-            businessName: true,
-            ownerEmail: true,
-            plan: true,
-          },
+          select: { id: true, businessName: true, ownerEmail: true, plan: true },
         },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // 2. Fetch Active Subscription Plans to feed the frontend form dropdown
     const subscriptionPlans = await prisma.subscriptionPlan.findMany({
       where: { isDeleted: false, isActive: true },
       orderBy: { price: "asc" }
@@ -35,53 +28,63 @@ export async function GET() {
     return NextResponse.json({ success: true, outlets, subscriptionPlans });
   } catch (error) {
     console.error("Error fetching outlets data:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch outlets and plans stack" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: "Failed to fetch outlets stack" }, { status: 500 });
   }
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, address, email, password, phone, gst, fssai, tenantId, planId } = body;
+    const { 
+      name, code, address, city, state, pincode, email, phone, password, 
+      gstin, fssaiNo, licenseNo, openTime, closeTime, tenantId, planId, utrNumber 
+    } = body;
 
-    if (!name || !address || !tenantId || !planId) {
+    // Strict validation
+    if (!name || !address || !tenantId || !planId || !utrNumber) {
       return NextResponse.json(
-        { success: false, error: "Name, address, Tenant ID, and Subscription Plan are strictly required." },
+        { success: false, error: "Name, Address, Plan, Tenant ID and UTR are strictly required." },
         { status: 400 }
       );
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // 1. Validate Plan
       const selectedPlan = await tx.subscriptionPlan.findFirst({
         where: { id: planId, isDeleted: false }
       });
+      if (!selectedPlan) throw new Error("Subscription Plan is invalid.");
 
-      if (!selectedPlan) {
-        throw new Error("The selected Subscription Plan is invalid or inactive.");
-      }
-
+      // 2. Validate Tenant & Limits
       const tenant = await tx.tenant.findUnique({
         where: { id: tenantId },
-        include: {
-          _count: { select: { outlets: { where: { isDeleted: false } } } }
+        include: { _count: { select: { outlets: { where: { isDeleted: false } } } } }
+      });
+      if (!tenant) throw new Error("Brand ID not found.");
+      if (tenant._count.outlets >= selectedPlan.maxOutlets) {
+        throw new Error(`Limit reached! Plan allows max ${selectedPlan.maxOutlets} outlet(s).`);
+      }
+
+      // 3. Create SaaS Payment Log (Capturing UTR)
+      await tx.paymentLog.create({
+        data: {
+          amount: selectedPlan.price,
+          gateway: "UPI_QR",
+          gatewayTxnId: utrNumber, // User's UTR string saved here
+          status: "COMPLETED",
+          planName: selectedPlan.name,
+          tenantId: tenantId,
+          paidAt: new Date(),
         }
       });
 
-      if (!tenant) throw new Error("Brand/Tenant ID not found in database registry.");
-
-      if (tenant._count.outlets >= selectedPlan.maxOutlets) {
-        throw new Error(`Allocation Failed! ${selectedPlan.name} plan restricts allocation to max ${selectedPlan.maxOutlets} outlet(s).`);
-      }
-
-      // Ensure tenant is linked to this plan
+      // 4. Update Tenant Plan Linkage
       await tx.tenant.update({
         where: { id: tenantId },
         data: { planId: selectedPlan.id }
       });
 
+      // 5. Generate unique ID & Provision Outlet with Full Column Mapping
       let newOutletId = generate7DigitId();
       let existing = await tx.outlet.findUnique({ where: { id: newOutletId } });
       while (existing) {
@@ -92,13 +95,10 @@ export async function POST(req: Request) {
       const newOutlet = await tx.outlet.create({
         data: {
           id: newOutletId,
-          name,
-          address,
-          email: email || null,
-          password: password || null,
-          generalSettings: { phone, gstNumber: gst, fssaiNumber: fssai },
+          name, code, address, city, state, pincode, phone, email, password,
+          gstin, fssaiNo, licenseNo, openTime, closeTime,
           tenantId,
-          isActive: true,
+          isActive: true, // Will default to True on payment
           isDeleted: false,
         },
       });
@@ -107,31 +107,6 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ success: true, outlet: result });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
-  }
-}
-
-export async function PUT(req: Request) {
-  try {
-    const body = await req.json();
-    const { id, name, address, email, password, phone, gst, fssai, isActive } = body;
-
-    if (!id) return NextResponse.json({ success: false, error: "Outlet ID is required" }, { status: 400 });
-
-    const updatedOutlet = await prisma.outlet.update({
-      where: { id },
-      data: {
-        name,
-        address,
-        email: email || null,
-        password: password || null,
-        isActive,
-        generalSettings: { phone, gstNumber: gst, fssaiNumber: fssai },
-      }
-    });
-
-    return NextResponse.json({ success: true, outlet: updatedOutlet });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
