@@ -10,7 +10,8 @@ const generate7DigitId = () => {
 
 export async function GET() {
   try {
-    const outlets = await prisma.outlet.findMany({
+    // Fetch initial data
+    const rawOutlets = await prisma.outlet.findMany({
       where: { isDeleted: false },
       include: {
         tenant: {
@@ -20,12 +21,38 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
+    const now = new Date();
+    const updatedOutlets = [];
+
+    // AUTO-DEACTIVATION LOGIC (Instant 0 Days Left = False)
+    for (const outlet of rawOutlets) {
+      const createdDate = new Date(outlet.createdAt);
+      const validTill = new Date(createdDate.getTime());
+      validTill.setDate(validTill.getDate() + 30);
+      
+      // Agar time cross ho gaya hai aur outlet abhi bhi active hai
+      if (now.getTime() > validTill.getTime() && outlet.isActive) {
+        const updated = await prisma.outlet.update({
+          where: { id: outlet.id },
+          data: { isActive: false },
+          include: {
+            tenant: {
+              select: { id: true, businessName: true, ownerEmail: true, plan: true },
+            },
+          }
+        });
+        updatedOutlets.push(updated);
+      } else {
+        updatedOutlets.push(outlet);
+      }
+    }
+
     const subscriptionPlans = await prisma.subscriptionPlan.findMany({
       where: { isDeleted: false, isActive: true },
       orderBy: { price: "asc" }
     });
 
-    return NextResponse.json({ success: true, outlets, subscriptionPlans });
+    return NextResponse.json({ success: true, outlets: updatedOutlets, subscriptionPlans });
   } catch (error) {
     console.error("Error fetching outlets data:", error);
     return NextResponse.json({ success: false, error: "Failed to fetch outlets stack" }, { status: 500 });
@@ -40,22 +67,19 @@ export async function POST(req: Request) {
       gstin, fssaiNo, licenseNo, openTime, closeTime, tenantId, planId, utrNumber 
     } = body;
 
-    // Strict validation
-    if (!name || !address || !tenantId || !planId || !utrNumber) {
+    if (!name || !address || !email || !password || !tenantId || !planId || !utrNumber) {
       return NextResponse.json(
-        { success: false, error: "Name, Address, Plan, Tenant ID and UTR are strictly required." },
+        { success: false, error: "Name, Address, Email, Password, Plan, Brand and UTR are strictly required." },
         { status: 400 }
       );
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Validate Plan
       const selectedPlan = await tx.subscriptionPlan.findFirst({
         where: { id: planId, isDeleted: false }
       });
       if (!selectedPlan) throw new Error("Subscription Plan is invalid.");
 
-      // 2. Validate Tenant & Limits
       const tenant = await tx.tenant.findUnique({
         where: { id: tenantId },
         include: { _count: { select: { outlets: { where: { isDeleted: false } } } } }
@@ -65,12 +89,11 @@ export async function POST(req: Request) {
         throw new Error(`Limit reached! Plan allows max ${selectedPlan.maxOutlets} outlet(s).`);
       }
 
-      // 3. Create SaaS Payment Log (Capturing UTR)
       await tx.paymentLog.create({
         data: {
           amount: selectedPlan.price,
           gateway: "UPI_QR",
-          gatewayTxnId: utrNumber, // User's UTR string saved here
+          gatewayTxnId: utrNumber,
           status: "COMPLETED",
           planName: selectedPlan.name,
           tenantId: tenantId,
@@ -78,13 +101,11 @@ export async function POST(req: Request) {
         }
       });
 
-      // 4. Update Tenant Plan Linkage
       await tx.tenant.update({
         where: { id: tenantId },
         data: { planId: selectedPlan.id }
       });
 
-      // 5. Generate unique ID & Provision Outlet with Full Column Mapping
       let newOutletId = generate7DigitId();
       let existing = await tx.outlet.findUnique({ where: { id: newOutletId } });
       while (existing) {
@@ -98,7 +119,7 @@ export async function POST(req: Request) {
           name, code, address, city, state, pincode, phone, email, password,
           gstin, fssaiNo, licenseNo, openTime, closeTime,
           tenantId,
-          isActive: true, // Will default to True on payment
+          isActive: true,
           isDeleted: false,
         },
       });
@@ -107,6 +128,32 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ success: true, outlet: result });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, name, address, email, password, phone, gst, fssai, isActive } = body;
+
+    if (!id) return NextResponse.json({ success: false, error: "Outlet ID is required" }, { status: 400 });
+
+    const updatedOutlet = await prisma.outlet.update({
+      where: { id },
+      data: {
+        name, address,
+        email: email || null,
+        password: password || null,
+        isActive,
+        phone: phone || null,
+        gstin: gst || null,
+        fssaiNo: fssai || null,
+      }
+    });
+
+    return NextResponse.json({ success: true, outlet: updatedOutlet });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
