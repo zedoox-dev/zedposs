@@ -5,147 +5,73 @@ import { authOptions } from "../../auth/[...nextauth]/route";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    const userEmail = session?.user?.email;
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (!userEmail) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail },
-      include: { tenant: { include: { plan: true } } }
-    });
-
+    const user = await prisma.user.findUnique({ where: { email: session.user.email! } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    // 🟢 Auto-Expiry Check: If 30 days passed, force isActive to FALSE
-    const allOutlets = await prisma.outlet.findMany({
-      where: { tenantId: user.tenantId, isDeleted: false }
-    });
-
-    const today = new Date();
-    for (const outlet of allOutlets) {
-      const validTill = new Date(outlet.createdAt);
-      validTill.setDate(validTill.getDate() + 30); // Assuming 30 days SaaS cycle
-      
-      if (today > validTill && outlet.isActive) {
-        await prisma.outlet.update({
-          where: { id: outlet.id },
-          data: { isActive: false }
-        });
-      }
-    }
-
-    // Fetch Regions with their assigned outlets
     const regions = await prisma.region.findMany({
       where: { tenantId: user.tenantId, isDeleted: false },
-      include: {
-        outlets: {
-          where: { isDeleted: false },
-          orderBy: { createdAt: 'desc' }
-        }
-      },
-      orderBy: { createdAt: 'asc' }
+      include: { outlets: { where: { isDeleted: false } } }
     });
 
-    // Fetch Outlets that are NOT assigned to any region yet
     const unassignedOutlets = await prisma.outlet.findMany({
-      where: { tenantId: user.tenantId, regionId: null, isDeleted: false },
-      orderBy: { createdAt: 'desc' }
+      where: { tenantId: user.tenantId, regionId: null, isDeleted: false }
     });
 
-    // Fetch ALL outlets for the detailed table list
-    const allOutletsData = await prisma.outlet.findMany({
-      where: { tenantId: user.tenantId, isDeleted: false },
-      include: { region: true },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      regions, 
-      unassignedOutlets, 
-      allOutlets: allOutletsData,
-      tenantPlan: user.tenant?.plan 
-    });
-  } catch (error: any) {
-    console.error("Outlets Fetch Error:", error);
-    return NextResponse.json({ error: "Failed to load network data" }, { status: 500 });
+    return NextResponse.json({ success: true, regions, unassignedOutlets });
+  } catch (error) {
+    return NextResponse.json({ error: "Failed to load network" }, { status: 500 });
   }
 }
 
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    const userEmail = session?.user?.email;
-
-    if (!userEmail) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail },
-      select: { tenantId: true }
-    });
-
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
     const body = await req.json();
-    const { actionType } = body; 
+    const { actionType } = body;
 
-    if (actionType === "CREATE_REGION") {
-      const { name } = body;
-      const newRegion = await prisma.region.create({
-        data: { name: name.toUpperCase(), tenantId: user.tenantId }
+    const user = await prisma.user.findUnique({ where: { email: session?.user?.email! } });
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    if (actionType === "CREATE_OUTLET") {
+      const { name, address, email, password, regionId, utrNumber, planId } = body;
+
+      // 🟢 Production SaaS Rule: Default isActive = FALSE
+      const newOutlet = await prisma.outlet.create({
+        data: {
+          name, address, email, password,
+          regionId: regionId === "NONE" ? null : regionId,
+          tenantId: user.tenantId,
+          isActive: false 
+        }
       });
-      return NextResponse.json({ success: true, region: newRegion });
-    } 
-    
-    else if (actionType === "CREATE_OUTLET") {
-      const { 
-        name, address, city, state, pincode, email, phone, password, 
-        gstin, fssaiNo, licenseNo, openTime, closeTime, regionId, utrNumber 
-      } = body;
 
-      // 🟢 Generate 7-Digit System ID
-      const generatedCode = Math.floor(1000000 + Math.random() * 9000000).toString();
-
-      // Ensure creation is wrapped in a transaction to log the UTR
-      const newOutlet = await prisma.$transaction(async (tx) => {
-        const outlet = await tx.outlet.create({
-          data: {
-            name: name.toUpperCase(),
-            code: generatedCode,
-            address, city, state, pincode, email, phone, password,
-            gstin: gstin?.toUpperCase() || null,
-            fssaiNo: fssaiNo?.toUpperCase() || null,
-            licenseNo: licenseNo?.toUpperCase() || null,
-            openTime, closeTime,
-            isActive: false, // 🔴 STRICTLY FALSE UNTIL ADMIN APPROVES
-            regionId: regionId === "NONE" ? null : regionId,
-            tenantId: user.tenantId
-          }
-        });
-
-        // Save UTR Number in Audit Logs for Admin verification
-        await tx.auditLog.create({
-          data: {
-            action: "OUTLET_PROVISION_FEE",
-            module: "OUTLETS",
-            description: `Payment UTR: ${utrNumber} submitted for Outlet ${outlet.code} (${outlet.name}). Pending Admin Verification.`,
-            tenantId: user.tenantId
-          }
-        });
-
-        return outlet;
+      // Log the payment/transaction for Super Admin review
+      await prisma.paymentLog.create({
+        data: {
+          tenantId: user.tenantId,
+          amount: 0, // Should be fetched from plan price
+          status: "PENDING_VERIFICATION",
+          planName: `New Outlet: ${name} | UTR: ${utrNumber}`
+        }
       });
 
       return NextResponse.json({ success: true, outlet: newOutlet });
     }
 
-    return NextResponse.json({ error: "Invalid action type" }, { status: 400 });
+    if (actionType === "CREATE_REGION") {
+      const newRegion = await prisma.region.create({
+        data: { name: body.name, tenantId: user.tenantId }
+      });
+      return NextResponse.json({ success: true, region: newRegion });
+    }
 
-  } catch (error: any) {
-    console.error("Creation Error:", error);
-    return NextResponse.json({ error: "Failed to save data. Please check fields." }, { status: 500 });
+    return NextResponse.json({ error: "Invalid Action" }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ error: "Deployment Failed" }, { status: 500 });
   }
 }

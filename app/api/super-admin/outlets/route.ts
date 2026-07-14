@@ -10,7 +10,6 @@ const generate7DigitId = () => {
 
 export async function GET() {
   try {
-    // Fetch initial data
     const rawOutlets = await prisma.outlet.findMany({
       where: { isDeleted: false },
       include: {
@@ -30,7 +29,6 @@ export async function GET() {
       const validTill = new Date(createdDate.getTime());
       validTill.setDate(validTill.getDate() + 30);
       
-      // Agar time cross ho gaya hai aur outlet abhi bhi active hai
       if (now.getTime() > validTill.getTime() && outlet.isActive) {
         const updated = await prisma.outlet.update({
           where: { id: outlet.id },
@@ -80,15 +78,8 @@ export async function POST(req: Request) {
       });
       if (!selectedPlan) throw new Error("Subscription Plan is invalid.");
 
-      const tenant = await tx.tenant.findUnique({
-        where: { id: tenantId },
-        include: { _count: { select: { outlets: { where: { isDeleted: false } } } } }
-      });
-      if (!tenant) throw new Error("Brand ID not found.");
-      if (tenant._count.outlets >= selectedPlan.maxOutlets) {
-        throw new Error(`Limit reached! Plan allows max ${selectedPlan.maxOutlets} outlet(s).`);
-      }
-
+      // REMOVED: Max limit check block removed completely so you can add unlimited outlets.
+      
       await tx.paymentLog.create({
         data: {
           amount: selectedPlan.price,
@@ -136,10 +127,47 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { id, name, address, email, password, phone, gst, fssai, isActive } = body;
+    const { id, name, address, email, password, phone, gst, fssai, isActive, reactivate, planId, utrNumber, tenantId } = body;
 
     if (!id) return NextResponse.json({ success: false, error: "Outlet ID is required" }, { status: 400 });
 
+    // NEW: Reactivation Flow Logging Payment & Resetting 30-Day Clock
+    if (reactivate) {
+      if (!planId || !utrNumber) throw new Error("Plan and UTR are required for reactivation.");
+      
+      const result = await prisma.$transaction(async (tx) => {
+        const selectedPlan = await tx.subscriptionPlan.findFirst({ where: { id: planId, isDeleted: false } });
+        if (!selectedPlan) throw new Error("Invalid Plan Selected.");
+
+        await tx.paymentLog.create({
+          data: {
+            amount: selectedPlan.price,
+            gateway: "UPI_QR",
+            gatewayTxnId: utrNumber,
+            status: "COMPLETED",
+            planName: selectedPlan.name,
+            tenantId: tenantId || null,
+            paidAt: new Date(),
+          }
+        });
+
+        if (tenantId) {
+          await tx.tenant.update({ where: { id: tenantId }, data: { planId: selectedPlan.id } });
+        }
+
+        // Updating createdAt to current Date resets the 30 Days left logic completely.
+        const updatedOutlet = await tx.outlet.update({
+          where: { id },
+          data: { isActive: true, createdAt: new Date() } 
+        });
+
+        return updatedOutlet;
+      });
+
+      return NextResponse.json({ success: true, outlet: result });
+    }
+
+    // Normal Configuration Update Flow
     const updatedOutlet = await prisma.outlet.update({
       where: { id },
       data: {
