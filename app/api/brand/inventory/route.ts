@@ -49,12 +49,12 @@ export async function GET(req: Request) {
       dateQuery = { gte: new Date(startDate), lte: end };
     }
 
-    // 1. Fetch Items
+    // 1. Fetch Items (Raw Material and Packaging Only as per Enum)
     const inventory = await prisma.inventory.findMany({
       where: { 
         ...outletFilter, 
         isDeleted: false,
-        type: { in: ['RAW_MATERIAL', 'PACKAGING'] } // Only show Raw/Packing items
+        type: { in: ['RAW_MATERIAL', 'PACKAGING'] } 
       },
       include: { outlet: { select: { name: true } } },
       orderBy: { itemName: 'asc' }
@@ -102,21 +102,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // 🟢 Map Custom Classifications to DB Schema Type
-    let dbType = "RAW_MATERIAL";
-    if (classification === "PACKING") dbType = "PACKAGING";
-
-    // 🟢 Append Classification to name for UI distinction later
-    let finalItemName = itemName.toUpperCase();
-    if (["VEGETABLES", "SPICES", "DAIRY"].includes(classification)) {
-      finalItemName = `[${classification}] ${finalItemName}`;
-    }
+    // 🟢 Strict DB Mapping (No Name Pollution)
+    const dbType = classification === "PACKAGING" ? "PACKAGING" : "RAW_MATERIAL";
+    const finalItemName = itemName.toUpperCase();
 
     const newItem = await prisma.inventory.create({
       data: {
         itemName: finalItemName,
         type: dbType as any,
-        unit: unit.toUpperCase(),
+        unit: unit.toUpperCase(), // KG, LTR, PCS, GM, PKT
         stockLevel: Number(stockLevel) || 0,
         minStock: Number(minStock) || 0,
         outletId

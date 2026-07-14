@@ -32,11 +32,11 @@ export default function InventoryMatrixPage() {
   const [securityPasswordInput, setSecurityPasswordInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // 🟢 Forms
+  // 🟢 Forms (Units set to short form)
   const [newItem, setNewItem] = useState({ 
     itemName: "", 
     classification: "RAW_MATERIAL", 
-    unit: "KILOGRAMS", 
+    unit: "KG", 
     stockLevel: "", 
     minStock: "", 
     outletId: "" 
@@ -153,7 +153,6 @@ export default function InventoryMatrixPage() {
     return consumeLogs.filter(l => l.inventoryId === id).reduce((sum, l) => sum + l.quantityDeducted, 0);
   };
 
-  // Only show matching classifications
   const filteredInventory = inventory.filter(item => 
     item.itemName.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -277,7 +276,6 @@ export default function InventoryMatrixPage() {
             />
           </div>
           
-          {/* 🟢 LEDGER TOGGLES */}
           <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto overflow-x-auto">
             {['LIVE', 'OPENING', 'INWARD', 'CONSUMED', 'CLOSING'].map(v => (
               <button 
@@ -403,20 +401,17 @@ export default function InventoryMatrixPage() {
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">Classification Type</label>
                   <select value={newItem.classification} onChange={(e) => setNewItem({...newItem, classification: e.target.value})} className="w-full p-3.5 border-2 border-slate-100 rounded-xl text-xs font-bold bg-white uppercase focus:border-indigo-500 outline-none transition-colors">
                     <option value="RAW_MATERIAL">Raw Material</option>
-                    <option value="VEGETABLES">Vegetables</option>
-                    <option value="SPICES">Spices</option>
-                    <option value="DAIRY">Dairy</option>
-                    <option value="PACKING">Packing</option>
+                    <option value="PACKAGING">Packaging / Packing</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5">UOM Units</label>
                   <select value={newItem.unit} onChange={(e) => setNewItem({...newItem, unit: e.target.value})} className="w-full p-3.5 border-2 border-slate-100 rounded-xl text-xs font-bold bg-white uppercase focus:border-indigo-500 outline-none transition-colors">
-                    <option value="KILOGRAMS">Kilograms (KG)</option>
-                    <option value="LITRES">Litres (L)</option>
-                    <option value="PIECES">Pieces (Pcs)</option>
-                    <option value="GRAMS">Grams (g)</option>
-                    <option value="PACKET">Packet (Pkt)</option>
+                    <option value="KG">Kilograms (KG)</option>
+                    <option value="LTR">Litres (LTR)</option>
+                    <option value="PCS">Pieces (PCS)</option>
+                    <option value="GM">Grams (GM)</option>
+                    <option value="PKT">Packet (PKT)</option>
                   </select>
                 </div>
               </div>

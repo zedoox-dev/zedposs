@@ -66,7 +66,7 @@ export async function GET(req: Request) {
       orderBy: { createdAt: 'desc' }
     });
 
-    // 2. 🟢 Fetch Vendors with FULL LEDGER (Purchases & Payments)
+    // 2. Fetch Vendors with complete cascading payments
     const vendors = await prisma.vendor.findMany({
       where: { tenantId: user.tenantId, isDeleted: false },
       include: {
@@ -76,13 +76,32 @@ export async function GET(req: Request) {
             items: { include: { inventory: { select: { itemName: true, unit: true } } } },
             payments: true
           },
-          orderBy: { date: 'asc' }
+          orderBy: { createdAt: 'asc' }
         },
         _count: { select: { purchases: true } }
       }
     });
 
-    // 3. 🟢 Fetch Inventory (Exclude Finished Goods to show all raw materials/packing in dropdown)
+    // Extract precise transaction breakdown for individual vendor balances
+    for (let i = 0; i < vendors.length; i++) {
+      const v = vendors[i];
+      const poIds = v.purchases.map(p => p.id);
+      
+      const allPayments = await prisma.purchasePayment.findMany({
+        where: { purchaseOrderId: { in: poIds } },
+        orderBy: { date: 'asc' }
+      });
+
+      // Inject aggregated payment modes summary inside vendor object dynamically
+      (v as any).cashPaid = allPayments.filter(p => p.paymentMode === "CASH").reduce((s, p) => s + p.amount, 0);
+      (v as any).bankPaid = allPayments.filter(p => p.paymentMode === "BANK").reduce((s, p) => s + p.amount, 0);
+      (v as any).upiPaid = allPayments.filter(p => p.paymentMode === "UPI").reduce((s, p) => s + p.amount, 0);
+      (v as any).chequePaid = allPayments.filter(p => p.paymentMode === "CHEQUE").reduce((s, p) => s + p.amount, 0);
+      (v as any).totalPaid = allPayments.reduce((s, p) => s + p.amount, 0);
+      (v as any).allPayments = allPayments; // Raw thread for individual table logs
+    }
+
+    // 3. Fetch Inventory items dropdown mapping
     const inventory = await prisma.inventory.findMany({
       where: outletId !== "ALL" 
         ? { outletId, isDeleted: false, type: { not: 'FINISHED_GOOD' } } 
@@ -93,8 +112,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ success: true, purchases, vendors, inventory });
   } catch (error: any) {
-    console.error("Purchases Fetch Error:", error);
-    return NextResponse.json({ error: "Failed to load purchases" }, { status: 500 });
+    console.error("Purchases Master Sync GET Error:", error);
+    return NextResponse.json({ error: "Failed to fetch procurement ledger." }, { status: 500 });
   }
 }
 
@@ -102,25 +121,21 @@ export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     const userEmail = session?.user?.email;
-    if (!userEmail) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!userEmail) return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
 
     const user = await prisma.user.findUnique({ where: { email: userEmail } });
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!user) return NextResponse.json({ error: "Master profile identity mismatch." }, { status: 404 });
 
     const body = await req.json();
     const { action } = body;
 
-    // ==========================================
-    // ACTION: ADD NEW PURCHASE ORDER (GRN)
-    // ==========================================
     if (action === "ADD_PO") {
       const { vendorId, outletId, invoiceNumber, paymentMode, notes, items } = body;
 
       if (!vendorId || !outletId || !items || items.length === 0) {
-        return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+        return NextResponse.json({ error: "Missing required transactional metrics." }, { status: 400 });
       }
 
-      // Calculate Subtotal & Tax correctly
       let totalAmount = 0;
       let taxAmount = 0;
       const parsedItems = items.map((item: any) => {
@@ -144,16 +159,14 @@ export async function POST(req: Request) {
 
       const result = await prisma.$transaction(async (tx) => {
         const isCredit = paymentMode === "CREDIT";
-        const poStatus = "RECEIVED";
         const poPaymentStatus = isCredit ? "UNPAID" : "PAID";
         const amountPaid = isCredit ? 0 : totalAmount;
 
-        // 1. Create PO
         const newPO = await tx.purchaseOrder.create({
           data: {
             vendorId, outletId, notes,
             invoiceNumber: invoiceNumber || `INV-${Date.now()}`,
-            status: poStatus,
+            status: "RECEIVED",
             paymentStatus: poPaymentStatus,
             amountPaid,
             taxAmount,
@@ -164,12 +177,10 @@ export async function POST(req: Request) {
           }
         });
 
-        // 2. Add PO Items
         await tx.purchaseItem.createMany({ 
           data: parsedItems.map(i => ({ ...i, purchaseOrderId: newPO.id })) 
         });
 
-        // 3. Update Inventory Stock Level
         for (const item of parsedItems) {
           await tx.inventory.update({
             where: { id: item.inventoryId },
@@ -177,7 +188,6 @@ export async function POST(req: Request) {
           });
         }
 
-        // 4. Handle Payments & Vendor Debt Updates
         if (isCredit) {
           await tx.vendor.update({
             where: { id: vendorId },
@@ -192,16 +202,12 @@ export async function POST(req: Request) {
             }
           });
         }
-
         return newPO;
       });
 
       return NextResponse.json({ success: true, purchaseOrder: result });
     }
 
-    // ==========================================
-    // ACTION: ADD NEW VENDOR
-    // ==========================================
     if (action === "ADD_VENDOR") {
       const { name, contactPerson, phone, email, address, gstin, pan, bankName, accountNo, ifsc, outstandingAmt, creditDays } = body;
 
@@ -217,52 +223,44 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, vendor: newVendor });
     }
 
-    return NextResponse.json({ error: "Invalid Action" }, { status: 400 });
-
+    return NextResponse.json({ error: "Invalid operation node context." }, { status: 400 });
   } catch (error: any) {
-    console.error("POST Error:", error);
-    return NextResponse.json({ error: "Transaction Failed. Check fields and try again." }, { status: 500 });
+    console.error("POST Supply Matrix Error:", error);
+    return NextResponse.json({ error: "Database mapping transaction rejected." }, { status: 500 });
   }
 }
 
 export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!session?.user) return NextResponse.json({ error: "Session unauthenticated" }, { status: 401 });
 
     const user = await prisma.user.findUnique({ where: { email: session.user.email! } });
-    if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+    if (!user) return NextResponse.json({ error: "User trace rejected" }, { status: 404 });
 
     const body = await req.json();
-    const { action } = body;
+    const { action, vendorId, amount, paymentMode, bankName } = body;
 
-    // ==========================================
-    // ACTION: SETTLE VENDOR DUES (WITH 100% ACCURATE LEDGER)
-    // ==========================================
     if (action === "SETTLE_VENDOR") {
-      const { vendorId, amount, paymentMode, bankName } = body;
       const payAmount = parseFloat(amount);
-
       if (!vendorId || !payAmount || payAmount <= 0) {
-        return NextResponse.json({ error: "Invalid Payment Data" }, { status: 400 });
+        return NextResponse.json({ error: "Invalid payable parameters submitted" }, { status: 400 });
       }
 
       await prisma.$transaction(async (tx) => {
-        // 1. Deduct Vendor Outstanding
+        // 1. Deduct outstanding from core Vendor profile
         await tx.vendor.update({
           where: { id: vendorId },
           data: { outstandingAmt: { decrement: payAmount } }
         });
 
-        // 2. Find oldest UNPAID POs to map payment
+        // 2. Cascade across unpaid credits
         const unpaidPOs = await tx.purchaseOrder.findMany({
           where: { vendorId, paymentStatus: { in: ['UNPAID', 'PARTIAL'] }, isDeleted: false },
-          orderBy: { date: 'asc' }
+          orderBy: { createdAt: 'asc' }
         });
 
         let remaining = payAmount;
-
-        // Distribute amount to unpaid POs
         for (const po of unpaidPOs) {
           if (remaining <= 0) break;
           const balance = po.totalAmount - po.amountPaid;
@@ -272,7 +270,7 @@ export async function PUT(req: Request) {
             data: {
               purchaseOrderId: po.id,
               amount: apply,
-              paymentMode: paymentMode,
+              paymentMode: paymentMode, // CASH, BANK, UPI, CHEQUE saved perfectly
               referenceNo: bankName || null
             }
           });
@@ -287,43 +285,31 @@ export async function PUT(req: Request) {
           remaining -= apply;
         }
 
-        // 3. 🟢 THE ULTIMATE FIX: If remaining > 0 (Advance/Overpay), create a Dummy Settlement PO
+        // 3. Auto-Heal Advance Overpayments instantly to prevent missing ledger trace
         if (remaining > 0) {
           const fallbackOutlet = unpaidPOs.length > 0 ? unpaidPOs[0].outletId : (await tx.outlet.findFirst({where: {tenantId: user.tenantId}}))!.id;
-          
           const dummyPO = await tx.purchaseOrder.create({
             data: {
-              vendorId, 
-              outletId: fallbackOutlet, 
-              invoiceNumber: `SETTLE-${Date.now()}`,
-              status: "RECEIVED", 
-              paymentStatus: "PAID", 
-              amountPaid: remaining,
-              totalAmount: 0, 
-              netAmount: 0, 
-              taxAmount: 0, 
-              discountAmount: 0,
-              notes: "Advance Balance Settlement / Due Clearance"
+              vendorId, outletId: fallbackOutlet, 
+              invoiceNumber: `ADVANCE-CLEAR-${Date.now()}`,
+              status: "RECEIVED", paymentStatus: "PAID", amountPaid: remaining,
+              totalAmount: 0, netAmount: 0, taxAmount: 0, discountAmount: 0,
+              notes: `Direct Settlement Registry Entry [${paymentMode}]`
             }
           });
 
           await tx.purchasePayment.create({ 
-            data: { 
-              purchaseOrderId: dummyPO.id, 
-              amount: remaining, 
-              paymentMode: paymentMode,
-              referenceNo: bankName || null
-            }
+            data: { purchaseOrderId: dummyPO.id, amount: remaining, paymentMode: paymentMode, referenceNo: bankName || null }
           });
         }
       });
 
-      return NextResponse.json({ success: true, message: "Vendor dues settled successfully." });
+      return NextResponse.json({ success: true, message: "Ledger account balanced successfully." });
     }
 
-    return NextResponse.json({ error: "Invalid Action" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid target operation context." }, { status: 400 });
   } catch (error: any) {
-    console.error("PUT Error:", error);
-    return NextResponse.json({ error: "Update Failed" }, { status: 500 });
+    console.error("PUT Settlement Matrix Error:", error);
+    return NextResponse.json({ error: "Financial settlement mapping crashed." }, { status: 500 });
   }
 }
