@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
-import { Loader2, Lock, Mail, Store, ShieldCheck, Cpu } from "lucide-react";
+import { Loader2, Lock, Mail, Store, ShieldCheck, Cpu, AlertTriangle, Phone } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -28,7 +28,17 @@ export default function LoginPage() {
     });
 
     if (result?.error) {
-      setError(result.error);
+      // 🟢 SMART LOGIC: Detect if the error is due to Inactive/Expired Plan
+      if (
+        result.error === "OUTLET_INACTIVE" || 
+        result.error.toLowerCase().includes("inactive") || 
+        result.error.toLowerCase().includes("disabled") ||
+        result.error.toLowerCase().includes("suspended")
+      ) {
+        setError("PLAN_EXPIRED");
+      } else {
+        setError(result.error);
+      }
       setLoading(false); 
     } else {
       try {
@@ -78,10 +88,33 @@ export default function LoginPage() {
             </div>
 
             <div className="p-10 pt-8">
+              {/* 🟢 DYNAMIC ERROR UI HANDLING */}
               {error && (
-                <div className="bg-red-500/10 text-red-400 p-4 rounded-xl text-xs font-bold text-center mb-6 border border-red-500/20 uppercase tracking-wider flex items-center justify-center shadow-inner">
-                  <ShieldCheck size={16} className="mr-2" />
-                  {error}
+                <div className={`p-4 rounded-xl text-xs font-bold text-center mb-6 border uppercase tracking-wider flex flex-col items-center justify-center shadow-inner transition-all duration-300 ${error === "PLAN_EXPIRED" ? 'bg-red-950/40 text-red-400 border-red-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                  
+                  {error === "PLAN_EXPIRED" ? (
+                    <>
+                      <div className="flex items-center justify-center mb-3 text-red-500">
+                        <AlertTriangle size={24} className="mr-2 animate-pulse" />
+                        <span className="text-sm font-black tracking-widest">Access Denied</span>
+                      </div>
+                      <p className="text-[10px] text-red-300 leading-relaxed normal-case tracking-wide mb-4">
+                        Your outlet's SaaS subscription plan is currently <strong className="text-red-400 uppercase">Inactive or Expired</strong>. Terminal login has been suspended.
+                      </p>
+                      <div className="w-full pt-3 border-t border-red-500/20">
+                        <span className="block text-[9px] text-slate-400 uppercase tracking-widest mb-1.5">To Reactivate, Contact Support:</span>
+                        <div className="font-mono text-base text-emerald-400 font-black flex items-center justify-center">
+                          <Phone size={14} className="mr-2"/> 9990-969-838
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-center">
+                      <ShieldCheck size={16} className="mr-2" />
+                      {error}
+                    </div>
+                  )}
+
                 </div>
               )}
               
