@@ -474,6 +474,33 @@ export default function BillingPage() {
           className="print:block absolute opacity-0 print:opacity-100 top-0 left-0 bg-white text-black font-mono z-[-50] print:z-[9999] text-center w-full"
           style={{ width: printerConfig?.printerSize || "80mm" }}
         >
+          {/* 🔥 THERMAL PRINTER CSS FIX: Stops Browser Scaling & Fixes Blurry Thin Text */}
+          <style>
+            {`
+              @media print {
+                @page {
+                  margin: 0;
+                  size: ${printerConfig?.printerSize || "80mm"} auto;
+                }
+                body, html {
+                  margin: 0;
+                  padding: 0;
+                  width: ${printerConfig?.printerSize || "80mm"};
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                #enterprise-receipt-print-area {
+                  width: ${printerConfig?.printerSize || "80mm"} !important;
+                  max-width: ${printerConfig?.printerSize || "80mm"} !important;
+                }
+                #enterprise-receipt-print-area, #enterprise-receipt-print-area * {
+                  color: #000000 !important; /* Forces true pitch black */
+                  -webkit-font-smoothing: none !important; /* Removes thin/blurry anti-aliasing */
+                }
+              }
+            `}
+          </style>
+
           {lastPrintedOrder && (
             <div className="w-full bg-white text-black p-1 flex flex-col items-center">
               
